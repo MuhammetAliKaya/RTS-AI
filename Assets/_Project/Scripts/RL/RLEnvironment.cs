@@ -15,7 +15,7 @@ public class RLEnvironment : MonoBehaviour
     [Header("RL Training Configuration")]
     public bool isTrainingMode = false;
     public bool hasBuiltBarracks { get; private set; } = false;
-    public int maxEpisodesSteps = 1000; // Fiziksel oyun daha yava? oldu?u için ad?m? art?rd?k
+    public int maxEpisodesSteps = 150; // Fiziksel oyun daha yava? oldu?u için ad?m? art?rd?k
 
     [Header("References")]
     public ResourceManager resourceManager;
@@ -31,8 +31,8 @@ public class RLEnvironment : MonoBehaviour
 
     // State Encode Ayarlar? (Ajan?n Dünyay? Görme Biçimi)
     // Bunu senin 64'lük state yap?na sad?k kalarak basitle?tirdim
-    private readonly int[] woodThresholds = { 0, 50, 100, 200 };
-    private readonly int[] stoneThresholds = { 0, 50, 100, 200 };
+    private readonly int[] woodThresholds = { 0, 250, 500, 1000 };
+    private readonly int[] stoneThresholds = { 0, 50, 500, 1000 };
     private readonly int[] meatThresholds = { 0, 50 };
 
     void Start()
@@ -85,7 +85,37 @@ public class RLEnvironment : MonoBehaviour
 
         currentStep++;
         float reward = -0.1f; // Küçük zaman cezas? (H?zl? bitirmesi için)
+        // --- YEN? EKLENEN KISIM: DOYUMSIZLIK CEZASI ---
+        PlayerResourceData currentRes = resourceManager.GetPlayerResources(1);
 
+        // W4 Seviyesi (200 ve üzeri) ise ve hala Odun (Action 0) istiyorsa
+        if (action == 0 && currentRes.wood >= 1000)
+        {
+            return -5.0f;
+        }
+
+        // S4 Seviyesi (200 ve üzeri) ise ve hala Ta? (Action 1) istiyorsa
+        if (action == 1 && currentRes.stone >= 1000)
+        {
+            // "Ta? ta??yacak yerin yok!" cezas?
+            return -5.0f;
+        }
+
+        // if (currentRes.stone >= 50)
+        // {
+        //     // "1 i?çi ile 2000 kaynak birikmez" cezas?
+        //     return -5.0f;
+        // }
+
+        bool canAffordBarracks = currentRes.wood >= 1000 && currentRes.stone >= 1000;
+
+        // ...VE seçti?in aksiyon "K??la Yap (4)" DE??LSE:
+        if (canAffordBarracks && action != 4)
+        {
+            // NOT: Oyun k??la bitince sona erdi?i için 'Zaten k??la var m??' kontrolüne gerek yok.
+            // Oyun devam ediyorsa k??la yok demektir, paran varsa yapmak ZORUNDASIN.
+            return -100.0f; // "F?rsat? tepme" cezas? (A??r ceza)
+        }
         // Sahnede Player 1'e ait ve BO?TA (Idle) olan bir i?çi bul
         // Worker.cs'deki IsIdle() fonksiyonunu kullan?yoruz.
         Worker idleWorker = FindIdleWorker();
@@ -162,7 +192,7 @@ public class RLEnvironment : MonoBehaviour
         // resourceManager.SpendResources(1, 0, 0, 50);
         playerBase.StartTrainingWorker(); // Base.cs içinde bu fonksiyon var, onu tetikliyoruz!
 
-        return 5.0f; // ??çi üretmek iyidir, ödül ver.
+        return 15.0f; // ??çi üretmek iyidir, ödül ver.
     }
 
     private float OrderBuildBarracks(Worker worker)
@@ -177,7 +207,7 @@ public class RLEnvironment : MonoBehaviour
 
         // 2. ??çi ve Kaynak Kontrolü
         if (worker == null) return -1f;
-        if (!resourceManager.CanAfford(1, 180, 180, 0)) return -1f;
+        if (!resourceManager.CanAfford(1, 1000, 1000, 0)) return -1f;
 
         // 3. Yer Bulma
         Node buildNode = FindValidBuildLocation(worker.transform.position);
@@ -197,7 +227,9 @@ public class RLEnvironment : MonoBehaviour
             episodeCompleted = true;
             hasBuiltBarracks = true;
             float speedBonus = (maxEpisodesSteps - currentStep);
-            float totalReward = 1000.0f + 4 * speedBonus;
+            Debug.Log($"speedBonus {speedBonus}");
+
+            float totalReward = 300.0f + 3 * speedBonus;
 
             Debug.Log($"KI?LA ?N?A EMR? VER?LD?! Ad?m: {currentStep}, Ödül: {totalReward}");
 

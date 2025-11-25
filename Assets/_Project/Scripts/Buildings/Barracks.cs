@@ -23,13 +23,13 @@ public class Barracks : Building
     public override void Die()
     {
         Debug.Log("Barracks destroyed.");
-        
+
         // Make the node walkable again
         if (buildingNode != null)
         {
             buildingNode.isWalkable = true;
         }
-        
+
         Destroy(gameObject);
     }
 
@@ -63,9 +63,9 @@ public class Barracks : Building
             }
 
             // Check and Spend Resources
-            if (rm.SpendResources(this.playerID, 
-                soldierProductionCost.woodCost, 
-                soldierProductionCost.stoneCost, 
+            if (rm.SpendResources(this.playerID,
+                soldierProductionCost.woodCost,
+                soldierProductionCost.stoneCost,
                 soldierProductionCost.meatCost))
             {
                 // Success: Start production
@@ -90,7 +90,7 @@ public class Barracks : Building
         if (soldierPrefab != null && spawnPoint != null)
         {
             GameObject soldierObj = Instantiate(soldierPrefab, spawnPoint.position, Quaternion.identity);
-            
+
             Unit unitScript = soldierObj.GetComponent<Unit>();
             if (unitScript != null)
             {
@@ -100,9 +100,9 @@ public class Barracks : Building
             // Update Population
             if (GameManager.Instance != null)
             {
-                GameManager.Instance.resourceManager.AddPopulation(this.playerID, 1);
+                // GameManager.Instance.resourceManager.AddPopulation(this.playerID, 1);
             }
-            
+
             Debug.Log("Soldier trained successfully!");
         }
         else

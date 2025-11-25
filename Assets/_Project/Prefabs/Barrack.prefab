@@ -414,8 +414,8 @@ MonoBehaviour:
   maxHealth: 100
   currentHealth: 0
   cost:
-    woodCost: 180
-    stoneCost: 180
+    woodCost: 1000
+    stoneCost: 1000
     meatCost: 0
   playerID: 1
   playerTints:

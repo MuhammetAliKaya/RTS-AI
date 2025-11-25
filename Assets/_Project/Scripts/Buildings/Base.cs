@@ -66,7 +66,7 @@ public class Base : Building
             Debug.LogWarning("Building is busy or construction is not complete.");
             return;
         }
-        
+
         PlayerResourceData pData = GameManager.Instance.resourceManager.GetPlayerResources(this.playerID);
 
         // 2. Is there enough population capacity?
@@ -104,7 +104,7 @@ public class Base : Building
         if (workerPrefab != null && spawnPoint != null)
         {
             GameObject worker = Instantiate(workerPrefab, spawnPoint.position, Quaternion.identity);
-            
+
             // Initialize Worker
             Unit unitScript = worker.GetComponent<Unit>();
             if (unitScript != null)
@@ -113,8 +113,8 @@ public class Base : Building
             }
 
             // Add to population
-            GameManager.Instance.resourceManager.AddPopulation(this.playerID, 1);
-            
+            // GameManager.Instance.resourceManager.AddPopulation(this.playerID, 1);
+
             Debug.Log("Worker trained!");
         }
         else

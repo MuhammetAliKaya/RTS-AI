@@ -544,12 +544,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   autoStartTraining: 1
   totalEpisodes: 500
-  timeScaleDuringTraining: 1
+  timeScaleDuringTraining: 100
   visualizeTraining: 1
   stepDelayDuration: 0.2
   enableEarlyStop: 1
-  targetSuccessRate: 0.9
-  successRateWindow: 50
+  targetSuccessRate: 0.99
+  successRateWindow: 30
   environment: {fileID: 189450052}
   agent: {fileID: 189450051}
   metricsFilePath: training_metrics.csv
@@ -566,11 +566,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 33e199b08099ead4783b9d080aa63f31, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  learningRate: 0.1
+  learningRate: 0.25
   discountFactor: 0.9
   epsilon: 1
-  epsilonMin: 0.01
-  epsilonDecay: 0.995
+  epsilonMin: 0.001
+  epsilonDecay: 0.9
 --- !u!114 &189450052
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -584,12 +584,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   isTrainingMode: 1
-  maxEpisodesSteps: 5000
-  visualizeTraining: 1
-  resourceCollectionRate: 5
+  maxEpisodesSteps: 1000
   resourceManager: {fileID: 785247071}
   workerPrefab: {fileID: 69217688657311477, guid: d591fb4f753e84242a562168fcb58c9a, type: 3}
   barracksPrefab: {fileID: 6489350129058694207, guid: 80d268446cd2f824bb5b3bec4018b78b, type: 3}
+  episodeCompleted: 0
 --- !u!4 &189450053
 Transform:
   m_ObjectHideFlags: 0

@@ -27,11 +27,11 @@ public class TrainingManager : MonoBehaviour
     public bool visualizeTraining = true;
 
     [Tooltip("Delay between steps in seconds (Lower = Faster, Higher = Slower)")]
-    public float stepDelayDuration = 0.2f; // Increased to 0.2s for better observation
+    public float stepDelayDuration = 0.002f; // Increased to 0.2s for better observation
 
     [Header("Early Stopping")]
     public bool enableEarlyStop = true;
-    public float targetSuccessRate = 0.9f;     // Stop if 90% success rate reached
+    public float targetSuccessRate = 0.95f;     // Stop if 95% success rate reached
     public int successRateWindow = 50;         // Look at last 50 episodes
 
     [Header("References")]
@@ -187,45 +187,29 @@ public class TrainingManager : MonoBehaviour
         float totalReward = 0f;
         bool success = false;
 
-        // --- KRİTİK DEĞİŞİKLİK ---
-        // ESKİSİ: while (!environment.IsTerminal() && steps < environment.maxEpisodesSteps)
-        // YENİSİ: Sadece adıma bakıyoruz. "Terminal" durumunu görmezden gel.
-        // Böylece ajan kışlayı yapsa bile, süre dolana kadar asker basmaya devam eder.
-        while (steps < environment.maxEpisodesSteps || environment.episodeCompleted == true)
+        // *** DÜZELTME: IsTerminal kontrolünü geri ekle ***
+        // Böylece RLEnvironment "episodeCompleted = true" dediği an döngü kırılır.
+        while (!environment.IsTerminal() || steps < environment.maxEpisodesSteps)
         {
-            // Get current state
             int state = environment.GetCurrentState();
-
-            // Select action
             int action = agent.SelectAction(state);
-
-            // Execute action and get reward
             float reward = environment.ExecuteAction(action);
+
             totalReward += reward;
-
-            // Get next state
-            int nextState = environment.GetCurrentState();
-
-            // Burada IsTerminal'i hala alıyoruz ama sadece Q-Table güncellemesi için kullanıyoruz.
-            // Döngüyü kırması için kullanmıyoruz.
-            bool isTerminal = environment.IsTerminal();
-
-            // Update Q-value
-            agent.UpdateQValue(state, action, reward, nextState, isTerminal);
-
             steps++;
 
-            // Check for success (Büyük ödül aldıysa başarılı sayalım)
+            int nextState = environment.GetCurrentState();
+            bool isTerminal = environment.IsTerminal(); // Artık burası true olabiliyor
+
+            agent.UpdateQValue(state, action, reward, nextState, isTerminal);
+
+            // Başarı kontrolü (Puan veya Flag üzerinden)
             if (environment.hasBuiltBarracks)
             {
                 success = true;
             }
 
-            // If visualizing, wait using the variable delay
-            if (visualizeTraining)
-            {
-                yield return new WaitForSeconds(stepDelayDuration);
-            }
+            if (visualizeTraining) yield return new WaitForSeconds(stepDelayDuration);
         }
 
         onComplete?.Invoke(new EpisodeMetrics(CurrentEpisode, steps, totalReward, success, agent.epsilon));
