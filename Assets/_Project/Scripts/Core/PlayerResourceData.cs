@@ -23,13 +23,13 @@ public class PlayerResourceData
     public PlayerResourceData(int id)
     {
         this.playerID = id;
-        
+
         // Starting resources
-        this.wood = 500;
-        this.stone = 500;
-        this.meat = 500;
-        
+        this.wood = 0;
+        this.stone = 0;
+        this.meat = 50;
+
         this.currentPopulation = 0;
-        this.maxPopulation = 5;
+        this.maxPopulation = 10;
     }
 }

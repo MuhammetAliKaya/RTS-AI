@@ -119,7 +119,7 @@ public class TrainingManager : MonoBehaviour
         // Sync visualization setting
         if (environment != null)
         {
-            environment.visualizeTraining = visualizeTraining;
+            // environment.visualizeTraining = visualizeTraining;
         }
 
         IsTraining = true;
@@ -187,7 +187,11 @@ public class TrainingManager : MonoBehaviour
         float totalReward = 0f;
         bool success = false;
 
-        while (!environment.IsTerminal() && steps < environment.maxEpisodesSteps)
+        // --- KRİTİK DEĞİŞİKLİK ---
+        // ESKİSİ: while (!environment.IsTerminal() && steps < environment.maxEpisodesSteps)
+        // YENİSİ: Sadece adıma bakıyoruz. "Terminal" durumunu görmezden gel.
+        // Böylece ajan kışlayı yapsa bile, süre dolana kadar asker basmaya devam eder.
+        while (steps < environment.maxEpisodesSteps || environment.episodeCompleted == true)
         {
             // Get current state
             int state = environment.GetCurrentState();
@@ -201,6 +205,9 @@ public class TrainingManager : MonoBehaviour
 
             // Get next state
             int nextState = environment.GetCurrentState();
+
+            // Burada IsTerminal'i hala alıyoruz ama sadece Q-Table güncellemesi için kullanıyoruz.
+            // Döngüyü kırması için kullanmıyoruz.
             bool isTerminal = environment.IsTerminal();
 
             // Update Q-value
@@ -208,8 +215,8 @@ public class TrainingManager : MonoBehaviour
 
             steps++;
 
-            // Check for success (barracks built)
-            if (reward > 500f) 
+            // Check for success (Büyük ödül aldıysa başarılı sayalım)
+            if (environment.hasBuiltBarracks)
             {
                 success = true;
             }
@@ -217,7 +224,6 @@ public class TrainingManager : MonoBehaviour
             // If visualizing, wait using the variable delay
             if (visualizeTraining)
             {
-                // Using WaitForSeconds with variable allows changing speed at runtime (between steps)
                 yield return new WaitForSeconds(stepDelayDuration);
             }
         }

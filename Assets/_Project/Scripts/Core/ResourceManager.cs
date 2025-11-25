@@ -115,6 +115,19 @@ public class ResourceManager : MonoBehaviour
             data.currentPopulation = current;
         }
     }
+
+    public void ResetPlayerForTraining(int playerID)
+    {
+        PlayerResourceData data = GetPlayerResources(playerID);
+        if (data != null)
+        {
+            data.wood = 0;
+            data.stone = 0;
+            data.meat = 50; // Baþlangýç kaynaðýn neyse
+            data.currentPopulation = 0;
+            data.maxPopulation = 10; // VEYA BAÞLANGIÇ LÝMÝTÝN NEYSE (Örn: Base binasý 5 veriyorsa)
+        }
+    }
 }
 
 public enum ResourceType

@@ -29,9 +29,9 @@ public class TilemapVisualizer : MonoBehaviour
     public GameObject basePrefab;
     public Vector2Int player1StartPos = new Vector2Int(10, 10);
     public Vector2Int player2StartPos = new Vector2Int(40, 40);
-    
+
     [Header("Training Settings")]
-    public bool spawnEnemy = true; 
+    public bool spawnEnemy = true;
 
     [Header("Map Dimensions")]
     public int mapWidth = 50;
@@ -51,7 +51,7 @@ public class TilemapVisualizer : MonoBehaviour
         {
             InitializeMap();
         }
-        
+
         DrawTiles();
         SpawnInitialBases();
     }
@@ -82,10 +82,10 @@ public class TilemapVisualizer : MonoBehaviour
 
         // 2. Aggressive Cleanup: Find ANY Unit or Building that wasn't under objectParent
         // This catches workers spawned by Bases or buildings started by workers at root level.
-        
+
         // Clean Units (Workers, Soldiers)
         var allUnits = FindObjectsByType<Unit>(FindObjectsSortMode.None);
-        foreach (var u in allUnits) 
+        foreach (var u in allUnits)
         {
             if (u != null && u.gameObject != null)
             {
@@ -96,7 +96,7 @@ public class TilemapVisualizer : MonoBehaviour
 
         // Clean Buildings (Unfinished buildings, Bases, etc.)
         var allBuildings = FindObjectsByType<Building>(FindObjectsSortMode.None);
-        foreach (var b in allBuildings) 
+        foreach (var b in allBuildings)
         {
             if (b != null && b.gameObject != null)
             {
@@ -107,7 +107,7 @@ public class TilemapVisualizer : MonoBehaviour
 
         // Clean Resources (if any spawned outside)
         var allResources = FindObjectsByType<ResourceNode>(FindObjectsSortMode.None);
-        foreach (var r in allResources) 
+        foreach (var r in allResources)
         {
             if (r != null && r.gameObject != null)
             {
@@ -125,11 +125,11 @@ public class TilemapVisualizer : MonoBehaviour
         // 4. Generate NEW Grid & Map Data
         gridSystem = new GridSystem(mapWidth, mapHeight);
         gridSystem.ClearSpawningZones(player1StartPos, player2StartPos);
-        
+
         // 5. Redraw and Respawn
         DrawTiles();
         SpawnInitialBases();
-        
+
         Debug.Log("[TilemapVisualizer] Map and Simulation fully reset (Aggressive Clean).");
     }
     // --------------------------------
@@ -189,9 +189,9 @@ public class TilemapVisualizer : MonoBehaviour
             {
                 buildingComp.playerID = playerID;
                 buildingComp.ForceCompleteBuild();
-                
+
                 Base baseScript = baseObj.GetComponent<Base>();
-                if (baseScript != null) baseScript.StartTrainingWorker();
+                // if (baseScript != null) baseScript.StartTrainingWorker();
             }
         }
     }

@@ -42,25 +42,25 @@ public class Worker : Unit
     public void Gather(ResourceNode resource)
     {
         if (resource == null) return;
-        
+
         StopCurrentTask();
-        
+
         currentTargetResource = resource;
-        
+
         Node resourceNode = TilemapVisualizer.Instance.NodeFromWorldPoint(resource.transform.position);
-        if (resourceNode == null) 
-        { 
-            StopCurrentTask(); 
-            return; 
+        if (resourceNode == null)
+        {
+            StopCurrentTask();
+            return;
         }
-        
+
         Node startNode = TilemapVisualizer.Instance.NodeFromWorldPoint(this.transform.position);
-        if (startNode == null) 
-        { 
-            StopCurrentTask(); 
-            return; 
+        if (startNode == null)
+        {
+            StopCurrentTask();
+            return;
         }
-        
+
         // Find a walkable spot adjacent to the resource
         Node walkableSpot = FindWalkableSpotNear(resourceNode, startNode);
 
@@ -68,20 +68,20 @@ public class Worker : Unit
         {
             targetMoveNode = walkableSpot;
             Vector3 targetPosition = TilemapVisualizer.Instance.WorldPositionFromNode(targetMoveNode);
-            
+
             bool pathFound = base.MoveTo(targetPosition);
-            if (!pathFound) 
-            { 
-                StopCurrentTask(); 
-            } 
-            else 
-            { 
-                IsBusy = true; 
+            if (!pathFound)
+            {
+                StopCurrentTask();
+            }
+            else
+            {
+                IsBusy = true;
             }
         }
-        else 
-        { 
-            StopCurrentTask(); 
+        else
+        {
+            StopCurrentTask();
         }
     }
 
@@ -89,37 +89,60 @@ public class Worker : Unit
     public bool StartBuildingTask(Node targetBuildNode, GameObject prefabToBuild)
     {
         if (targetBuildNode == null || prefabToBuild == null) return false;
-        
+
+        // --- 1. ADIM: PARA KONTROLÜ (ÖNCE BUNU YAPIYORUZ) ---
+        // Henüz yola çýkmadan cebimizde para var mý bakalým.
+        Building buildingScript = prefabToBuild.GetComponent<Building>();
+        if (buildingScript != null)
+        {
+            // ResourceManager'a soruyoruz: "Param yetiyor mu?"
+            // Eðer yetmiyorsa iþlemi hemen iptal et.
+            if (!GameManager.Instance.resourceManager.CanAfford(this.playerID, buildingScript.cost.woodCost, buildingScript.cost.stoneCost, buildingScript.cost.meatCost))
+            {
+                // Debug.Log("Not enough resources to build."); // Ýstersen log açabilirsin
+                return false;
+            }
+        }
+
         StopCurrentTask();
-        
+
         Node startNode = TilemapVisualizer.Instance.NodeFromWorldPoint(this.transform.position);
-        
+
         // Find a walkable spot adjacent to the build site
         Node walkableSpot = FindWalkableSpotNear(targetBuildNode, startNode);
-        
+
         if (walkableSpot != null)
         {
             targetMoveNode = walkableSpot;
             Vector3 targetPosition = TilemapVisualizer.Instance.WorldPositionFromNode(targetMoveNode);
-            
+
+            // Yol var mý diye bakýyoruz
             bool pathFound = base.MoveTo(targetPosition);
-            
-            if (!pathFound) 
-            { 
-                StopCurrentTask(); 
-                return false; 
+
+            if (!pathFound)
+            {
+                StopCurrentTask();
+                return false;
             }
-            
+
+            // --- 2. ADIM: HARCAMA ANI (BURASI ÇOK ÖNEMLÝ) ---
+            // Yol bulundu, iþçi gitmeye karar verdi. ÞÝMDÝ parayý kesiyoruz.
+            // (Yol bulamazsa yukarýda return false dediði için para kesilmemiþ oluyor, güvenli.)
+            if (buildingScript != null)
+            {
+                GameManager.Instance.resourceManager.SpendResources(this.playerID, buildingScript.cost.woodCost, buildingScript.cost.stoneCost, buildingScript.cost.meatCost);
+            }
+
             // Task assigned successfully
             buildingPrefabToBuild = prefabToBuild;
             buildTargetNode = targetBuildNode;
             IsBusy = true;
             return true;
         }
-        else 
-        { 
-            StopCurrentTask(); 
-            return false; 
+        else
+        {
+            StopCurrentTask();
+            return false;
         }
     }
 
@@ -130,7 +153,7 @@ public class Worker : Unit
         {
             currentTargetBuilding.NotifyWorkerStoppedBuilding();
         }
-        
+
         currentTargetResource = null;
         currentTargetBuilding = null;
         taskTimer = 0f;
@@ -155,11 +178,11 @@ public class Worker : Unit
 
         // Verify we are at the target spot
         Node myNode = TilemapVisualizer.Instance.NodeFromWorldPoint(this.transform.position);
-        if (myNode != targetMoveNode) 
-        { 
+        if (myNode != targetMoveNode)
+        {
             // We stopped moving but aren't at the target? Something broke (e.g. collision). Stop task.
-            StopCurrentTask(); 
-            return; 
+            StopCurrentTask();
+            return;
         }
 
         // 2. Handle Construction Initialization
@@ -168,18 +191,18 @@ public class Worker : Unit
             // Instantiate the building structure
             Vector3 buildPos = TilemapVisualizer.Instance.WorldPositionFromNode(buildTargetNode);
             GameObject newBuildingObj = Instantiate(buildingPrefabToBuild, buildPos, Quaternion.identity);
-            
+
             Building newBuilding = newBuildingObj.GetComponent<Building>();
-            if (newBuilding == null) 
-            { 
-                Destroy(newBuildingObj); 
-                StopCurrentTask(); 
-                return; 
+            if (newBuilding == null)
+            {
+                Destroy(newBuildingObj);
+                StopCurrentTask();
+                return;
             }
-            
+
             newBuilding.playerID = this.playerID;
             currentTargetBuilding = newBuilding;
-            
+
             // Clear setup variables, now we focus on 'currentTargetBuilding'
             buildingPrefabToBuild = null;
             buildTargetNode = null;
@@ -200,7 +223,7 @@ public class Worker : Unit
                 {
                     taskTimer = 0f;
                     StartCoroutine(GatherShake());
-                    
+
                     int amountTaken = currentTargetResource.GatherResource(gatherAmount);
                     if (amountTaken > 0)
                     {
@@ -228,9 +251,9 @@ public class Worker : Unit
                 {
                     taskTimer = 0f;
                     StartCoroutine(ConstructShake());
-                    
+
                     currentTargetBuilding.Construct(buildAmount);
-                    
+
                     if (currentTargetBuilding.isFunctional)
                     {
                         // Job done
@@ -251,16 +274,16 @@ public class Worker : Unit
     private Node FindWalkableSpotNear(Node targetNode, Node startNode)
     {
         if (gridSystem == null || startNode == null) return null;
-        
+
         List<Node> validSpots = new List<Node>();
-        
+
         // Check 8 neighbours
         for (int x = -1; x <= 1; x++)
         {
             for (int y = -1; y <= 1; y++)
             {
                 if (x == 0 && y == 0) continue;
-                
+
                 Node neighbour = gridSystem.GetNode(targetNode.x + x, targetNode.y + y);
                 if (neighbour != null && neighbour.isWalkable)
                 {
@@ -268,26 +291,26 @@ public class Worker : Unit
                 }
             }
         }
-        
+
         if (validSpots.Count == 0) return null;
-        
+
         // Find closest valid spot to the worker
         Node closestSpot = null;
         float minDistance = float.MaxValue;
-        
+
         foreach (Node spot in validSpots)
         {
             int dx = spot.x - startNode.x;
             int dy = spot.y - startNode.y;
             float distance = (dx * dx) + (dy * dy);
-            
+
             if (distance < minDistance)
             {
                 minDistance = distance;
                 closestSpot = spot;
             }
         }
-        
+
         return closestSpot;
     }
 
@@ -297,10 +320,10 @@ public class Worker : Unit
     public static bool CheckIfGatherable(ResourceNode resource)
     {
         if (resource == null || TilemapVisualizer.Instance == null) return false;
-        
+
         GridSystem grid = TilemapVisualizer.Instance.gridSystem;
         if (grid == null) return false;
-        
+
         Node resourceNode = TilemapVisualizer.Instance.NodeFromWorldPoint(resource.transform.position);
         if (resourceNode == null) return false;
 
@@ -309,7 +332,7 @@ public class Worker : Unit
             for (int y = -1; y <= 1; y++)
             {
                 if (x == 0 && y == 0) continue;
-                
+
                 Node neighbour = grid.GetNode(resourceNode.x + x, resourceNode.y + y);
                 if (neighbour != null && neighbour.isWalkable) return true;
             }
