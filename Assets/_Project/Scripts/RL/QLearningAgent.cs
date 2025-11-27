@@ -24,7 +24,7 @@ public class QLearningAgent : MonoBehaviour
     public float epsilonMin = 0.01f;         // Minimum epsilon
 
     [Range(0f, 1f)]
-    public float epsilonDecay = 0.95f;      // Epsilon decay rate per episode
+    public float epsilonDecay = 0.9995f;      // Epsilon decay rate per episode
 
     [Header("Q-Table Configuration")]
     private const int NUM_STATES = 64;       // 4*4*2*2
