@@ -70,11 +70,17 @@ git clone [https://github.com/MuhammetAliKaya/RTS-AI.git](https://github.com/Muh
 2.  Check the **Inspector window**. Here you can find RL parameters, map size, and almost all variables regarding the game and RL.
 3.  Press the **Play** button to watch the RL training in action.
 
+![alt text](Hieararchy.png)
+![alt text](Inspector.PNG)
+
 ### 4. Modes and Features
 * **Inference Mode:** If you want to watch a *pre-trained* model, check the `Run Inference Mode` box in the inspector. (Uncheck it to train from scratch).
 * **Super Fast Training:** Check the `Run Fast` option and specify **Episodes per Frame**. This utilizes the data-driven structure to train at speeds limited only by your processor performance.
 * **Visual Speed:** If `Run Fast` is too fast but normal speed is too slow, you can adjust the visual simulation speed variable(Uncheck Run Fast for visual speed).
 ---
+
+![alt text](sim.gif)
+
 
 ## 🔮 What is Next?
 Now that we have a good model for the fastest barracks build, what do we do with it?
