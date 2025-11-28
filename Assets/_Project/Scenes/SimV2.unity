@@ -3890,7 +3890,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3a3bc2ae7551f064f98faae2fccdf7ab, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  RunInferenceMode: 1
+  RunInferenceMode: 0
   QTableFileName: qtable_experiment.csv
   MapSeed: 12345
   RandomSeedPerEpisode: 1
