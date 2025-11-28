@@ -55,7 +55,7 @@ public class SimUIManager : MonoBehaviour
         var player = SimResourceSystem.GetPlayer(Manager.World, 1);
         if (player != null && ResourcesText != null)
         {
-            ResourcesText.text = $"🌲 {player.Wood}  🪨 {player.Stone}  🍖 {player.Meat}  Pop: {player.CurrentPopulation}/{player.MaxPopulation}";
+            ResourcesText.text = $"WOOD {player.Wood}\nSTONE {player.Stone}\nMEAT {player.Meat}\nPop: {player.CurrentPopulation}/{player.MaxPopulation}";
         }
     }
 
