@@ -3,7 +3,7 @@
 ## 📌 Problem Definition
 The problem is how to find the fastest way to build a **"Barracks"** in an RTS game. Barracks are important because if you have barracks before your opponent, you get the **chance of the first attack**. This chance is crucial for early game dominance.
 
-**Base Goal:** Find the fastest way to build barracks through worker gathering and building capabilities using Deep Reinforcement Learning.
+**Base Goal:** Find the fastest way to build barracks through worker gathering and building capabilities using Reinforcement Learning.
 
 ## 🧠 Estimated Strategy
 **Recruiting more workers** for fast gathering is the estimated strategy derived from the algorithm. The expectation is shaped around the *more-worker / current-resource* balance.
@@ -56,7 +56,7 @@ The project structure is constructed based on **discrete structures**.
 ### 1. Installation
 Clone the repository to your local machine:
 ```bash
-git clone [https://github.com/MuhammetAliKaya/RTS-AI.git](https://github.com/MuhammetAliKaya/RTS-AI.git)
+git clone https://github.com/MuhammetAliKaya/RTS-AI.git
 ```
 
 ### 2. Setup in Unity
