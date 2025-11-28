@@ -79,9 +79,9 @@ git clone [https://github.com/MuhammetAliKaya/RTS-AI.git](https://github.com/Muh
 * **Inference Mode:** If you want to watch a *pre-trained* model, check the `Run Inference Mode` box in the inspector. (Uncheck it to train from scratch).
 * **Super Fast Training:** Check the `Run Fast` option and specify **Episodes per Frame**. This utilizes the data-driven structure to train at speeds limited only by your processor performance.
 * **Visual Speed:** If `Run Fast` is too fast but normal speed is too slow, you can adjust the visual simulation speed variable(Uncheck Run Fast for visual speed).
+![alt text](sim.gif)
 ---
 
-![alt text](sim.gif)
 
 
 ## 🔮 What is Next?
