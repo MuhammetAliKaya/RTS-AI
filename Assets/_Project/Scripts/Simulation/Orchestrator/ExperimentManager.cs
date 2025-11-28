@@ -12,10 +12,23 @@ namespace RTS.Simulation.Orchestrator
     {
         public static ExperimentManager Instance;
 
+        [Header("Model Yükleme (Inference)")]
+        public bool RunInferenceMode = false;
+        public string QTableFileName = "qtable_experiment.csv";
+
         [Header("Genel Ayarlar")]
         public int MapSeed = 12345;
         public bool RandomSeedPerEpisode = true;
         public int TotalEpisodes = 5000;
+
+        // --- YENİ EKLENEN: RL HİPERPARAMETRELERİ ---
+        [Header("RL Hiperparametreleri")]
+        [Range(0f, 1f)] public float LearningRate = 0.1f;       // Alpha
+        [Range(0f, 1f)] public float DiscountFactor = 0.99f;    // Gamma
+        [Range(0f, 1f)] public float Epsilon = 1.0f;            // Başlangıç Keşfetme
+        [Range(0f, 1f)] public float EpsilonMin = 0.01f;        // Min Keşfetme
+        [Range(0f, 1f)] public float EpsilonDecay = 0.999f;     // Unutma Hızı
+        // -------------------------------------------
 
         // --- YENİ EKLENEN: ADIM LİMİTİ ---
         [Tooltip("Bir bölüm en fazla kaç adım sürebilir? (Aşarsa başarısız sayılır)")]
@@ -79,10 +92,28 @@ namespace RTS.Simulation.Orchestrator
 
             Environment = new SimRLEnvironment();
             Environment.Reset(MapWidth, MapHeight);
+
             _currentScenario = new EconomyRushScenario();
             _currentAgent = new QLearningAgentController();
 
+            // --- YENİ: PARAMETRELERİ AJANA AKTAR ---
+            // Eğer elimizdeki ajan bir QLearning ajanıysa, ayarları gönder
+            if (_currentAgent is QLearningAgentController qAgent)
+            {
+                qAgent.SetHyperparameters(LearningRate, DiscountFactor, Epsilon, EpsilonMin, EpsilonDecay);
+            }
+            // --------------------------------------
+
             _currentAgent.Initialize(Environment);
+
+            // Inference Modu
+            if (RunInferenceMode)
+            {
+                RunFast = false;
+                TotalEpisodes = 10;
+                string filePath = Application.dataPath + "/" + QTableFileName;
+                _currentAgent.LoadModel(filePath);
+            }
 
             CurrentEpisode = 0;
             _winHistory.Clear();

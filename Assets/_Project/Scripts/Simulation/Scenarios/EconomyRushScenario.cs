@@ -62,7 +62,7 @@ namespace RTS.Simulation.Scenarios
                 float speedBonus = (maxSteps - currentSteps) * 10.0f;
                 if (speedBonus < 0) speedBonus = 0;
                 Debug.Log("speedBonus" + speedBonus);
-                return 1000.0f + speedBonus; // Büyük final ödülü
+                return 950.0f + speedBonus; // Büyük final ödülü
             }
 
             // // Hedefler

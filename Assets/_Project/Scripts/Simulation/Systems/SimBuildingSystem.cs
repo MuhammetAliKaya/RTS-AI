@@ -57,7 +57,7 @@ namespace RTS.Simulation.Systems
                 SimResourceSystem.IncreaseMaxPopulation(world, building.PlayerID, SimConfig.POPULATION_HOUSE);
             }
 
-            Debug.Log($"✅ BİNA TAMAMLANDI: {building.Type} (ID: {building.ID})");
+            // Debug.Log($"✅ BİNA TAMAMLANDI: {building.Type} (ID: {building.ID})");
         }
 
         // --- 4. BİNA AYARLARI (Spawn Anında) ---

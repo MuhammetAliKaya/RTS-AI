@@ -11,7 +11,7 @@ using UnityEngine;
  * preventing jitter or getting stuck when zooming out near edges.
  * 2. 'mapBounds' restricts the camera movement so it doesn't show outside the map.
  */
-public class CameraPanZoom : MonoBehaviour
+public class CameraPanZoomOld : MonoBehaviour
 {
     [Header("Pan Settings")]
     public float panSpeed = 20f;

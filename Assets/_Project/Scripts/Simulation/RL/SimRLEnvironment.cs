@@ -11,11 +11,11 @@ namespace RTS.Simulation.RL
 
         // EŞİKLER (MALİYETLERE GÖRE AYARLANDI)
         // 0 -> 500 (Yarım) -> 1000 (Yeterli) -> 2000 (Zengin)
-        private readonly int[] woodThresholds = { 0, 500, 1000, 2000 };
-        private readonly int[] stoneThresholds = { 0, 500, 1000, 2000 };
+        private readonly int[] woodThresholds = { 0, 250, 500, 1000 };
+        private readonly int[] stoneThresholds = { 0, 250, 500, 1000 };
 
         // 0 -> 50 (İşçi Maliyeti) -> 100
-        private readonly int[] meatThresholds = { 0, 50, 100 };
+        private readonly int[] meatThresholds = { 0, 50 };
 
         public SimRLEnvironment()
         {
@@ -101,7 +101,7 @@ namespace RTS.Simulation.RL
 
             if (best != null)
             {
-                if (SimUnitSystem.TryAssignGatherTask(worker, best, World)) return 5f;
+                if (SimUnitSystem.TryAssignGatherTask(worker, best, World)) return 0f;
             }
             return -0.5f;
         }

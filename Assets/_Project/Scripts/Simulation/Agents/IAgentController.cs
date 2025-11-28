@@ -18,6 +18,7 @@ namespace RTS.Simulation.Agents
 
         // Beynini kaydet
         void SaveModel(string path);
+        void LoadModel(string path);
 
         // İstatistik ver (UI için)
         string GetStats();
