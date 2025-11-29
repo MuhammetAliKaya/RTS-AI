@@ -5,6 +5,8 @@ using RTS.Simulation.Agents;
 using RTS.Simulation.Scenarios;
 using RTS.Simulation.RL;
 using RTS.Simulation.Data;
+using System.IO; // Bunu en tepeye eklemeyi unutma!
+using System.Text; // Bunu da ekle (StringBuilder için)
 
 namespace RTS.Simulation.Orchestrator
 {
@@ -52,6 +54,12 @@ namespace RTS.Simulation.Orchestrator
         [Header("Bağlantılar")]
         public ScenarioManager ScenarioLoader;
 
+        [Header("Raporlama")]
+        public string MetricsFileName = "training_metrics.csv";
+        private List<string> _trainingHistory = new List<string>();
+
+
+
         public int CurrentEpisode { get; private set; } = 0;
         public float LastEpisodeReward { get; private set; } = 0;
         public float WinRate { get; private set; } = 0;
@@ -93,6 +101,8 @@ namespace RTS.Simulation.Orchestrator
             Environment = new SimRLEnvironment();
             Environment.Reset(MapWidth, MapHeight);
 
+            _trainingHistory.Clear();
+            _trainingHistory.Add("Episode,Reward,Steps,WinRate");
             _currentScenario = new EconomyRushScenario();
             _currentAgent = new QLearningAgentController();
 
@@ -235,7 +245,8 @@ namespace RTS.Simulation.Orchestrator
             WinRate = (float)_winHistory.Sum() / _winHistory.Count;
             LastEpisodeReward = _currentEpisodeReward;
             LastEpisodeSteps = _currentEpisodeSteps;
-
+            string logLine = $"{CurrentEpisode},{_currentEpisodeReward.ToString("F2").Replace(',', '.')},{_currentEpisodeSteps},{WinRate.ToString("F2").Replace(',', '.')}";
+            _trainingHistory.Add(logLine);
             CurrentEpisode++;
 
             if (!RunFast) StartNewEpisode();
@@ -246,6 +257,16 @@ namespace RTS.Simulation.Orchestrator
             _isRunning = false;
             Time.timeScale = 1f;
             Debug.Log("🏁 DENEY TAMAMLANDI!");
+            string metricsPath = Application.dataPath + "/" + MetricsFileName;
+            try
+            {
+                File.WriteAllLines(metricsPath, _trainingHistory);
+                Debug.Log($"📈 Eğitim verileri kaydedildi: {metricsPath}");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"CSV Kaydedilemedi: {e.Message}");
+            }
             _currentAgent.SaveModel(Application.dataPath + "/qtable_experiment.csv");
         }
     }
