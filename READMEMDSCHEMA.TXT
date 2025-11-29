@@ -7,6 +7,16 @@ So base goal is find the fastest way to build barracks trough workers gathering 
 Estimated strategy
 Recurit more worker for fast gathering is the estimated strategy from algorithm. Expectation is shaped around the more-worker/current-resource balance
 
+Methodology and methodology explainings
+what is the q table and bellman equalisation. Detailed explanation and dormula.
+
+Continious to discrete states details and explain why
+
+exploration vs exploitation
+
+Paramaters and paramater values(add table)
+
+
 states explained(64)
 there ara 64 states.
 4 is wood level ([0-250],[250-500],[500-750],[1000+])
@@ -29,6 +39,14 @@ collect stone succesfully = 5f
 collect meat succesfully = 0f // for dont spend to much time on collecting meat without  recurit worker
 recurit worker succesfully = 50f
 Build Barrack succesfully (WIN CONDITION) = 1000f+ speedBonus
+
+
+Resaults 
+Import learining graphs and add interpretations emphasize model succes.
+Mention convergence and efficiency 
+
+import q-table heat map and its interpretations
+emphasisze learned strategies based on states and action selection
 
 
 Project sructure

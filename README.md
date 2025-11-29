@@ -1,3 +1,8 @@
+## 📝 Development Notes & Drafts
+To ensure the originality of this report and track the documentation process, the initial draft schema is available in the repository.
+
+* 📄 **Original Draft Schema:** [View Draft Schema (READMEMDSCHEMA.TXT)](READMEMDSCHEMA.TXT)
+
 # RTS AI - DRL Course Based Approach
 
 ## 📌 Problem Definition
