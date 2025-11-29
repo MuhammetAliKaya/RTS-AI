@@ -145,9 +145,9 @@ git clone https://github.com/MuhammetAliKaya/RTS-AI.git
 
 <p align="center">
   <img src="Hieararchy.png" width="500" /><br>
-*(Figure 3: Hieararchy Window)*
+(Figure 3: Hieararchy Window)
   <br><br> <img src="Inspector.PNG" width="500" /><br>
-  *(Figure 4: Inspector Window)*
+  (Figure 4: Inspector Window)
 </p>
 
 ### 4. Modes and Features
