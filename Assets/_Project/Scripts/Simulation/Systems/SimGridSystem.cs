@@ -207,5 +207,12 @@ namespace RTS.Simulation.Systems
             }
             Debug.Log("SimGridSystem: Maze Map Generated.");
         }
+
+        public static float GetDistanceSq(int2 a, int2 b)
+        {
+            float dx = a.x - b.x;
+            float dy = a.y - b.y;
+            return (dx * dx) + (dy * dy);
+        }
     }
 }

@@ -1,154 +1,162 @@
 using RTS.Simulation.Data;
 using UnityEngine;
+using System.Linq;
 
 namespace RTS.Simulation.Systems
 {
     public static class SimUnitSystem
     {
-        // --- 1. İNŞAAT EMRİ ---
-        public static void OrderBuild(SimUnitData worker, SimBuildingData building, SimWorldState world)
-        {
-            // İnşa edilecek yerin yanındaki boş kareyi bul
-            int2? standPos = SimGridSystem.FindWalkableNeighbor(world, building.GridPosition);
-
-            if (standPos == null) return; // Gidecek yer yok
-
-            // Yol Çiz
-            worker.Path = SimGridSystem.FindPath(world, worker.GridPosition, standPos.Value);
-            worker.TargetID = building.ID;
-            worker.ActionTimer = 0f;
-
-            // Önce yürümesi lazım
-            worker.State = SimTaskType.Moving;
-        }
-
-        // --- 2. TOPLAMA EMRİ ---
-        public static bool TryAssignGatherTask(SimUnitData unit, SimResourceData targetRes, SimWorldState world)
-        {
-            int2? neighborSpot = SimGridSystem.FindWalkableNeighbor(world, targetRes.GridPosition);
-            if (neighborSpot == null) return false;
-
-            unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, neighborSpot.Value);
-
-            if (unit.Path != null)
-            {
-                unit.State = SimTaskType.Moving;
-                unit.TargetID = targetRes.ID;
-                unit.ActionTimer = 0f;
-                return true;
-            }
-            return false;
-        }
-
-        // --- 3. YÜRÜME EMRİ (DEBUG LOGLU) ---
-        public static void OrderMove(SimUnitData unit, int2 targetPos, SimWorldState world)
-        {
-            bool isWalkable = SimGridSystem.IsWalkable(world, targetPos);
-
-            if (!isWalkable)
-            {
-                var node = world.Map.Grid[targetPos.x, targetPos.y];
-                Debug.LogWarning($"🚫 HEDEF BLOKE: {targetPos} | IsWalkable: {node.IsWalkable} | OccupantID: {node.OccupantID}");
-
-                int2? neighbor = SimGridSystem.FindWalkableNeighbor(world, targetPos);
-                if (neighbor.HasValue)
-                {
-                    Debug.Log($"↪️ Rota Komşuya Çevrildi: {neighbor.Value}");
-                    targetPos = neighbor.Value;
-                }
-                else
-                {
-                    Debug.LogError("❌ Gidecek hiçbir yer yok!");
-                    return;
-                }
-            }
-            else
-            {
-                Debug.Log($"✅ Hedef Uygun: {targetPos}. Direkt gidiliyor.");
-            }
-
-            unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
-
-            if (unit.Path != null && unit.Path.Count > 0)
-            {
-                unit.State = SimTaskType.Moving;
-                unit.TargetID = -1;
-                unit.ActionTimer = 0f;
-            }
-            else
-            {
-                Debug.LogError($"❌ Yol Bulunamadı! {unit.GridPosition} -> {targetPos}");
-            }
-        }
-
-        // --- UPDATE DÖNGÜSÜ ---
         public static void UpdateUnit(SimUnitData unit, SimWorldState world, float dt)
         {
             if (unit.State == SimTaskType.Dead) return;
 
-            if (unit.State == SimTaskType.Moving)
-            {
-                UpdateMovement(unit, world, dt);
-                return;
-            }
-
             switch (unit.State)
             {
+                case SimTaskType.Moving: UpdateMovement(unit, world, dt); break;
                 case SimTaskType.Gathering: UpdateGathering(unit, world, dt); break;
-                case SimTaskType.Building: UpdateConstruction(unit, world, dt); break; // BURASI GÜNCELLENDİ
+                case SimTaskType.Building: UpdateConstruction(unit, world, dt); break;
                 case SimTaskType.Attacking: UpdateCombat(unit, world, dt); break;
+                case SimTaskType.Idle: break;
             }
         }
 
-        // --- HAREKET ---
+        // --- HAREKET (CRITICAL FIX BURADA) ---
         private static void UpdateMovement(SimUnitData unit, SimWorldState world, float dt)
         {
             if (unit.Path == null || unit.Path.Count == 0)
             {
-                // Hedefe vardık
-                if (world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData building))
+                // YOL BİTTİ. ŞİMDİ NE YAPACAĞIM?
+
+                if (unit.TargetID != -1)
                 {
-                    unit.State = SimTaskType.Building; // İnşaata başla
-                }
-                else if (world.Resources.ContainsKey(unit.TargetID))
-                {
-                    unit.State = SimTaskType.Gathering;
-                }
-                else if (world.Units.ContainsKey(unit.TargetID))
-                {
-                    unit.State = SimTaskType.Attacking;
+                    // 1. KAYNAK MI? -> TOPLA (Gathering)
+                    if (world.Resources.ContainsKey(unit.TargetID))
+                    {
+                        unit.State = SimTaskType.Gathering;
+                    }
+                    // 2. BİRİM MI? -> SALDIR (Attacking) - Sadece düşmansa
+                    else if (world.Units.TryGetValue(unit.TargetID, out SimUnitData targetUnit))
+                    {
+                        if (targetUnit.PlayerID != unit.PlayerID)
+                            unit.State = SimTaskType.Attacking;
+                        else
+                            unit.State = SimTaskType.Idle; // Dost birimse dur
+                    }
+                    // 3. BİNA MI? -> İNŞA ET veya SALDIR
+                    else if (world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData targetBuilding))
+                    {
+                        // Benim binam ve bitmemiş -> İNŞA ET
+                        if (targetBuilding.PlayerID == unit.PlayerID && !targetBuilding.IsConstructed)
+                        {
+                            unit.State = SimTaskType.Building;
+                        }
+                        // Düşman binası -> SALDIR
+                        else if (targetBuilding.PlayerID != unit.PlayerID)
+                        {
+                            unit.State = SimTaskType.Attacking;
+                        }
+                        else
+                        {
+                            unit.State = SimTaskType.Idle; // Benim bitmiş binamsa dur
+                        }
+                    }
+                    else
+                    {
+                        unit.State = SimTaskType.Idle; // Hedef kaybolmuş
+                    }
                 }
                 else
                 {
-                    unit.State = SimTaskType.Idle;
+                    unit.State = SimTaskType.Idle; // Hedefsiz yürüme bitti
                 }
-
-                unit.ActionTimer = 0f;
                 return;
             }
 
+            // --- YÜRÜME FİZİĞİ ---
             unit.MoveProgress += unit.MoveSpeed * dt;
 
             if (unit.MoveProgress >= 1.0f)
             {
                 unit.MoveProgress = 0f;
                 int2 nextPos = unit.Path[0];
-                unit.Path.RemoveAt(0);
 
-                if (SimGridSystem.IsWalkable(world, nextPos))
+                if (SimGridSystem.IsWalkable(world, nextPos) || nextPos == unit.GridPosition)
                 {
-                    var oldNode = world.Map.Grid[unit.GridPosition.x, unit.GridPosition.y];
-                    var newNode = world.Map.Grid[nextPos.x, nextPos.y];
-
-                    oldNode.OccupantID = -1;
-                    newNode.OccupantID = unit.ID;
+                    world.Map.Grid[unit.GridPosition.x, unit.GridPosition.y].OccupantID = -1;
                     unit.GridPosition = nextPos;
+                    world.Map.Grid[nextPos.x, nextPos.y].OccupantID = unit.ID;
+                    unit.Path.RemoveAt(0);
                 }
                 else
                 {
-                    unit.State = SimTaskType.Idle;
-                    unit.Path.Clear();
+                    unit.Path.Clear(); // Yol tıkandı
                 }
+            }
+        }
+
+        // --- SAVAŞ ---
+        private static void UpdateCombat(SimUnitData unit, SimWorldState world, float dt)
+        {
+            // Hedef kontrolü
+            bool isUnit = world.Units.TryGetValue(unit.TargetID, out SimUnitData enemyUnit);
+            bool isBuilding = world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData enemyBuilding);
+
+            if ((!isUnit && !isBuilding) ||
+                (isUnit && enemyUnit.State == SimTaskType.Dead) ||
+                (isBuilding && !enemyBuilding.IsConstructed && enemyBuilding.PlayerID == unit.PlayerID)) // Kendi inşaatımıza saldırmayalım
+            {
+                unit.State = SimTaskType.Idle;
+                unit.TargetID = -1;
+                return;
+            }
+
+            int2 targetPos = isUnit ? enemyUnit.GridPosition : enemyBuilding.GridPosition;
+            float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, targetPos); // Karesel mesafe (daha hızlı)
+            float rangeSq = unit.AttackRange * unit.AttackRange;
+
+            if (distSq <= rangeSq)
+            {
+                // VUR
+                unit.AttackTimer += dt;
+                if (unit.AttackTimer >= unit.AttackSpeed)
+                {
+                    unit.AttackTimer = 0f;
+                    if (isUnit)
+                    {
+                        enemyUnit.Health -= unit.Damage;
+                        if (enemyUnit.Health <= 0) KillUnit(enemyUnit, world);
+                    }
+                    else if (isBuilding)
+                    {
+                        enemyBuilding.Health -= unit.Damage;
+                        if (enemyBuilding.Health <= 0) DestroyBuilding(enemyBuilding, world);
+                    }
+                }
+            }
+            else
+            {
+                // KOVALA
+                if (unit.Path == null || unit.Path.Count == 0)
+                {
+                    // Bina ise yanına, Birim ise üstüne gitmeye çalış
+                    if (isBuilding)
+                    {
+                        int2? standPos = SimGridSystem.FindWalkableNeighbor(world, targetPos);
+                        if (standPos.HasValue) unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, standPos.Value);
+                    }
+                    else
+                    {
+                        unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
+                    }
+                }
+                // Hareketi çağır ama state'i bozma (Moving yapma, Attacking kalsın)
+                // UpdateMovement içinde "State == Attacking" kontrolü olmadığı için 
+                // recursive olmaması adına manuel MoveProgress artırımı yapmak yerine
+                // Basitçe: Moving'e geçip, varınca tekrar Attacking'e dönmesini sağlayan üstteki düzeltme yeterli.
+
+                // ANCAK: Şöyle bir trick yapalım, kovalamaca sırasında state Moving olsun.
+                // Vardığında UpdateMovement onu tekrar Attacking yapar.
+                unit.State = SimTaskType.Moving;
             }
         }
 
@@ -165,7 +173,6 @@ namespace RTS.Simulation.Systems
             if (unit.ActionTimer >= SimConfig.GATHER_INTERVAL)
             {
                 unit.ActionTimer = 0f;
-
                 int amount = Mathf.Min(SimConfig.GATHER_AMOUNT, res.AmountRemaining);
                 res.AmountRemaining -= amount;
 
@@ -174,14 +181,16 @@ namespace RTS.Simulation.Systems
                 if (res.AmountRemaining <= 0)
                 {
                     world.Resources.Remove(res.ID);
-                    world.Map.Grid[res.GridPosition.x, res.GridPosition.y].IsWalkable = true;
-                    world.Map.Grid[res.GridPosition.x, res.GridPosition.y].Type = SimTileType.Grass;
+                    var node = world.Map.Grid[res.GridPosition.x, res.GridPosition.y];
+                    node.IsWalkable = true;
+                    node.Type = SimTileType.Grass;
+                    node.OccupantID = -1;
                     unit.State = SimTaskType.Idle;
                 }
             }
         }
 
-        // --- İNŞAAT (BURASI DEĞİŞTİ) ---
+        // --- İNŞAAT ---
         private static void UpdateConstruction(SimUnitData unit, SimWorldState world, float dt)
         {
             if (!world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData building))
@@ -190,9 +199,10 @@ namespace RTS.Simulation.Systems
                 return;
             }
 
+            // Bina zaten bitmişse dur
             if (building.IsConstructed)
             {
-                unit.State = SimTaskType.Idle; // Zaten bitmiş
+                unit.State = SimTaskType.Idle;
                 return;
             }
 
@@ -200,60 +210,68 @@ namespace RTS.Simulation.Systems
             if (unit.ActionTimer >= SimConfig.BUILD_INTERVAL)
             {
                 unit.ActionTimer = 0f;
-
-                // ESKİSİ: Elle toplama yapıyorduk
-                // building.ConstructionProgress += ...
-
-                // YENİSİ: SimBuildingSystem'e devrediyoruz.
-                // Bu fonksiyon, ilerlemeyi artırır ve %100 olunca 'OnBuildingCompleted' çalıştırır.
                 bool finished = SimBuildingSystem.AdvanceConstruction(building, world, SimConfig.BUILD_AMOUNT_PER_TICK);
-
-                if (finished)
-                {
-                    unit.State = SimTaskType.Idle; // Bina bitti, işçi boşa çıksın
-                }
+                if (finished) unit.State = SimTaskType.Idle;
             }
         }
 
-        // --- SAVAŞ ---
-        private static void UpdateCombat(SimUnitData unit, SimWorldState world, float dt)
+        // --- ORDER FONKSİYONLARI ---
+        public static void OrderMove(SimUnitData unit, int2 targetPos, SimWorldState world)
         {
-            if (!world.Units.TryGetValue(unit.TargetID, out SimUnitData enemy))
+            unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
+            if (unit.Path != null && unit.Path.Count > 0)
             {
-                unit.State = SimTaskType.Idle;
-                return;
+                unit.State = SimTaskType.Moving;
+                unit.TargetID = -1;
             }
+        }
 
-            if (enemy.State == SimTaskType.Dead)
+        public static void OrderBuild(SimUnitData worker, SimBuildingData building, SimWorldState world)
+        {
+            int2? standPos = SimGridSystem.FindWalkableNeighbor(world, building.GridPosition);
+            if (standPos.HasValue)
             {
-                unit.State = SimTaskType.Idle;
-                return;
+                worker.Path = SimGridSystem.FindPath(world, worker.GridPosition, standPos.Value);
+                worker.TargetID = building.ID;
+
+                if (worker.Path != null && worker.Path.Count > 0)
+                    worker.State = SimTaskType.Moving;
+                else
+                    worker.State = SimTaskType.Building;
             }
+        }
 
-            float dist = SimGridSystem.GetDistance(unit.GridPosition, enemy.GridPosition);
-            if (dist > unit.AttackRange)
+        public static bool TryAssignGatherTask(SimUnitData unit, SimResourceData targetRes, SimWorldState world)
+        {
+            int2? standPos = SimGridSystem.FindWalkableNeighbor(world, targetRes.GridPosition);
+            if (standPos.HasValue)
             {
-                unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, enemy.GridPosition);
-                if (unit.Path.Count > 0)
-                {
+                unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, standPos.Value);
+                unit.TargetID = targetRes.ID;
+
+                if (unit.Path != null && unit.Path.Count > 0)
                     unit.State = SimTaskType.Moving;
-                }
-                return;
-            }
+                else
+                    unit.State = SimTaskType.Gathering; // Zaten yanındaysa başla
 
-            unit.AttackTimer += dt;
-            if (unit.AttackTimer >= unit.AttackSpeed)
-            {
-                unit.AttackTimer = 0f;
-                enemy.Health -= unit.Damage;
-
-                if (enemy.Health <= 0)
-                {
-                    enemy.State = SimTaskType.Dead;
-                    enemy.Health = 0;
-                    unit.State = SimTaskType.Idle;
-                }
+                return true;
             }
+            return false;
+        }
+
+        // --- HELPER ---
+        private static void KillUnit(SimUnitData unit, SimWorldState world)
+        {
+            unit.State = SimTaskType.Dead;
+            world.Map.Grid[unit.GridPosition.x, unit.GridPosition.y].OccupantID = -1;
+            world.Units.Remove(unit.ID);
+        }
+
+        private static void DestroyBuilding(SimBuildingData b, SimWorldState world)
+        {
+            world.Map.Grid[b.GridPosition.x, b.GridPosition.y].OccupantID = -1;
+            world.Map.Grid[b.GridPosition.x, b.GridPosition.y].IsWalkable = true;
+            world.Buildings.Remove(b.ID);
         }
     }
 }

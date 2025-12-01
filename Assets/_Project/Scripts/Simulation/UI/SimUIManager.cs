@@ -1,39 +1,46 @@
 using UnityEngine;
-using TMPro;
-using UnityEngine.UI;
+using TMPro; // TextMeshPro kullanıyorsan
+using UnityEngine.UI; // Normal Text kullanıyorsan (Aşağıda ikisini de destekleyen yapı var)
 using RTS.Simulation.Orchestrator;
 using RTS.Simulation.Systems;
+using RTS.Simulation.Core; // Context
 
 public class SimUIManager : MonoBehaviour
 {
-    [Header("Bağlantı")]
-    public ExperimentManager Manager;
+    [Header("Bağlantılar")]
+    public ExperimentManager Manager; // RL Modu için (Opsiyonel)
 
-    [Header("Sol Panel (Kaynaklar)")]
-    public TextMeshProUGUI ResourcesText; // Wood, Stone, Meat tek satırda
+    [Header("Kaynak Göstergesi")]
+    // Eğer TextMeshPro kullanıyorsan bunu kullan:
+    public TextMeshProUGUI ResourcesTextTMP;
 
-    [Header("Sağ Panel (Eğitim İstatistikleri)")]
+
+    [Header("İstatistikler (Sadece RL)")]
     public TextMeshProUGUI EpisodeText;
     public TextMeshProUGUI WinRateText;
     public TextMeshProUGUI RewardText;
-    public TextMeshProUGUI EpsilonText;
 
-    [Header("Alt Panel (Kontroller)")]
+    [Header("Kontroller")]
     public Toggle FastModeToggle;
     public Slider SpeedSlider;
     public TextMeshProUGUI SpeedValueText;
 
     void Start()
     {
-        // UI elemanlarını başlangıç ayarlarına çek
-        if (Manager != null)
+        // Manager yoksa (Skirmish Modu), RL ile ilgili butonları kapat
+        if (Manager == null)
         {
+            if (FastModeToggle) FastModeToggle.gameObject.SetActive(false);
+            // SpeedSlider kalabilir, oyunu hızlandırmak isteyebilirsin
+        }
+        else
+        {
+            // RL Modu ayarları
             if (FastModeToggle)
             {
                 FastModeToggle.isOn = Manager.RunFast;
                 FastModeToggle.onValueChanged.AddListener(OnFastModeChanged);
             }
-
             if (SpeedSlider)
             {
                 SpeedSlider.value = Manager.VisualSimulationSpeed;
@@ -44,50 +51,49 @@ public class SimUIManager : MonoBehaviour
 
     void Update()
     {
-        if (Manager == null || RTS.Simulation.Core.SimGameContext.ActiveWorld == null) return;
+        // 1. DÜNYA VAR MI KONTROL ET
+        if (SimGameContext.ActiveWorld == null) return;
 
+        // 2. KAYNAKLARI GÜNCELLE (Her modda çalışır)
         UpdateResources();
-        UpdateStats();
+
+        // 3. İSTATİSTİKLERİ GÜNCELLE (Sadece Manager varsa)
+        if (Manager != null) UpdateStats();
     }
 
     void UpdateResources()
     {
-        var player = SimResourceSystem.GetPlayer(RTS.Simulation.Core.SimGameContext.ActiveWorld, 1);
-        if (player != null && ResourcesText != null)
+        // Player 1'in verisini çek
+        var player = SimResourceSystem.GetPlayer(SimGameContext.ActiveWorld, 1);
+
+        string displayText = "";
+        if (player != null)
         {
-            ResourcesText.text = $"WOOD {player.Wood}\nSTONE {player.Stone}\nMEAT {player.Meat}\nPop: {player.CurrentPopulation}/{player.MaxPopulation}";
+            displayText = $"WOOD: {player.Wood}\n" +
+                          $"STONE: {player.Stone}\n" +
+                          $"MEAT: {player.Meat}\n" +
+                          $"POP: {player.CurrentPopulation}/{player.MaxPopulation}";
         }
+        else
+        {
+            displayText = "WOOD: 0\nSTONE: 0\nMEAT: 0";
+        }
+
+        // Hangi text kutusu doluysa ona yaz
+        if (ResourcesTextTMP != null) ResourcesTextTMP.text = displayText;
+
     }
 
     void UpdateStats()
     {
         if (EpisodeText) EpisodeText.text = $"Episode: {Manager.CurrentEpisode}";
-
-        // Kazanma Oranı (Renk kodu: Yeşil iyi, Kırmızı kötü)
-        if (WinRateText)
-        {
-            float rate = Manager.WinRate * 100f;
-            string color = rate > 50 ? "green" : "red";
-            WinRateText.text = $"Win Rate: <color={color}>{rate:F1}%</color>";
-        }
-
-        if (RewardText) RewardText.text = $"Last Reward: {Manager.LastEpisodeReward:F1}";
-
-        // Ajanın içinden Epsilon verisini çekiyoruz (String parse ederek veya Agent Interface'den)
-        if (EpsilonText && Manager.Agent != null)
-        {
-            EpsilonText.text = Manager.Agent.GetStats();
-        }
+        if (RewardText) RewardText.text = $"Reward: {Manager.LastEpisodeReward:F1}";
+        if (WinRateText) WinRateText.text = $"Win Rate: {Manager.WinRate * 100f:F1}%";
     }
-
-    // --- EVENTS ---
 
     public void OnFastModeChanged(bool isFast)
     {
         if (Manager != null) Manager.RunFast = isFast;
-
-        // Fast moddaysa Slider'ı kilitle ki kafa karışmasın
-        if (SpeedSlider) SpeedSlider.interactable = !isFast;
     }
 
     public void OnSpeedSliderChanged(float val)

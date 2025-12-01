@@ -99,6 +99,25 @@ namespace RTS.Simulation.Systems
             }
         }
 
+
+        public static void StartTraining(SimBuildingData building, SimWorldState world, SimUnitType unitType)
+        {
+            if (building.IsTraining) return; // Zaten meşgul
+
+            // Maliyet Hesabı
+            int meatCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_MEAT : SimConfig.SOLDIER_COST_MEAT;
+            int woodCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_WOOD : SimConfig.SOLDIER_COST_WOOD;
+            int stoneCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_STONE : SimConfig.SOLDIER_COST_STONE;
+
+            // Kaynak Harca
+            if (SimResourceSystem.SpendResources(world, building.PlayerID, woodCost, stoneCost, meatCost))
+            {
+                building.IsTraining = true;
+                building.UnitInProduction = unitType;
+                building.TrainingTimer = 0f;
+                // Debug.Log($"⚙️ ÜRETİM BAŞLADI: {unitType} @ {building.GridPosition}");
+            }
+        }
         // --- ALT SİSTEMLER ---
 
         private static void UpdateProduction(SimBuildingData building, SimWorldState world, float dt)
@@ -139,19 +158,29 @@ namespace RTS.Simulation.Systems
             building.AttackTimer += dt;
             if (building.AttackTimer < building.AttackSpeed) return;
 
+            // En yakın düşmanı bul
             SimUnitData target = FindNearestEnemy(world, building.GridPosition, building.AttackRange, building.PlayerID);
 
             if (target != null)
             {
+                // Hasar Ver
                 target.Health -= building.Damage;
                 building.AttackTimer = 0f;
-                building.TargetUnitID = target.ID; // Görsel hedef
 
-                if (target.Health <= 0) target.State = SimTaskType.Dead;
+                // Görselleştirici için hedefi kaydet (Lazer/Ok çizmek istersen)
+                building.TargetUnitID = target.ID;
+
+                // Öldü mü?
+                if (target.Health <= 0)
+                {
+                    target.State = SimTaskType.Dead;
+                    world.Units.Remove(target.ID);
+                    world.Map.Grid[target.GridPosition.x, target.GridPosition.y].OccupantID = -1;
+                }
             }
             else
             {
-                building.TargetUnitID = -1;
+                building.TargetUnitID = -1; // Kimseye sıkmıyor
             }
         }
 
@@ -207,5 +236,7 @@ namespace RTS.Simulation.Systems
             }
             return bestTarget;
         }
+
     }
+
 }

@@ -1,0 +1,53 @@
+core gameplay loop short
+
+current state in gameplay builds units etc.(so close to complate)
+
+
+
+implemented ai in current state
+
+
+
+->A * path finding
+
+-->how to work short
+
+-->why we use short
+
+-->how to implement a* in our case   (bizim seneryomuzda oyuna nasıl entegre ettik demeye çalıştım pek de diyemedim)
+
+-->working evidence image etc
+
+
+
+->RL
+
+-->HOW TO WORK SHORT
+
+-->How we adapt rl in our case
+
+-->how it work on our case
+
+-->why its important
+
+-->when it is meaningful(when general enemy ai can use as a starting starategy eg.)
+
+
+
+
+
+Builded strong structure and why this structure is strong for our case
+
+-->data orianted approach
+
+-->why it is important
+
+
+
+
+
+what is next?
+
+--> drl
+
+-->if I find enough time implement federeted learning

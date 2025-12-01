@@ -1,101 +1,85 @@
 using UnityEngine;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
+using RTS.Simulation.Core;
 
 public class SimBuildingPlacer : MonoBehaviour
 {
-    public SimRunner Runner;
-
-    // Şu an elimizde tuttuğumuz (inşa etmek istediğimiz) bina tipi
     private SimBuildingType _selectedBuildingType = SimBuildingType.None;
     private bool _isPlacingMode = false;
-
-    // Görsel Hayalet (Ghost)
     private GameObject _ghostObject;
-
-    [Header("Prefab Referansları (Hayalet İçin)")]
-    public GameObject GhostBase;
-    public GameObject GhostFarm;
-    public GameObject GhostBarracks;
-    // ... Diğerlerini de ekleyebilirsin
 
     void Update()
     {
         if (!_isPlacingMode) return;
 
-        // 1. Fare altındaki kareyi bul
-        int2? gridPos = SimInputManager.Instance.GetGridPositionUnderMouse();
-
-        if (gridPos.HasValue)
+        if (Input.GetMouseButtonDown(0))
         {
-            // Hayaleti oraya taşı (Görselleştirme)
-            if (_ghostObject != null)
-            {
-                _ghostObject.SetActive(true);
-                // InputManager'daki tile boyutlarını kullanarak pozisyon hesapla
-                // (Burada basitlik için direkt Visualizer mantığını kopyalayabilirsin veya InputManager'dan çekebilirsin)
-                // Şimdilik hayaleti gizliyoruz, direkt tıklama mantığına geçelim.
-            }
-
-            // 2. Tıklama Kontrolü (Sol Tık)
-            if (Input.GetMouseButtonDown(0))
-            {
-                TryBuild(gridPos.Value);
-            }
+            int2? gridPos = SimInputManager.Instance.GetGridPositionUnderMouse();
+            if (gridPos.HasValue) TryBuild(gridPos.Value);
         }
 
-        // Sağ Tık -> İptal
-        if (Input.GetMouseButtonDown(1))
-        {
-            CancelBuildMode();
-        }
+        if (Input.GetMouseButtonDown(1)) CancelBuildMode();
     }
 
     public void SelectBuildingToPlace(SimBuildingType type)
     {
         _selectedBuildingType = type;
         _isPlacingMode = true;
-        Debug.Log($"İnşaat Modu: {type} seçildi. Yeri seçin.");
+        Debug.Log($"🏗️ İNŞAAT MODU: {type}");
     }
 
     private void TryBuild(int2 pos)
     {
-        var world = Runner.World;
+        var world = SimGameContext.ActiveWorld;
+        if (world == null) return;
 
-        // 1. İŞÇİ KONTROLÜ: Bir işçi seçili mi?
+        // 1. İŞÇİ KONTROLÜ
         int workerID = SimInputManager.Instance.SelectedUnitID;
         if (workerID == -1 || !world.Units.TryGetValue(workerID, out SimUnitData worker))
         {
             Debug.LogWarning("⚠️ Önce bir işçi seçmelisin!");
+            CancelBuildMode();
             return;
         }
 
-        if (worker.UnitType != SimUnitType.Worker)
+        if (worker.UnitType != SimUnitType.Worker || worker.PlayerID != 1)
         {
-            Debug.LogWarning("⚠️ Askerler bina yapamaz! Bir işçi seç.");
+            Debug.LogWarning("⚠️ Bu birim bina yapamaz veya senin değil.");
+            CancelBuildMode();
             return;
         }
 
-        // 2. Yer Müsait mi?
-        if (!SimGridSystem.IsWalkable(world, pos))
+        // 2. YER KONTROLÜ
+        if (world.Map.Grid[pos.x, pos.y].OccupantID != -1 || world.Map.Grid[pos.x, pos.y].Type != SimTileType.Grass)
         {
-            Debug.LogWarning("❌ Burası inşaat için uygun değil!");
+            Debug.LogWarning("❌ Yer uygun değil.");
             return;
         }
 
-        // 3. Maliyet Kontrolü (Örnek)
-        int woodCost = 0, stoneCost = 0;
-        if (_selectedBuildingType == SimBuildingType.Farm) { woodCost = 100; }
-        else if (_selectedBuildingType == SimBuildingType.Barracks) { woodCost = 200; stoneCost = 100; }
+        // 3. MALİYET KONTROLÜ (SimConfig'den)
+        int wood = 0, stone = 0, meat = 0;
 
-        if (!SimResourceSystem.CanAfford(world, 1, woodCost, stoneCost, 0))
+        switch (_selectedBuildingType)
         {
-            Debug.LogWarning("❌ Kaynak yetersiz!");
+            case SimBuildingType.House: wood = SimConfig.HOUSE_COST_WOOD; break;
+            case SimBuildingType.Farm: wood = SimConfig.FARM_COST_WOOD; break;
+            case SimBuildingType.WoodCutter: meat = SimConfig.WOODCUTTER_COST_MEAT; break;
+            case SimBuildingType.StonePit: wood = SimConfig.STONEPIT_COST_WOOD; break;
+            case SimBuildingType.Barracks: wood = SimConfig.BARRACKS_COST_WOOD; stone = SimConfig.BARRACKS_COST_STONE; break;
+            case SimBuildingType.Tower: wood = SimConfig.TOWER_COST_WOOD; stone = SimConfig.TOWER_COST_STONE; break;
+            case SimBuildingType.Wall: stone = SimConfig.WALL_COST_STONE; break;
+        }
+
+        if (!SimResourceSystem.CanAfford(world, 1, wood, stone, meat))
+        {
+            Debug.LogWarning($"❌ Kaynak yetersiz! (Gereken: W:{wood} S:{stone} M:{meat})");
+            CancelBuildMode();
             return;
         }
 
-        // 4. HARCA VE TEMELİ AT
-        SimResourceSystem.SpendResources(world, 1, woodCost, stoneCost, 0);
+        // 4. HARCA VE YAP
+        SimResourceSystem.SpendResources(world, 1, wood, stone, meat);
 
         var b = new SimBuildingData
         {
@@ -103,20 +87,16 @@ public class SimBuildingPlacer : MonoBehaviour
             PlayerID = 1,
             Type = _selectedBuildingType,
             GridPosition = pos,
-            IsConstructed = false, // <--- KRİTİK: Henüz bitmedi!
+            IsConstructed = false,
             ConstructionProgress = 0
         };
 
         SimBuildingSystem.InitializeBuildingStats(b);
-
         world.Buildings.Add(b.ID, b);
+        world.Map.Grid[pos.x, pos.y].OccupantID = b.ID;
         world.Map.Grid[pos.x, pos.y].IsWalkable = false;
 
-        Debug.Log($"🔨 {_selectedBuildingType} temeli atıldı! İşçi yola çıkıyor...");
-
-        // 5. İŞÇİYE EMİR VER
         SimUnitSystem.OrderBuild(worker, b, world);
-
         CancelBuildMode();
     }
 

@@ -1,25 +1,24 @@
 using UnityEngine;
-using UnityEngine.UI; // Button ve Panel işlemleri için
+using UnityEngine.UI;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
+using RTS.Simulation.Core;
 
 public class SimGameplayUI : MonoBehaviour
 {
     [Header("Sistemler")]
     public SimBuildingPlacer BuildingPlacer;
-    public SimRunner Runner;
 
-    [Header("Menü Panelleri (Collapsible)")]
-    public GameObject ConstructionPanel; // Bina Butonlarının olduğu panel
-    public GameObject ProductionPanel;   // Asker Üretim butonlarının olduğu panel
+    [Header("Menü Panelleri")]
+    public GameObject ConstructionPanel;
+    public GameObject ProductionPanel;
 
     // --- MENÜ KONTROLÜ ---
-
     public void ToggleConstructionMenu()
     {
         bool isActive = ConstructionPanel.activeSelf;
-        CloseAllMenus(); // Önce hepsini kapat
-        ConstructionPanel.SetActive(!isActive); // Tıklananı tersine çevir
+        CloseAllMenus();
+        ConstructionPanel.SetActive(!isActive);
     }
 
     public void ToggleProductionMenu()
@@ -35,23 +34,20 @@ public class SimGameplayUI : MonoBehaviour
         if (ProductionPanel) ProductionPanel.SetActive(false);
     }
 
-    // --- İNŞAAT BUTONLARI (On Click Eventleri) ---
+    // --- İNŞAAT BUTONLARI (HEPSİ EKLENDİ) ---
 
-    public void OnClickBuildFarm()
-    {
-        BuildingPlacer.SelectBuildingToPlace(SimBuildingType.Farm);
-        CloseAllMenus(); // Seçim yapınca menüyü kapat
-    }
+    public void OnClickBuildHouse() { SelectBuild(SimBuildingType.House); }
+    public void OnClickBuildFarm() { SelectBuild(SimBuildingType.Farm); }
+    public void OnClickBuildWoodCutter() { SelectBuild(SimBuildingType.WoodCutter); }
+    public void OnClickBuildStonePit() { SelectBuild(SimBuildingType.StonePit); }
+    public void OnClickBuildBarracks() { SelectBuild(SimBuildingType.Barracks); }
+    public void OnClickBuildTower() { SelectBuild(SimBuildingType.Tower); }
+    public void OnClickBuildWall() { SelectBuild(SimBuildingType.Wall); }
 
-    public void OnClickBuildBarracks()
+    // Yardımcı (Kod tekrarını önlemek için)
+    private void SelectBuild(SimBuildingType type)
     {
-        BuildingPlacer.SelectBuildingToPlace(SimBuildingType.Barracks);
-        CloseAllMenus();
-    }
-
-    public void OnClickBuildTower()
-    {
-        BuildingPlacer.SelectBuildingToPlace(SimBuildingType.Tower);
+        if (BuildingPlacer != null) BuildingPlacer.SelectBuildingToPlace(type);
         CloseAllMenus();
     }
 
@@ -59,26 +55,58 @@ public class SimGameplayUI : MonoBehaviour
 
     public void OnClickTrainWorker()
     {
-        // Base binasını bulup üretim emri verelim
-        // (Gerçek oyunda seçili binaya emir verilir, şimdilik bulduğumuz ilk Base'e verelim)
+        var world = SimGameContext.ActiveWorld;
+        if (world == null) return;
 
-        foreach (var b in Runner.World.Buildings.Values)
+        // 1. SEÇİLİ BİNAYI AL
+        int buildingID = SimInputManager.Instance.SelectedBuildingID;
+
+        if (buildingID == -1)
         {
-            if (b.Type == SimBuildingType.Base && b.PlayerID == 1 && b.IsConstructed)
+            Debug.LogWarning("⚠️ Önce bir Ana Üs (Base) seçmelisin!");
+            return;
+        }
+
+        if (world.Buildings.TryGetValue(buildingID, out SimBuildingData b))
+        {
+            // 2. KONTROLLER (Base mi? Benim mi? Boş mu?)
+            if (b.PlayerID == 1 && b.Type == SimBuildingType.Base && b.IsConstructed && !b.IsTraining)
             {
-                // Maliyet Kontrolü (50 Et)
-                if (SimResourceSystem.SpendResources(Runner.World, 1, 0, 0, 50))
-                {
-                    b.IsTraining = true;
-                    b.UnitInProduction = SimUnitType.Worker;
-                    b.TrainingTimer = 0f;
-                    Debug.Log("👷 İşçi üretimi başladı!");
-                }
-                else
-                {
-                    Debug.LogWarning("❌ Yetersiz Kaynak (50 Et lazım)");
-                }
-                return; // Bir tanesine emir verdik, çık
+                SimBuildingSystem.StartTraining(b, world, SimUnitType.Worker);
+                Debug.Log("👷 Seçili üsten işçi üretiliyor.");
+            }
+            else
+            {
+                Debug.LogWarning("❌ Seçili bina uygun değil (Dolu veya Base değil).");
+            }
+        }
+    }
+
+    public void OnClickTrainSoldier()
+    {
+        var world = SimGameContext.ActiveWorld;
+        if (world == null) return;
+
+        // 1. SEÇİLİ BİNAYI AL
+        int buildingID = SimInputManager.Instance.SelectedBuildingID;
+
+        if (buildingID == -1)
+        {
+            Debug.LogWarning("⚠️ Önce bir Kışla (Barracks) seçmelisin!");
+            return;
+        }
+
+        if (world.Buildings.TryGetValue(buildingID, out SimBuildingData b))
+        {
+            // 2. KONTROLLER (Barracks mı? Benim mi? Boş mu?)
+            if (b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed && !b.IsTraining)
+            {
+                SimBuildingSystem.StartTraining(b, world, SimUnitType.Soldier);
+                Debug.Log("⚔️ Seçili kışladan asker üretiliyor.");
+            }
+            else
+            {
+                Debug.LogWarning("❌ Seçili bina uygun değil (Dolu veya Kışla değil).");
             }
         }
     }

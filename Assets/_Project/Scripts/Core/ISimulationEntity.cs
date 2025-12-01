@@ -1,6 +1,6 @@
-using UnityEngine;
+// using UnityEngine;
 
-public interface ISimulationEntity
-{
-    void OnTick(float dt);
-}
+// public interface ISimulationEntity
+// {
+//     void OnTick(float dt);
+// }

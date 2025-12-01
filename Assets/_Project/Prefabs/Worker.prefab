@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 305786662296256371}
   - component: {fileID: 5236243373403662436}
-  - component: {fileID: 217761630763778552}
   - component: {fileID: 7361526018357333324}
   m_Layer: 8
   m_Name: Worker
@@ -90,29 +89,6 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 1
---- !u!114 &217761630763778552
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 69217688657311477}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8e833c062300fb64287a8db382b86bad, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  moveSpeed: 5
-  maxHealth: 100
-  playerID: 1
-  playerTints:
-  - {r: 1, g: 1, b: 1, a: 1}
-  - {r: 1, g: 0.52990127, b: 0, a: 1}
-  selectionVisual: {fileID: 9200245934539418932}
-  gatherRate: 2
-  gatherAmount: 10
-  buildRate: 1
-  buildAmount: 10
 --- !u!60 &7361526018357333324
 PolygonCollider2D:
   m_ObjectHideFlags: 0
@@ -194,7 +170,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &7149449278560528374
 Transform:
   m_ObjectHideFlags: 0
@@ -253,7 +229,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: -999
+  m_SortingOrder: -900
   m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
   m_Color: {r: 0.020247417, g: 0.8584906, b: 0.7993054, a: 1}
   m_FlipX: 0
