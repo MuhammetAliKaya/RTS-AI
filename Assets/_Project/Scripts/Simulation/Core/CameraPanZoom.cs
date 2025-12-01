@@ -1,82 +1,64 @@
 using UnityEngine;
-using RTS.Simulation.Orchestrator; // Harita boyutunu çekmek için
+using RTS.Simulation.Core; // SimGameContext için
 
 public class CameraPanZoom : MonoBehaviour
 {
-    [Header("Hareket Ayarları")]
-    public float PanSpeed = 20f;       // Klavye hareket hızı
-    public float PanBorderThickness = 10f; // Mouse kenara gelince hareket etsin mi? (Opsiyonel)
-    public bool UseMouseEdgePanning = false; // Mouse kenar hareketi açık mı?
+    [Header("Pan Settings")]
+    public float PanSpeed = 20f;
 
-    [Header("Zoom Ayarları")]
-    public float ZoomSpeed = 10f;
-    public float MinZoom = 5f;         // En yakın
-    public float MaxZoom = 30f;        // En uzak
+    // Sınırlandırma için (Harita dışına çıkmasın)
+    public Vector2 PanLimitMin = new Vector2(-10, -10);
 
-    [Header("Sınırlar (Map Bounds)")]
-    // Harita dışına çıkmayı engellemek için
-    public bool LimitToMap = true;
-    public Vector2 MinLimit;
-    public Vector2 MaxLimit;
+    [Header("Zoom Settings")]
+    public float ScrollSpeed = 20f;
+    public float MinZoom = 5f;
+    public float MaxZoom = 20f;
 
-    private Camera _cam;
+    private Camera cam;
 
     void Start()
     {
-        _cam = GetComponent<Camera>();
-        if (_cam == null) _cam = Camera.main;
-
-        // Harita boyutlarını ExperimentManager'dan otomatik çekmeye çalış
-        CalculateBounds();
+        cam = GetComponent<Camera>();
     }
 
-    void LateUpdate()
+    void Update()
     {
-        HandlePan();
+        // UI Koruması
+        if (UnityEngine.EventSystems.EventSystem.current != null &&
+            UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()) return;
+
+        HandleMovement();
         HandleZoom();
     }
 
-    void HandlePan()
+    void HandleMovement()
     {
         Vector3 pos = transform.position;
 
-        // --- KLAVYE HAREKETİ (WASD / Yön Tuşları) ---
-        if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))
+        // --- SADECE KLAVYE KONTROLÜ (MOUSE KALDIRILDI) ---
+        // 'Horizontal' (A/D, Sol/Sağ Ok) ve 'Vertical' (W/S, Yukarı/Aşağı Ok) akslarını kullanır.
+
+        float h = Input.GetAxis("Horizontal"); // A=-1, D=1
+        float v = Input.GetAxis("Vertical");   // S=-1, W=1
+
+        pos.x += h * PanSpeed * Time.deltaTime;
+        pos.y += v * PanSpeed * Time.deltaTime;
+
+        // --- DİNAMİK SINIRLAMA ---
+        float mapW = 50;
+        float mapH = 50;
+
+        // Harita boyutunu Context'ten al
+        if (SimGameContext.ActiveWorld != null)
         {
-            pos.y += PanSpeed * Time.deltaTime;
-        }
-        if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))
-        {
-            pos.y -= PanSpeed * Time.deltaTime;
-        }
-        if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
-        {
-            pos.x += PanSpeed * Time.deltaTime;
-        }
-        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
-        {
-            pos.x -= PanSpeed * Time.deltaTime;
+            mapW = SimGameContext.ActiveWorld.Map.Width;
+            mapH = SimGameContext.ActiveWorld.Map.Height;
         }
 
-        // --- MOUSE KENAR HAREKETİ (Opsiyonel) ---
-        if (UseMouseEdgePanning)
-        {
-            if (Input.mousePosition.y >= Screen.height - PanBorderThickness)
-                pos.y += PanSpeed * Time.deltaTime;
-            if (Input.mousePosition.y <= PanBorderThickness)
-                pos.y -= PanSpeed * Time.deltaTime;
-            if (Input.mousePosition.x >= Screen.width - PanBorderThickness)
-                pos.x += PanSpeed * Time.deltaTime;
-            if (Input.mousePosition.x <= PanBorderThickness)
-                pos.x -= PanSpeed * Time.deltaTime;
-        }
-
-        // --- SINIRLANDIRMA (CLAMP) ---
-        if (LimitToMap)
-        {
-            pos.x = Mathf.Clamp(pos.x, MinLimit.x, MaxLimit.x);
-            pos.y = Mathf.Clamp(pos.y, MinLimit.y, MaxLimit.y);
-        }
+        // Sınırları uygula (İzometrik için yaklaşık değerler)
+        // Harita boyutuna göre dinamik clamp
+        pos.x = Mathf.Clamp(pos.x, PanLimitMin.x, mapW * 2);
+        pos.y = Mathf.Clamp(pos.y, PanLimitMin.y, mapH * 2);
 
         transform.position = pos;
     }
@@ -84,41 +66,11 @@ public class CameraPanZoom : MonoBehaviour
     void HandleZoom()
     {
         float scroll = Input.GetAxis("Mouse ScrollWheel");
+        float zoom = cam.orthographicSize;
 
-        if (scroll != 0f)
-        {
-            float newSize = _cam.orthographicSize - scroll * ZoomSpeed;
-            _cam.orthographicSize = Mathf.Clamp(newSize, MinZoom, MaxZoom);
+        zoom -= scroll * ScrollSpeed * 100f * Time.deltaTime;
+        zoom = Mathf.Clamp(zoom, MinZoom, MaxZoom);
 
-            // Zoom yaptıkça sınırları güncellemek gerekebilir (Opsiyonel detay)
-        }
-    }
-
-    // Harita boyutuna göre sınırları otomatik hesapla
-    public void CalculateBounds()
-    {
-        if (ExperimentManager.Instance != null)
-        {
-            // Harita 50x50 ise, kamera (0,0) ile (50,50) arasında gezebilsin
-            // İzometrik olduğu için biraz pay bırakabiliriz.
-
-            float width = ExperimentManager.Instance.MapWidth;
-            float height = ExperimentManager.Instance.MapHeight;
-
-            // İzometrik düzlemde görsel genişlik biraz farklı olabilir ama
-            // basitçe grid koordinatlarına sadık kalalım.
-
-            // Görselleştirici ayarlarını (TileWidth) hesaba katmak daha doğru olurdu
-            // ama şimdilik manuel ayar yapabilmen için geniş bırakıyorum.
-
-            // Eğer Visualizer'a erişebilirsek:
-            // float tileW = 2.56f;
-            // float tileH = 1.28f;
-            // MaxLimit = new Vector2(width * tileW / 2, height * tileH); 
-
-            // Şimdilik Inspector'dan elle ayarlanabilir bırakalım veya geniş bir alan verelim:
-            MinLimit = new Vector2(-10, -10);
-            MaxLimit = new Vector2(width * 2, height * 2); // Kabaca genişlik
-        }
+        cam.orthographicSize = zoom;
     }
 }

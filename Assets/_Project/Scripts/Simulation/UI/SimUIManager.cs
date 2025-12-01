@@ -44,7 +44,7 @@ public class SimUIManager : MonoBehaviour
 
     void Update()
     {
-        if (Manager == null || Manager.World == null) return;
+        if (Manager == null || RTS.Simulation.Core.SimGameContext.ActiveWorld == null) return;
 
         UpdateResources();
         UpdateStats();
@@ -52,7 +52,7 @@ public class SimUIManager : MonoBehaviour
 
     void UpdateResources()
     {
-        var player = SimResourceSystem.GetPlayer(Manager.World, 1);
+        var player = SimResourceSystem.GetPlayer(RTS.Simulation.Core.SimGameContext.ActiveWorld, 1);
         if (player != null && ResourcesText != null)
         {
             ResourcesText.text = $"WOOD {player.Wood}\nSTONE {player.Stone}\nMEAT {player.Meat}\nPop: {player.CurrentPopulation}/{player.MaxPopulation}";

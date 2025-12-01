@@ -156,5 +156,56 @@ namespace RTS.Simulation.Systems
             yield return new int2(pos.x - 1, pos.y + 1);
             yield return new int2(pos.x - 1, pos.y - 1);
         }
+        // --- MAZE GENERATION (NEW ARCHITECTURE) ---
+        public static void GenerateMazeMap(SimMapData map)
+        {
+            // 1: Duvar, 0: Yol
+            // 10x10 Basit bir 'U' labirenti
+            int[,] maze = new int[,]
+            {
+                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+                { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, // Başlangıç (1,1)
+                { 1, 0, 1, 1, 1, 1, 1, 1, 0, 1 },
+                { 1, 0, 1, 0, 0, 0, 0, 1, 0, 1 },
+                { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1 }, // Engel
+                { 1, 0, 1, 0, 1, 1, 0, 1, 0, 1 },
+                { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, // Hedef (1,6)
+                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+            };
+
+            int rows = maze.GetLength(0);
+            int cols = maze.GetLength(1);
+
+            for (int x = 0; x < map.Width; x++)
+            {
+                for (int y = 0; y < map.Height; y++)
+                {
+                    var node = map.Grid[x, y];
+                    node.OccupantID = -1; // Temizle
+
+                    // Labirent sınırları içindeyse deseni işle
+                    if (x < rows && y < cols)
+                    {
+                        if (maze[x, y] == 1)
+                        {
+                            node.Type = SimTileType.Stone;
+                            node.IsWalkable = false;
+                        }
+                        else
+                        {
+                            node.Type = SimTileType.Grass;
+                            node.IsWalkable = true;
+                        }
+                    }
+                    else
+                    {
+                        // Dışarısı duvar olsun
+                        node.Type = SimTileType.Stone;
+                        node.IsWalkable = false;
+                    }
+                }
+            }
+            Debug.Log("SimGridSystem: Maze Map Generated.");
+        }
     }
 }

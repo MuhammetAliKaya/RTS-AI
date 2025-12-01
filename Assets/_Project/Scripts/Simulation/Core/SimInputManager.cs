@@ -2,15 +2,15 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
+using RTS.Simulation.Core; // Context için şart
 
 public class SimInputManager : MonoBehaviour
 {
     public static SimInputManager Instance;
-    public SimRunner Runner;
+
     public Camera MainCamera;
     public GameVisualizer Visualizer;
 
-    // --- SEÇİM SİSTEMİ ---
     public int SelectedUnitID { get; private set; } = -1;
 
     void Awake()
@@ -21,29 +21,57 @@ public class SimInputManager : MonoBehaviour
 
     void Update()
     {
-        // UI Koruması
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
 
-        // SOL TIK: Seçim Yap
-        if (Input.GetMouseButtonDown(0))
-        {
-            HandleSelection();
-        }
+        if (Input.GetMouseButtonDown(0)) HandleSelection();
+        if (Input.GetMouseButtonDown(1)) HandleMovementOrder();
+    }
 
-        // --- YENİ: SAĞ TIK (HAREKET EMRİ) ---
-        if (Input.GetMouseButtonDown(1))
+    // --- GIZMOS ---
+    void OnDrawGizmos()
+    {
+        if (!Application.isPlaying) return;
+
+        // DÜNYAYI CONTEXT'TEN AL
+        var world = SimGameContext.ActiveWorld;
+        if (world == null || SelectedUnitID == -1) return;
+
+        if (world.Units.TryGetValue(SelectedUnitID, out SimUnitData unit))
         {
-            HandleMovementOrder();
+            if (unit.Path != null && unit.Path.Count > 0)
+            {
+                Gizmos.color = Color.red;
+                Vector3 previousPos = GridToWorld(unit.GridPosition);
+
+                foreach (var nextStep in unit.Path)
+                {
+                    Vector3 nextPos = GridToWorld(nextStep);
+                    Gizmos.DrawLine(previousPos, nextPos);
+                    Gizmos.DrawSphere(nextPos, 0.2f);
+                    previousPos = nextPos;
+                }
+                Gizmos.color = Color.green;
+                Gizmos.DrawSphere(previousPos, 0.4f);
+            }
         }
+    }
+
+    private Vector3 GridToWorld(int2 pos)
+    {
+        float tW = Visualizer != null ? Visualizer.TileWidth : 2.56f;
+        float tH = Visualizer != null ? Visualizer.TileHeight : 1.28f;
+        float isoX = (pos.x - pos.y) * tW * 0.5f;
+        float isoY = (pos.x + pos.y) * tH * 0.5f;
+        return new Vector3(isoX, isoY, 0);
     }
 
     void HandleMovementOrder()
     {
-        // 1. Kontroller
-        if (Runner == null || Runner.World == null) return;
-        if (SelectedUnitID == -1) return;
+        // DÜNYAYI CONTEXT'TEN AL
+        var world = SimGameContext.ActiveWorld;
+        if (world == null || SelectedUnitID == -1) return;
 
-        if (!Runner.World.Units.TryGetValue(SelectedUnitID, out SimUnitData selectedUnit))
+        if (!world.Units.TryGetValue(SelectedUnitID, out SimUnitData selectedUnit))
         {
             SelectedUnitID = -1;
             return;
@@ -51,50 +79,27 @@ public class SimInputManager : MonoBehaviour
 
         if (selectedUnit.PlayerID != 1) return;
 
-        // 2. Tıklanan yeri al
         int2? gridPos = GetGridPositionUnderMouse();
         if (gridPos == null) return;
 
-        // --- 3. KAYNAK KONTROLÜ (YENİ) ---
-        // Tıklanan karede bir kaynak var mı?
-        foreach (var res in Runner.World.Resources.Values)
+        foreach (var res in world.Resources.Values)
         {
             if (res.GridPosition == gridPos.Value)
             {
-                // Kaynak bulundu! İşçiye toplama emri ver.
-                // Not: Sadece Worker toplayabilir, Soldier ise saldırmalı (İleride eklenir)
                 if (selectedUnit.UnitType == SimUnitType.Worker)
                 {
-                    if (SimUnitSystem.TryAssignGatherTask(selectedUnit, res, Runner.World))
-                    {
-                        Debug.Log($"⛏️ TOPLAMA EMRİ: ID {selectedUnit.ID} -> {res.Type} ({res.GridPosition})");
-                    }
-                    else
-                    {
-                        Debug.LogWarning("❌ Kaynağa ulaşılamıyor (Etrafı kapalı)!");
-                    }
+                    SimUnitSystem.TryAssignGatherTask(selectedUnit, res, world);
+                    Debug.Log("⛏️ Toplama Emri.");
                 }
-                else
-                {
-                    Debug.Log("⚠️ Askerler kaynak toplayamaz.");
-                }
-
-                return; // Kaynağa tıklandıysa hareket emri verme, çık.
+                return;
             }
         }
 
-        // --- 4. HAREKET EMRİ (Varsayılan) ---
-        // Kaynak yoksa, oraya yürü
-        SimUnitSystem.OrderMove(selectedUnit, gridPos.Value, Runner.World);
-        Debug.Log($"🚶 Yürüme Emri: {gridPos.Value}");
+        SimUnitSystem.OrderMove(selectedUnit, gridPos.Value, world);
     }
 
     void HandleSelection()
     {
-        // ... (Burası eski kodunla AYNI KALSIN) ...
-        // (Kısa tutmak için tekrar yazmıyorum, eski Raycast'li hali duracak)
-
-        int2? gridPos = GetGridPositionUnderMouse();
         Vector2 mousePos = MainCamera.ScreenToWorldPoint(Input.mousePosition);
         RaycastHit2D hit = Physics2D.Raycast(mousePos, Vector2.zero);
 
@@ -104,30 +109,34 @@ public class SimInputManager : MonoBehaviour
             if (visual != null)
             {
                 SelectedUnitID = visual.ID;
-                Debug.Log($"🎯 SEÇİLDİ: ID {SelectedUnitID}");
+                Debug.Log($"🎯 Seçildi: {SelectedUnitID}");
                 return;
             }
         }
-
-        // Yedek grid kontrolü vs... (Eski kodun devamı)
         SelectedUnitID = -1;
     }
 
     public int2? GetGridPositionUnderMouse()
     {
-        // ... (Burası da AYNI KALSIN) ...
-        if (Runner == null || Runner.World == null) return null;
+        var world = SimGameContext.ActiveWorld; // Context
+        if (world == null) return null;
+
         float tW = Visualizer != null ? Visualizer.TileWidth : 2.56f;
         float tH = Visualizer != null ? Visualizer.TileHeight : 1.28f;
+
         Vector3 mousePos = Input.mousePosition;
         Vector3 worldPos = MainCamera.ScreenToWorldPoint(mousePos);
         worldPos.z = 0;
+
         float halfW = tW * 0.5f;
         float halfH = tH * 0.5f;
+
         int gridY = Mathf.RoundToInt((worldPos.y / halfH - worldPos.x / halfW) / 2f);
         int gridX = Mathf.RoundToInt((worldPos.y / halfH + worldPos.x / halfW) / 2f);
+
         int2 pos = new int2(gridX, gridY);
-        if (Runner.World.Map.IsInBounds(pos)) return pos;
+
+        if (world.Map.IsInBounds(pos)) return pos;
         return null;
     }
 }

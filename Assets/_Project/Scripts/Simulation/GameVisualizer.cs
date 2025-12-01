@@ -2,13 +2,10 @@ using UnityEngine;
 using System.Collections.Generic;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
-using RTS.Simulation.Orchestrator;
+using RTS.Simulation.Core; // SimGameContext
 
 public class GameVisualizer : MonoBehaviour
 {
-    [Header("Yönetici Bağlantısı")]
-    public ExperimentManager Manager;
-
     [Header("İzometrik Ayarlar")]
     public bool IsIsometric = true;
     public float TileWidth = 2.56f;
@@ -39,26 +36,20 @@ public class GameVisualizer : MonoBehaviour
     public GameObject ResourceStonePrefab;
     public GameObject ResourceMeatPrefab;
 
-    // Takip Listeleri
     private Dictionary<int, GameObject> _spawnedObjects = new Dictionary<int, GameObject>();
-
-    // --- YENİLİK: Harita Yenileme Takibi ---
-    private int _lastRenderedEpisode = -1;
-    private GameObject _currentMapParent; // Zeminleri topluca silmek için referans
+    private GameObject _currentMapParent;
 
     void Update()
     {
-        if (Manager == null || Manager.World == null) return;
+        // Veriyi Context'ten al
+        var world = SimGameContext.ActiveWorld;
+        if (world == null) return;
 
-        // --- HARİTA YENİLEME KONTROLÜ ---
-        // Eğer ExperimentManager yeni bir bölüme geçtiyse, zeminleri baştan yarat.
-        if (Manager.CurrentEpisode != _lastRenderedEpisode)
+        // Harita yoksa oluştur
+        if (_currentMapParent == null)
         {
-            RegenerateMap(Manager.World.Map);
-            _lastRenderedEpisode = Manager.CurrentEpisode;
+            RegenerateMap(world.Map);
         }
-
-        var world = Manager.World;
 
         // BİRLİKLER
         foreach (var unit in world.Units.Values)
@@ -99,20 +90,13 @@ public class GameVisualizer : MonoBehaviour
         CleanupDespawnedObjects(world);
     }
 
-    // --- YENİ HARİTA OLUŞTURMA ---
-    void RegenerateMap(SimMapData map)
+    public void RegenerateMap(SimMapData map)
     {
-        // 1. Eski haritayı sil (Eğer varsa)
-        if (_currentMapParent != null)
-        {
-            Destroy(_currentMapParent);
-        }
+        if (_currentMapParent != null) Destroy(_currentMapParent);
 
-        // 2. Yeni bir taşıyıcı (Parent) oluştur
         _currentMapParent = new GameObject("Map_Tiles");
         _currentMapParent.transform.SetParent(this.transform);
 
-        // 3. Yeni zeminleri döşe
         for (int x = 0; x < map.Width; x++)
         {
             for (int y = 0; y < map.Height; y++)
@@ -124,7 +108,6 @@ public class GameVisualizer : MonoBehaviour
                 {
                     case SimTileType.Water: prefabToUse = TileWater; break;
                     case SimTileType.Stone: prefabToUse = TileStoneFloor; break;
-                    // Orman zeminini veya normal çimi kullan
                     case SimTileType.Forest: prefabToUse = TileForestFloor ?? TileGrass; break;
                     default: prefabToUse = TileGrass; break;
                 }
@@ -135,18 +118,13 @@ public class GameVisualizer : MonoBehaviour
                     GameObject tile = Instantiate(prefabToUse, pos, Quaternion.identity);
                     tile.transform.SetParent(_currentMapParent.transform);
 
-                    // Zemin her zaman en arkada olmalı (-5000)
                     var sr = tile.GetComponent<SpriteRenderer>();
-                    if (sr)
-                    {
-                        sr.sortingOrder = -5000 + (int)(-pos.y * 100);
-                    }
+                    if (sr) sr.sortingOrder = -5000 + (int)(-pos.y * 100);
                 }
             }
         }
     }
 
-    // --- MATEMATİK KÖPRÜSÜ ---
     Vector3 GridToWorld(int2 pos)
     {
         if (IsIsometric)
@@ -161,7 +139,6 @@ public class GameVisualizer : MonoBehaviour
     void SyncObject(int id, int2 gridPos, GameObject prefab, bool isMoving)
     {
         if (prefab == null) return;
-
         Vector3 targetPos = GridToWorld(gridPos);
 
         if (!_spawnedObjects.ContainsKey(id))
@@ -177,35 +154,39 @@ public class GameVisualizer : MonoBehaviour
         }
 
         GameObject obj = _spawnedObjects[id];
-        if (obj == null) return;
-
-        bool isFastMode = (Manager != null && Manager.RunFast);
         float dist = Vector3.Distance(obj.transform.position, targetPos);
-        bool shouldTeleport = isFastMode || (dist > 2.0f);
+        bool shouldTeleport = (dist > 3.0f);
 
         if (isMoving && !shouldTeleport)
-            obj.transform.position = Vector3.Lerp(obj.transform.position, targetPos, Time.deltaTime * 15f);
+            obj.transform.position = Vector3.Lerp(obj.transform.position, targetPos, Time.deltaTime * 10f);
         else
             obj.transform.position = targetPos;
 
         var sr = obj.GetComponent<SpriteRenderer>();
         if (sr) sr.sortingOrder = (int)(-obj.transform.position.y * 100);
 
+        // --- 1. SELECTION RING (GERİ GELDİ) ---
         Transform ring = obj.transform.Find("SelectionRing");
         if (ring != null)
         {
             bool isSelected = (SimInputManager.Instance != null && SimInputManager.Instance.SelectedUnitID == id);
-            if (ring.gameObject.activeSelf != isSelected) ring.gameObject.SetActive(isSelected);
+            if (ring.gameObject.activeSelf != isSelected)
+                ring.gameObject.SetActive(isSelected);
         }
 
-        if (Manager.World.Buildings.TryGetValue(id, out SimBuildingData buildingData))
+        var world = SimGameContext.ActiveWorld;
+        if (world == null) return;
+
+        // --- 2. İNŞAAT GÖRSELİ (GERİ GELDİ) ---
+        if (world.Buildings.TryGetValue(id, out SimBuildingData bData))
         {
             if (sr != null)
             {
                 Color c = sr.color;
-                if (!buildingData.IsConstructed)
+                if (!bData.IsConstructed)
                 {
-                    float progress = buildingData.ConstructionProgress / SimConfig.BUILDING_MAX_PROGRESS;
+                    // İnşaat %sine göre opaklık (0.3 ile 1.0 arası)
+                    float progress = bData.ConstructionProgress / 100f; // MaxProgress genelde 100
                     c.a = 0.3f + (progress * 0.7f);
                 }
                 else c.a = 1.0f;
@@ -213,14 +194,16 @@ public class GameVisualizer : MonoBehaviour
             }
         }
 
-        if (Manager.World.Resources.TryGetValue(id, out SimResourceData resData))
+        // --- 3. KAYNAK GÖRSELİ (GERİ GELDİ) ---
+        if (world.Resources.TryGetValue(id, out SimResourceData rData))
         {
             if (sr != null)
             {
                 Color c = sr.color;
-                float maxAmount = 250.0f;
-                float percent = (float)resData.AmountRemaining / maxAmount;
-                c.a = Mathf.Max(0.2f, percent);
+                // Kalan miktara göre soluklaşma
+                float maxAmount = 250.0f; // Tahmini max değer
+                float percent = (float)rData.AmountRemaining / maxAmount;
+                c.a = Mathf.Max(0.3f, percent);
                 sr.color = c;
             }
         }

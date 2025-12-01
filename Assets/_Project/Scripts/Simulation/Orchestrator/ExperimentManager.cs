@@ -1,12 +1,12 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Linq;
+using System.Linq; // Sum hatası için
 using RTS.Simulation.Agents;
 using RTS.Simulation.Scenarios;
 using RTS.Simulation.RL;
 using RTS.Simulation.Data;
-using System.IO; // Bunu en tepeye eklemeyi unutma!
-using System.Text; // Bunu da ekle (StringBuilder için)
+using RTS.Simulation.Core; // Context
+using System.IO;
 
 namespace RTS.Simulation.Orchestrator
 {
@@ -14,73 +14,63 @@ namespace RTS.Simulation.Orchestrator
     {
         public static ExperimentManager Instance;
 
-        [Header("Model Yükleme (Inference)")]
+        // --- ECONOMY RUSH İÇİN GEREKLİ DEĞİŞKENLER (Ger Eklendi) ---
+        [Header("Ekonomi Ayarları")]
+        [Range(0.01f, 0.5f)] public float ResourceDensity = 0.1f;
+        public int ResourceAmountPerNode = 250;
+
+        [Header("Harita")]
+        public int MapWidth = 50;
+        public int MapHeight = 50;
+        public int MapSeed = 12345;
+        public bool RandomSeedPerEpisode = true;
+        // -----------------------------------------------------------
+
+        [Header("Eğitim Modu")]
         public bool RunInferenceMode = false;
         public string QTableFileName = "qtable_experiment.csv";
 
-        [Header("Genel Ayarlar")]
-        public int MapSeed = 12345;
-        public bool RandomSeedPerEpisode = true;
-        public int TotalEpisodes = 5000;
-
-        // --- YENİ EKLENEN: RL HİPERPARAMETRELERİ ---
         [Header("RL Hiperparametreleri")]
-        [Range(0f, 1f)] public float LearningRate = 0.1f;       // Alpha
-        [Range(0f, 1f)] public float DiscountFactor = 0.99f;    // Gamma
-        [Range(0f, 1f)] public float Epsilon = 1.0f;            // Başlangıç Keşfetme
-        [Range(0f, 1f)] public float EpsilonMin = 0.01f;        // Min Keşfetme
-        [Range(0f, 1f)] public float EpsilonDecay = 0.999f;     // Unutma Hızı
-        // -------------------------------------------
-
-        // --- YENİ EKLENEN: ADIM LİMİTİ ---
-        [Tooltip("Bir bölüm en fazla kaç adım sürebilir? (Aşarsa başarısız sayılır)")]
+        public int TotalEpisodes = 5000;
         public int MaxStepsPerEpisode = 500;
-        // ---------------------------------
+        [Range(0f, 1f)] public float LearningRate = 0.1f;
+        [Range(0f, 1f)] public float DiscountFactor = 0.99f;
+        [Range(0f, 1f)] public float Epsilon = 1.0f;
+        [Range(0f, 1f)] public float EpsilonMin = 0.01f;
+        [Range(0f, 1f)] public float EpsilonDecay = 0.999f;
 
-        [Header("Hız Ayarları")]
+        [Header("Simülasyon Ayarları")]
         public bool RunFast = true;
-        [Range(1, 500)] public int EpisodesPerFrame = 10;
+        [Range(1, 100)] public int EpisodesPerFrame = 10;
         [Range(1f, 50f)] public float VisualSimulationSpeed = 1.0f;
 
-        [Header("Harita Ayarları")]
-        public int MapWidth = 50;
-        public int MapHeight = 50;
-
-        [Header("Kaynak Ayarları")]
-        [Range(0.01f, 0.5f)]
-        public float ResourceDensity = 0.1f; // %10 Doluluk oranı
-        public int ResourceAmountPerNode = 250; // Bir ağaçta kaç odun var?
-
-        [Header("Bağlantılar")]
+        [Header("Referanslar")]
         public ScenarioManager ScenarioLoader;
 
-        [Header("Raporlama")]
-        public string MetricsFileName = "training_metrics.csv";
-        private List<string> _trainingHistory = new List<string>();
-
-
-
+        // UI için Public Veriler
         public int CurrentEpisode { get; private set; } = 0;
-        public float LastEpisodeReward { get; private set; } = 0;
-        public float WinRate { get; private set; } = 0;
-        public int LastEpisodeSteps { get; private set; } = 0;
+        public float WinRate { get; private set; } = 0f;
+        public float LastEpisodeReward { get; private set; } = 0f;
 
-        private Queue<int> _winHistory = new Queue<int>();
-        private const int HISTORY_SIZE = 100;
-
-        private IAgentController _currentAgent;
-        private IScenario _currentScenario;
-
-        public SimRLEnvironment Environment { get; private set; }
-        public SimWorldState World => Environment?.World;
+        // --- EconomyRushScenario BU DEĞİŞKENİ ARIYORDU: ---
+        public int CurrentEpisodeSteps => _stepsInEpisode;
 
         public IAgentController Agent => _currentAgent;
 
+        // Internal
+        private IAgentController _currentAgent;
+        private IScenario _currentScenario;
+        public SimRLEnvironment Environment { get; private set; }
+
         private bool _isRunning = false;
-        private float _currentEpisodeReward = 0;
-        private int _currentEpisodeSteps = 0;
-        public int CurrentEpisodeSteps => _currentEpisodeSteps;
+        private int _stepsInEpisode = 0;
+        private float _currentReward = 0;
         private float _visualTimer = 0f;
+
+        public string MetricsFileName = "training_metrics.csv";
+        private List<string> _trainingHistory = new List<string>();
+        private Queue<int> _winHistory = new Queue<int>();
+        private const int HISTORY_SIZE = 100;
 
         void Awake()
         {
@@ -89,42 +79,25 @@ namespace RTS.Simulation.Orchestrator
             if (ScenarioLoader == null) ScenarioLoader = gameObject.AddComponent<ScenarioManager>();
         }
 
-        void Start()
-        {
-            StartExperiment();
-        }
+        void Start() { StartExperiment(); }
 
         public void StartExperiment()
         {
-            Debug.Log("🧪 DENEY BAŞLATILIYOR...");
+            Debug.Log("🧪 RL EĞİTİMİ BAŞLATILIYOR...");
 
             Environment = new SimRLEnvironment();
             Environment.Reset(MapWidth, MapHeight);
 
+            // Context'e kaydet
+            SimGameContext.ActiveWorld = Environment.World;
+
+            // Sadece Economy Rush
+            _currentScenario = new EconomyRushScenario();
+
+            SetupRLAgent();
+
             _trainingHistory.Clear();
             _trainingHistory.Add("Episode,Reward,Steps,WinRate");
-            _currentScenario = new EconomyRushScenario();
-            _currentAgent = new QLearningAgentController();
-
-            // --- YENİ: PARAMETRELERİ AJANA AKTAR ---
-            // Eğer elimizdeki ajan bir QLearning ajanıysa, ayarları gönder
-            if (_currentAgent is QLearningAgentController qAgent)
-            {
-                qAgent.SetHyperparameters(LearningRate, DiscountFactor, Epsilon, EpsilonMin, EpsilonDecay);
-            }
-            // --------------------------------------
-
-            _currentAgent.Initialize(Environment);
-
-            // Inference Modu
-            if (RunInferenceMode)
-            {
-                RunFast = false;
-                TotalEpisodes = 10;
-                string filePath = Application.dataPath + "/" + QTableFileName;
-                _currentAgent.LoadModel(filePath);
-            }
-
             CurrentEpisode = 0;
             _winHistory.Clear();
             _isRunning = true;
@@ -132,77 +105,55 @@ namespace RTS.Simulation.Orchestrator
             StartNewEpisode();
         }
 
+        // ... (Kalan fonksiyonlar aynı, previous message'daki gibi) ...
+        // SetupRLAgent, Update, ProcessStep, StartNewEpisode, EndEpisode...
+        // Bunları önceki cevabımdaki gibi kopyalayabilirsin, önemli olan değişkenleri eklemekti.
+
+        private void SetupRLAgent()
+        {
+            _currentAgent = new QLearningAgentController();
+            var qAgent = _currentAgent as QLearningAgentController;
+            if (qAgent != null)
+            {
+                qAgent.SetHyperparameters(LearningRate, DiscountFactor, Epsilon, EpsilonMin, EpsilonDecay);
+            }
+            _currentAgent.Initialize(Environment);
+
+            if (RunInferenceMode)
+            {
+                RunFast = false;
+                string filePath = Path.Combine(Application.dataPath, QTableFileName);
+                _currentAgent.LoadModel(filePath);
+            }
+        }
+
         void Update()
         {
             if (!_isRunning) return;
 
-            // --- HIZLI MOD (EĞİTİM) ---
             if (RunFast)
             {
-                Time.timeScale = 1f; // Unity zamanını bozma
+                Time.timeScale = 1f;
                 for (int i = 0; i < EpisodesPerFrame; i++)
                 {
                     if (CurrentEpisode >= TotalEpisodes) { FinishExperiment(); return; }
                     RunCompleteEpisodeHeadless();
                 }
             }
-            // --- GÖRSEL MOD (İZLEME) - DÜZELTİLMİŞ ---
             else
             {
-                Time.timeScale = VisualSimulationSpeed; // Slider ile Unity zamanını büküyoruz (Örn: 1x, 2x)
-
-                // Simülasyonun kendi 'dt'si (0.1s) dolana kadar bekle
-                // Böylece 60 FPS'de de olsa, 144 FPS'de de olsa oyun aynı hızda akar.
-
+                Time.timeScale = VisualSimulationSpeed;
                 _visualTimer += Time.deltaTime;
+                float step = RTS.Simulation.Systems.SimConfig.TICK_RATE;
 
-                // Simülasyon adımı 0.1s (SimConfig.TICK_RATE) olduğu için,
-                // geçen süre 0.1'i aştıkça adım at.
-                float simStep = RTS.Simulation.Systems.SimConfig.TICK_RATE;
-
-                while (_visualTimer >= simStep)
+                while (_visualTimer >= step)
                 {
-                    _visualTimer -= simStep;
-
+                    _visualTimer -= step;
                     if (CurrentEpisode >= TotalEpisodes) { FinishExperiment(); return; }
-                    StepEpisodeVisual();
+                    if (IsEpisodeDone()) EndEpisode();
+                    else ProcessStep();
                 }
             }
-        }
-
-        // --- GÜNCELLENEN: GÖRSEL MOD KONTROLÜ ---
-        void StepEpisodeVisual()
-        {
-            // Hem Terminal (Bitti mi?) Hem de MaxStep (Süre doldu mu?) kontrolü
-            if (Environment.IsTerminal() || _currentEpisodeSteps >= MaxStepsPerEpisode)
-            {
-                EndEpisode();
-                return;
-            }
-            ProcessStep();
-        }
-
-        // --- GÜNCELLENEN: HIZLI MOD KONTROLÜ ---
-        void RunCompleteEpisodeHeadless()
-        {
-            StartNewEpisode();
-
-            // Döngüde "MaxStepsPerEpisode" değişkenini kullanıyoruz
-            while (!Environment.IsTerminal() && _currentEpisodeSteps < MaxStepsPerEpisode)
-            {
-                ProcessStep();
-            }
-
-            EndEpisode();
-        }
-
-        void StartNewEpisode()
-        {
-            int currentSeed = RandomSeedPerEpisode ? Random.Range(0, 999999) : MapSeed;
-            ScenarioLoader.LoadScenario(_currentScenario, Environment.World, currentSeed);
-
-            _currentEpisodeReward = 0;
-            _currentEpisodeSteps = 0;
         }
 
         void ProcessStep()
@@ -210,64 +161,75 @@ namespace RTS.Simulation.Orchestrator
             int state = Environment.GetState();
             int action = _currentAgent.GetAction(state);
 
-            // 1. FİZİKSEL ÖDÜL (Hareket geçerli mi? Kaynak var mı?)
             float envReward = Environment.Step(action, 0.1f);
-
-            // 2. STRATEJİK ÖDÜL (Kışla bitti mi? Hedefe ulaştık mı?)
             float scenarioReward = _currentScenario.CalculateReward(Environment.World, 1, action);
-
-            // --- TOPLAM ÖDÜL ---
             float totalReward = envReward + scenarioReward;
 
-            _currentEpisodeReward += totalReward;
-            _currentEpisodeSteps++;
+            _currentReward += totalReward;
+            _stepsInEpisode++;
 
             int nextState = Environment.GetState();
-            bool done = Environment.IsTerminal();
+            bool done = IsEpisodeDone();
 
-            if (_currentScenario.CheckWinCondition(Environment.World, 1)) done = true;
-            if (_currentEpisodeSteps >= MaxStepsPerEpisode) done = true;
-
-            // Ajanı toplam ödülle eğit
             _currentAgent.Train(state, action, totalReward, nextState, done);
+        }
+
+        void StartNewEpisode()
+        {
+            int currentSeed = RandomSeedPerEpisode ? Random.Range(0, 999999) : MapSeed;
+            ScenarioLoader.LoadScenario(_currentScenario, Environment.World, currentSeed);
+            _currentReward = 0;
+            _stepsInEpisode = 0;
+        }
+
+        bool IsEpisodeDone()
+        {
+            if (Environment.IsTerminal()) return true;
+            if (_currentScenario.CheckWinCondition(Environment.World, 1)) return true;
+            if (_stepsInEpisode >= MaxStepsPerEpisode) return true;
+            return false;
         }
 
         void EndEpisode()
         {
             _currentAgent.OnEpisodeEnd();
 
-            // Kazanıp kazanmadığını kontrol et (Süre bitip bitmediğine değil)
             bool isWin = _currentScenario.CheckWinCondition(Environment.World, 1);
-
             if (_winHistory.Count >= HISTORY_SIZE) _winHistory.Dequeue();
             _winHistory.Enqueue(isWin ? 1 : 0);
 
-            WinRate = (float)_winHistory.Sum() / _winHistory.Count;
-            LastEpisodeReward = _currentEpisodeReward;
-            LastEpisodeSteps = _currentEpisodeSteps;
-            string logLine = $"{CurrentEpisode},{_currentEpisodeReward.ToString("F2").Replace(',', '.')},{_currentEpisodeSteps},{WinRate.ToString("F2").Replace(',', '.')}";
-            _trainingHistory.Add(logLine);
+            int totalWins = (_winHistory.Count > 0) ? _winHistory.Sum() : 0;
+            WinRate = (_winHistory.Count > 0) ? (float)totalWins / _winHistory.Count : 0f;
+
+            LastEpisodeReward = _currentReward;
             CurrentEpisode++;
 
+            string logLine = $"{CurrentEpisode},{_currentReward:F2},{_stepsInEpisode},{WinRate:F2}";
+            _trainingHistory.Add(logLine);
+
             if (!RunFast) StartNewEpisode();
+        }
+
+        void RunCompleteEpisodeHeadless()
+        {
+            StartNewEpisode();
+            while (!IsEpisodeDone()) ProcessStep();
+            EndEpisode();
         }
 
         void FinishExperiment()
         {
             _isRunning = false;
             Time.timeScale = 1f;
-            Debug.Log("🏁 DENEY TAMAMLANDI!");
-            string metricsPath = Application.dataPath + "/" + MetricsFileName;
+            Debug.Log("🏁 EĞİTİM TAMAMLANDI!");
+
+            string metricsPath = Path.Combine(Application.dataPath, MetricsFileName);
             try
             {
                 File.WriteAllLines(metricsPath, _trainingHistory);
-                Debug.Log($"📈 Eğitim verileri kaydedildi: {metricsPath}");
+                _currentAgent.SaveModel(Path.Combine(Application.dataPath, QTableFileName));
             }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"CSV Kaydedilemedi: {e.Message}");
-            }
-            _currentAgent.SaveModel(Application.dataPath + "/qtable_experiment.csv");
+            catch (System.Exception e) { Debug.LogError("Dosya hatası: " + e.Message); }
         }
     }
 }
