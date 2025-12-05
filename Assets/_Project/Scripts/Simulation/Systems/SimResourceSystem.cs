@@ -28,6 +28,20 @@ namespace RTS.Simulation.Systems
             return data != null && data.CurrentPopulation < data.MaxPopulation;
         }
 
+        public static int GetResourceAmount(SimWorldState world, int playerID, SimResourceType type)
+        {
+            SimPlayerData data = GetPlayer(world, playerID);
+            if (data == null) return 0;
+
+            switch (type)
+            {
+                case SimResourceType.Wood: return data.Wood;
+                case SimResourceType.Stone: return data.Stone;
+                case SimResourceType.Meat: return data.Meat;
+                default: return 0;
+            }
+        }
+
         // --- İŞLEMLER ---
         public static bool SpendResources(SimWorldState world, int playerID, int wood, int stone, int meat)
         {

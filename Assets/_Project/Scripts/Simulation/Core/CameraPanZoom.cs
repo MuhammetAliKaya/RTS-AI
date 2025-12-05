@@ -1,5 +1,6 @@
 using UnityEngine;
 using RTS.Simulation.Core; // SimGameContext için
+using System;
 
 public class CameraPanZoom : MonoBehaviour
 {
@@ -57,8 +58,8 @@ public class CameraPanZoom : MonoBehaviour
 
         // Sınırları uygula (İzometrik için yaklaşık değerler)
         // Harita boyutuna göre dinamik clamp
-        pos.x = Mathf.Clamp(pos.x, PanLimitMin.x, mapW * 2);
-        pos.y = Mathf.Clamp(pos.y, PanLimitMin.y, mapH * 2);
+        pos.x = Math.Clamp(pos.x, PanLimitMin.x, mapW * 2);
+        pos.y = Math.Clamp(pos.y, PanLimitMin.y, mapH * 2);
 
         transform.position = pos;
     }
@@ -69,7 +70,7 @@ public class CameraPanZoom : MonoBehaviour
         float zoom = cam.orthographicSize;
 
         zoom -= scroll * ScrollSpeed * 100f * Time.deltaTime;
-        zoom = Mathf.Clamp(zoom, MinZoom, MaxZoom);
+        zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
 
         cam.orthographicSize = zoom;
     }

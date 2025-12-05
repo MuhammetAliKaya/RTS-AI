@@ -325,4 +325,24 @@ public class GameVisualizer : MonoBehaviour
             _flashTimers.Remove(id);
         }
     }
+    public void ResetVisuals()
+    {
+        // 1. Önceki harita objesini sil
+        if (_currentMapParent != null)
+        {
+            Destroy(_currentMapParent);
+            _currentMapParent = null;
+        }
+
+        // 2. Ekranda ne kadar asker/bina varsa sil
+        foreach (var obj in _spawnedObjects.Values)
+        {
+            if (obj != null) Destroy(obj);
+        }
+
+        // 3. Listeleri sıfırla
+        _spawnedObjects.Clear();
+        _lastKnownHealth.Clear();
+        _flashTimers.Clear();
+    }
 }

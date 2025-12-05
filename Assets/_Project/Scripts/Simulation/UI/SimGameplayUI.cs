@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
+using System.Linq; // Linq ekledik
 
 public class SimGameplayUI : MonoBehaviour
 {
@@ -34,8 +35,7 @@ public class SimGameplayUI : MonoBehaviour
         if (ProductionPanel) ProductionPanel.SetActive(false);
     }
 
-    // --- İNŞAAT BUTONLARI (HEPSİ EKLENDİ) ---
-
+    // --- İNŞAAT BUTONLARI ---
     public void OnClickBuildHouse() { SelectBuild(SimBuildingType.House); }
     public void OnClickBuildFarm() { SelectBuild(SimBuildingType.Farm); }
     public void OnClickBuildWoodCutter() { SelectBuild(SimBuildingType.WoodCutter); }
@@ -44,70 +44,62 @@ public class SimGameplayUI : MonoBehaviour
     public void OnClickBuildTower() { SelectBuild(SimBuildingType.Tower); }
     public void OnClickBuildWall() { SelectBuild(SimBuildingType.Wall); }
 
-    // Yardımcı (Kod tekrarını önlemek için)
     private void SelectBuild(SimBuildingType type)
     {
         if (BuildingPlacer != null) BuildingPlacer.SelectBuildingToPlace(type);
         CloseAllMenus();
     }
 
-    // --- ÜRETİM BUTONLARI ---
+    // --- AKILLI ÜRETİM BUTONLARI (GÜNCELLENDİ) ---
 
     public void OnClickTrainWorker()
     {
-        var world = SimGameContext.ActiveWorld;
-        if (world == null) return;
-
-        // 1. SEÇİLİ BİNAYI AL
-        int buildingID = SimInputManager.Instance.SelectedBuildingID;
-
-        if (buildingID == -1)
-        {
-            Debug.LogWarning("⚠️ Önce bir Ana Üs (Base) seçmelisin!");
-            return;
-        }
-
-        if (world.Buildings.TryGetValue(buildingID, out SimBuildingData b))
-        {
-            // 2. KONTROLLER (Base mi? Benim mi? Boş mu?)
-            if (b.PlayerID == 1 && b.Type == SimBuildingType.Base && b.IsConstructed && !b.IsTraining)
-            {
-                SimBuildingSystem.StartTraining(b, world, SimUnitType.Worker);
-                Debug.Log("👷 Seçili üsten işçi üretiliyor.");
-            }
-            else
-            {
-                Debug.LogWarning("❌ Seçili bina uygun değil (Dolu veya Base değil).");
-            }
-        }
+        TryTrainUnitSmart(SimBuildingType.Base, SimUnitType.Worker);
     }
 
     public void OnClickTrainSoldier()
     {
+        TryTrainUnitSmart(SimBuildingType.Barracks, SimUnitType.Soldier);
+    }
+
+    // --- YENİ FONKSİYON: AKILLI ÜRETİM ---
+    private void TryTrainUnitSmart(SimBuildingType buildingType, SimUnitType unitType)
+    {
         var world = SimGameContext.ActiveWorld;
         if (world == null) return;
 
-        // 1. SEÇİLİ BİNAYI AL
-        int buildingID = SimInputManager.Instance.SelectedBuildingID;
-
-        if (buildingID == -1)
+        // 1. ÖNCE SEÇİLİ BİNAYI KONTROL ET
+        // Eğer oyuncu özellikle bir binayı seçtiyse, öncelik ondadır.
+        int selectedID = SimInputManager.Instance.SelectedBuildingID;
+        if (selectedID != -1 && world.Buildings.TryGetValue(selectedID, out SimBuildingData selectedB))
         {
-            Debug.LogWarning("⚠️ Önce bir Kışla (Barracks) seçmelisin!");
-            return;
+            // Seçili bina doğru tipte, benim ve boşta ise -> Buradan bas
+            if (selectedB.PlayerID == 1 && selectedB.Type == buildingType && selectedB.IsConstructed && !selectedB.IsTraining)
+            {
+                SimBuildingSystem.StartTraining(selectedB, world, unitType);
+                Debug.Log($"🎯 Seçili binadan üretim: {unitType}");
+                return;
+            }
         }
 
-        if (world.Buildings.TryGetValue(buildingID, out SimBuildingData b))
+        // 2. SEÇİLİ DEĞİLSE (VEYA DOLUYSA), HARİTADAKİ DİĞER BİNALARA BAK
+        // Benim olan, bitmiş ve ŞU AN ÜRETİM YAPMAYAN ilk binayı bul.
+        var idleBuilding = world.Buildings.Values.FirstOrDefault(b =>
+            b.PlayerID == 1 &&
+            b.Type == buildingType &&
+            b.IsConstructed &&
+            !b.IsTraining // <-- Kritik nokta: Boş olanı bul
+        );
+
+        if (idleBuilding != null)
         {
-            // 2. KONTROLLER (Barracks mı? Benim mi? Boş mu?)
-            if (b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed && !b.IsTraining)
-            {
-                SimBuildingSystem.StartTraining(b, world, SimUnitType.Soldier);
-                Debug.Log("⚔️ Seçili kışladan asker üretiliyor.");
-            }
-            else
-            {
-                Debug.LogWarning("❌ Seçili bina uygun değil (Dolu veya Kışla değil).");
-            }
+            SimBuildingSystem.StartTraining(idleBuilding, world, unitType);
+            Debug.Log($"🤖 Otomatik binadan üretim: {unitType} (ID: {idleBuilding.ID})");
+        }
+        else
+        {
+            // Hiç boş bina yoksa veya kaynak yetmiyorsa
+            Debug.LogWarning($"❌ Üretim yapılamadı. Ya boş {buildingType} yok ya da kaynak yetersiz.");
         }
     }
 }

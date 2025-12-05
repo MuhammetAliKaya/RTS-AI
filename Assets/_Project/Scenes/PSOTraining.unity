@@ -119,6 +119,130 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &862635779
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 862635781}
+  - component: {fileID: 862635780}
+  m_Layer: 0
+  m_Name: TrainingController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &862635780
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 862635779}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ddc32ebf7955a24496df01d2779cb64, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  StartTraining: 0
+  VisualizeBestBetweenGens: 0
+  VisualTimeScale: 1
+  PopulationSize: 20
+  MaxGenerations: 50
+  Dimensions: 4
+  MinGeneVal: 1
+  MaxGeneVal: 20
+  MapWidth: 50
+  MapHeight: 50
+  MaxStepsPerGame: 1000
+  CurrentBestFitness: 0
+  CurrentBestGenes: []
+--- !u!4 &862635781
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 862635779}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.45842177, y: 16.675251, z: -167.34044}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1509806335
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1509806337}
+  - component: {fileID: 1509806336}
+  m_Layer: 0
+  m_Name: GameVisualizer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1509806336
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509806335}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 482ce448ac39f35479854c39895a0f87, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  IsIsometric: 1
+  TileWidth: 2.56
+  TileHeight: 1.28
+  Player2Color: {r: 1, g: 0.8, b: 0.2, a: 1}
+  DamageFlashColor: {r: 1, g: 0, b: 0, a: 1}
+  AnimationSpeed: 15
+  TileGrass: {fileID: 0}
+  TileWater: {fileID: 0}
+  TileStoneFloor: {fileID: 0}
+  TileForestFloor: {fileID: 0}
+  WorkerPrefab: {fileID: 0}
+  SoldierPrefab: {fileID: 0}
+  BasePrefab: {fileID: 0}
+  BarracksPrefab: {fileID: 0}
+  TowerPrefab: {fileID: 0}
+  WallPrefab: {fileID: 0}
+  FarmPrefab: {fileID: 0}
+  WoodCutterPrefab: {fileID: 0}
+  StonePitPrefab: {fileID: 0}
+  HousePrefab: {fileID: 0}
+  ResourceWoodPrefab: {fileID: 0}
+  ResourceStonePrefab: {fileID: 0}
+  ResourceMeatPrefab: {fileID: 0}
+--- !u!4 &1509806337
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1509806335}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.45842177, y: 16.675251, z: -167.34044}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1945932209
 GameObject:
   m_ObjectHideFlags: 0
@@ -216,3 +340,5 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 1945932212}
+  - {fileID: 862635781}
+  - {fileID: 1509806337}

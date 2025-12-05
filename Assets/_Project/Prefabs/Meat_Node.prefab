@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1576999779598830511}
   - component: {fileID: 8230029999080460579}
-  - component: {fileID: 8726291375260789178}
   - component: {fileID: 7191224101782599908}
   m_Layer: 7
   m_Name: Meat_Node
@@ -89,22 +88,6 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 1
---- !u!114 &8726291375260789178
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7328995364029023653}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 786fb733ee43bda41800ba003cb5f598, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  resourceType: 2
-  amountLeft: 250
-  depletedPrefab: {fileID: 0}
-  destroyOnEmpty: 1
 --- !u!60 &7191224101782599908
 PolygonCollider2D:
   m_ObjectHideFlags: 0

@@ -11,7 +11,6 @@ GameObject:
   - component: {fileID: 305786662296256371}
   - component: {fileID: 5236243373403662436}
   - component: {fileID: 7361526018357333324}
-  - component: {fileID: 1549123445921321318}
   m_Layer: 8
   m_Name: solider
   m_TagString: Untagged
@@ -327,29 +326,6 @@ PolygonCollider2D:
       - {x: -0.212, y: 0.47333333}
       - {x: -0.21066667, y: 0.47333333}
   m_UseDelaunayMesh: 0
---- !u!114 &1549123445921321318
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 69217688657311477}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0832720b81d0b6048876972c115ce6fc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  moveSpeed: 5
-  maxHealth: 100
-  playerID: 1
-  playerTints:
-  - {r: 1, g: 1, b: 1, a: 1}
-  - {r: 1, g: 0.52990127, b: 0, a: 1}
-  selectionVisual: {fileID: 7376127696791758267}
-  attackRange: 0.5
-  attackRate: 1
-  attackDamage: 10
-  visionRange: 4
 --- !u!1 &7376127696791758267
 GameObject:
   m_ObjectHideFlags: 0

@@ -102,7 +102,11 @@ namespace RTS.Simulation.Systems
 
         public static void StartTraining(SimBuildingData building, SimWorldState world, SimUnitType unitType)
         {
-            if (building.IsTraining) return; // Zaten meşgul
+            if (building.IsTraining)
+            {
+                if (SimConfig.EnableLogs) Debug.LogWarning($"⛔ Üretim Reddedildi: Bina {building.ID} zaten meşgul.");
+                return;
+            }
 
             // Maliyet Hesabı
             int meatCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_MEAT : SimConfig.SOLDIER_COST_MEAT;
@@ -115,7 +119,14 @@ namespace RTS.Simulation.Systems
                 building.IsTraining = true;
                 building.UnitInProduction = unitType;
                 building.TrainingTimer = 0f;
-                // Debug.Log($"⚙️ ÜRETİM BAŞLADI: {unitType} @ {building.GridPosition}");
+
+                if (SimConfig.EnableLogs)
+                    Debug.Log($"✅ ÜRETİM BAŞLADI: {unitType} @ {building.GridPosition} (Player {building.PlayerID})");
+            }
+            else
+            {
+                if (SimConfig.EnableLogs)
+                    Debug.LogWarning($"💸 Yetersiz Kaynak ({unitType}): Odun:{woodCost} Taş:{stoneCost} Et:{meatCost}");
             }
         }
         // --- ALT SİSTEMLER ---
