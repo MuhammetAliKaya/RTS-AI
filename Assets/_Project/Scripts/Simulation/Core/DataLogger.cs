@@ -1,7 +1,8 @@
 using UnityEngine;
 using System.IO;
 using System.Text;
-using RTS.Simulation.Data; // SimStats için
+using RTS.Simulation.Data;
+using System.Globalization; // EKLENDİ: Formatlama için gerekli
 
 public class DataLogger
 {
@@ -11,17 +12,14 @@ public class DataLogger
 
     public DataLogger()
     {
-        // Klasör Yolu: ProjeKlasörü/PSO_Logs/
         _folderPath = Path.Combine(Application.dataPath, "../PSO_Logs");
         if (!Directory.Exists(_folderPath)) Directory.CreateDirectory(_folderPath);
 
         string timeStamp = System.DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
 
-        // Dosya 1: Jenerasyon Özeti (Grafik çizmek için)
         _generationLogPath = Path.Combine(_folderPath, $"Gen_History_{timeStamp}.csv");
         InitializeGenLog();
 
-        // Dosya 2: En İyi Genler (Analiz için)
         _bestGenomesLogPath = Path.Combine(_folderPath, $"Best_Genomes_{timeStamp}.csv");
         InitializeGenomeLog();
     }
@@ -29,8 +27,8 @@ public class DataLogger
     private void InitializeGenLog()
     {
         StringBuilder sb = new StringBuilder();
-        sb.Append("GenID,BestFitness,AvgFitness,WinRate,TimeTaken(sec),");
-        sb.Append("AvgWood,AvgMeat,AvgStone,AvgSoldiers,AvgWorkers"); // Detaylar
+        sb.Append("GenID,BestFitness,AvgFitness,WinRate,TimeTaken,");
+        sb.Append("AvgWood,AvgMeat,AvgStone,AvgSoldiers,AvgWorkers");
         File.WriteAllText(_generationLogPath, sb.ToString() + "\n");
     }
 
@@ -38,18 +36,26 @@ public class DataLogger
     {
         StringBuilder sb = new StringBuilder();
         sb.Append("GenID,Fitness,");
-        // 14 Genin İsimleri
         sb.Append("WorkerLim,SoldierLim,AttackThres,DefRatio,BarrackCount,EcoBias,");
         sb.Append("FarmT,WoodT,StoneT,HouseBuf,TowerPos,BaseDef,SaveThres,Bloodlust");
         File.WriteAllText(_bestGenomesLogPath, sb.ToString() + "\n");
     }
 
+    // --- DÜZELTME BURADA ---
+    // Kültürden bağımsız (Nokta ondalıklı) formatlama fonksiyonu
+    private string F(float val)
+    {
+        return val.ToString("F2", CultureInfo.InvariantCulture);
+    }
+
     public void LogGeneration(int genID, float bestFit, float avgFit, float winRate, float timeTaken, SimStats avgStats)
     {
         StringBuilder sb = new StringBuilder();
-        sb.Append($"{genID},{bestFit:F2},{avgFit:F2},{winRate:F2},{timeTaken:F2},");
-        sb.Append($"{avgStats.GatheredWood},{avgStats.GatheredMeat},{avgStats.GatheredStone},");
-        sb.Append($"{avgStats.SoldierCount},{avgStats.WorkerCount}");
+
+        // Helper fonksiyon F() kullanarak formatlama yapıyoruz
+        sb.Append($"{genID},{F(bestFit)},{F(avgFit)},{F(winRate)},{F(timeTaken)},");
+        sb.Append($"{F(avgStats.GatheredWood)},{F(avgStats.GatheredMeat)},{F(avgStats.GatheredStone)},");
+        sb.Append($"{F(avgStats.SoldierCount)},{F(avgStats.WorkerCount)}");
 
         File.AppendAllText(_generationLogPath, sb.ToString() + "\n");
     }
@@ -57,11 +63,11 @@ public class DataLogger
     public void LogBestGenome(int genID, float fitness, float[] genes)
     {
         StringBuilder sb = new StringBuilder();
-        sb.Append($"{genID},{fitness:F2},");
+        sb.Append($"{genID},{F(fitness)},");
 
         for (int i = 0; i < genes.Length; i++)
         {
-            sb.Append($"{genes[i]:F2}");
+            sb.Append(F(genes[i])); // Burada da F() kullanıyoruz
             if (i < genes.Length - 1) sb.Append(",");
         }
 

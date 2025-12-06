@@ -3897,12 +3897,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   VisualizeOnlyFinalBest: 1
   ForceStandardPSO: 0
-  PopulationSize: 20
+  PopulationSize: 30
   MaxGenerations: 100
-  MaxTicksPerGame: 5000
+  MaxTicksPerGame: 2000
   EnableLogging: 1
   UseRandomMasterSeed: 0
-  MasterSeed: 1
+  MasterSeed: 55
   CurrentGenerationSeeds: 
   LastBestSeed: 0
   Visualizer: {fileID: 1375291963}
