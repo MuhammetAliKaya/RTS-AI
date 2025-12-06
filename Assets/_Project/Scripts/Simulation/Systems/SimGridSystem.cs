@@ -1,31 +1,52 @@
 using RTS.Simulation.Data;
+using RTS.Simulation.Core; // SimGameContext için
 using System.Collections.Generic;
-using System; // System.Math için
+using System;
 
 namespace RTS.Simulation.Systems
 {
-    public static class SimGridSystem
+    public class SimGridSystem
     {
-        // Yürünebilir mi?
+        // --- Instance Yapısı ---
+        private SimWorldState _world;
+
+        public int Width => _world.Map.Width;
+        public int Height => _world.Map.Height;
+
+        public SimGridSystem(SimWorldState world = null)
+        {
+            _world = world ?? SimGameContext.ActiveWorld;
+        }
+
+        // --- Instance Wrappers ---
+        public bool IsWalkable(int2 pos) => IsWalkable(_world, pos);
+        public SimMapNode GetNode(int x, int y) => GetNode(_world, x, y);
+        // -------------------------
+
+        // --- STATİK FONKSİYONLAR ---
+
+        public static SimMapNode GetNode(SimWorldState world, int x, int y)
+        {
+            // DÜZELTME: IsValid yerine IsInBounds kullanıyoruz
+            if (!world.Map.IsInBounds(new int2(x, y))) return null;
+            return world.Map.Grid[x, y];
+        }
+
         public static bool IsWalkable(SimWorldState world, int2 pos)
         {
             if (!world.Map.IsInBounds(pos)) return false;
             var node = world.Map.Grid[pos.x, pos.y];
-            // Yürünebilir zemin olmalı VE üzerinde kimse olmamalı
             return node.IsWalkable && node.OccupantID == -1;
         }
 
-        // Yakınlarda boş yer bul
         public static int2? FindWalkableNeighbor(SimWorldState world, int2 center)
         {
-            // Önce 4 Ana Yön
             int2[] cardinals = { new int2(0, 1), new int2(0, -1), new int2(1, 0), new int2(-1, 0) };
             foreach (var dir in cardinals)
             {
                 int2 p = new int2(center.x + dir.x, center.y + dir.y);
                 if (IsWalkable(world, p)) return p;
             }
-            // Sonra Çaprazlar
             int2[] diagonals = { new int2(1, 1), new int2(1, -1), new int2(-1, 1), new int2(-1, -1) };
             foreach (var dir in diagonals)
             {
@@ -37,11 +58,9 @@ namespace RTS.Simulation.Systems
 
         public static int GetDistance(int2 a, int2 b)
         {
-            // Manhattan Mesafesi (Mathf.Abs yerine System.Math.Abs)
             return Math.Abs(a.x - b.x) + Math.Abs(a.y - b.y);
         }
 
-        // --- A* (A-STAR) ALGORİTMASI ---
         public static List<int2> FindPath(SimWorldState world, int2 start, int2 end)
         {
             if (!world.Map.IsInBounds(start) || !world.Map.IsInBounds(end)) return new List<int2>();
@@ -49,20 +68,16 @@ namespace RTS.Simulation.Systems
 
             var openSet = new List<int2> { start };
             var cameFrom = new Dictionary<int2, int2>();
-
             var gScore = new Dictionary<int2, int>();
             gScore[start] = 0;
-
             var fScore = new Dictionary<int2, int>();
             fScore[start] = GetDistance(start, end);
 
-            // Güvenlik Limiti
             int safetyLoop = 3000;
 
             while (openSet.Count > 0 && safetyLoop > 0)
             {
                 safetyLoop--;
-
                 int2 current = openSet[0];
                 int currentF = fScore.ContainsKey(current) ? fScore[current] : int.MaxValue;
 
@@ -76,49 +91,37 @@ namespace RTS.Simulation.Systems
                     }
                 }
 
-                if (current == end)
-                {
-                    return ReconstructPath(cameFrom, current);
-                }
+                if (current == end) return ReconstructPath(cameFrom, current);
 
                 openSet.Remove(current);
 
                 foreach (var neighbor in GetNeighbors(current))
                 {
-                    if (!IsWalkable(world, neighbor) && neighbor != end)
-                        continue;
+                    if (!IsWalkable(world, neighbor) && neighbor != end) continue;
 
                     int tentativeGScore = gScore[current] + 1;
-
                     if (!gScore.ContainsKey(neighbor) || tentativeGScore < gScore[neighbor])
                     {
                         cameFrom[neighbor] = current;
                         gScore[neighbor] = tentativeGScore;
                         fScore[neighbor] = tentativeGScore + GetDistance(neighbor, end);
-
-                        if (!openSet.Contains(neighbor))
-                            openSet.Add(neighbor);
+                        if (!openSet.Contains(neighbor)) openSet.Add(neighbor);
                     }
                 }
             }
-
             return new List<int2>();
         }
 
         private static List<int2> ReconstructPath(Dictionary<int2, int2> cameFrom, int2 current)
         {
-            var totalPath = new List<int2>();
-            totalPath.Add(current);
-
+            var totalPath = new List<int2> { current };
             while (cameFrom.ContainsKey(current))
             {
                 current = cameFrom[current];
                 totalPath.Add(current);
             }
-
             totalPath.Reverse();
             if (totalPath.Count > 0) totalPath.RemoveAt(0);
-
             return totalPath;
         }
 
@@ -134,11 +137,8 @@ namespace RTS.Simulation.Systems
             yield return new int2(pos.x - 1, pos.y - 1);
         }
 
-        // --- MAZE GENERATION (EKSİK OLAN KISIM EKLENDİ) ---
         public static void GenerateMazeMap(SimMapData map)
         {
-            // 1: Duvar, 0: Yol
-            // 10x10 Basit bir 'U' labirenti
             int[,] maze = new int[,]
             {
                 { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
@@ -150,7 +150,6 @@ namespace RTS.Simulation.Systems
                 { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
                 { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
             };
-
             int rows = maze.GetLength(0);
             int cols = maze.GetLength(1);
 
@@ -160,29 +159,14 @@ namespace RTS.Simulation.Systems
                 {
                     var node = map.Grid[x, y];
                     node.OccupantID = -1;
-
                     if (x < rows && y < cols)
                     {
-                        if (maze[x, y] == 1)
-                        {
-                            node.Type = SimTileType.Stone;
-                            node.IsWalkable = false;
-                        }
-                        else
-                        {
-                            node.Type = SimTileType.Grass;
-                            node.IsWalkable = true;
-                        }
+                        if (maze[x, y] == 1) { node.Type = SimTileType.Stone; node.IsWalkable = false; }
+                        else { node.Type = SimTileType.Grass; node.IsWalkable = true; }
                     }
-                    else
-                    {
-                        node.Type = SimTileType.Stone;
-                        node.IsWalkable = false;
-                    }
+                    else { node.Type = SimTileType.Stone; node.IsWalkable = false; }
                 }
             }
-            // Debug.Log thread içinde hata verebilir, o yüzden visual modda değilsek kapalı kalsın
-            // UnityEngine.Debug.Log("SimGridSystem: Maze Map Generated."); 
         }
 
         public static float GetDistanceSq(int2 a, int2 b)

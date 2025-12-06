@@ -6,6 +6,8 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 /[Mm]emoryCaptures/
+/[Mm]lagents-env/
+
 
 # Asset meta data should only be ignored when the corresponding asset is also ignored
 !/[Aa]ssets/**/*.meta
@@ -31,3 +33,30 @@
 *.opentides
 *.opendb
 *.vc.db
+
+# -----------------------------------------------------------
+# PYTHON EKLENTİLERİ (Aşağıdaki kısım eklendi)
+# -----------------------------------------------------------
+
+# Derlenmiş Python dosyaları (Byte-compiled / optimized / DLL files)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Sanal Ortamlar (Virtual Environments)
+# "venv", "env" veya ".venv" gibi yaygın isimler
+venv/
+.venv/
+env/
+.env/
+python_env/
+
+# Python Paketleme ve Dağıtım Artıkları
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook kullanıyorsanız checkpoint dosyaları
+.ipynb_checkpoints
