@@ -1,11 +1,10 @@
 using RTS.Simulation.Data;
-using RTS.Simulation.Core; // SimGameContext için
+using RTS.Simulation.Core;
 
 namespace RTS.Simulation.Systems
 {
     public class SimResourceSystem
     {
-        // --- YENİ: Instance Yapısı ---
         private SimWorldState _world;
 
         public SimResourceSystem(SimWorldState world = null)
@@ -13,16 +12,16 @@ namespace RTS.Simulation.Systems
             _world = world ?? SimGameContext.ActiveWorld;
         }
 
-        // --- Instance Wrappers ---
+        // --- Instance Methods (Tercih Edilen) ---
         public int GetResourceAmount(int playerID, SimResourceType type) => GetResourceAmount(_world, playerID, type);
-        public bool SpendResources(int playerID, int wood, int stone, int meat) => SpendResources(_world, playerID, wood, stone, meat);
+        public bool SpendResources(int playerID, int w, int s, int m) => SpendResources(_world, playerID, w, s, m);
         public void AddResource(int playerID, SimResourceType type, int amount) => AddResource(_world, playerID, type, amount);
-        public bool CanAfford(int playerID, int wood, int stone, int meat) => CanAfford(_world, playerID, wood, stone, meat);
+        public bool CanAfford(int playerID, int w, int s, int m) => CanAfford(_world, playerID, w, s, m);
         public bool HasPopulationSpace(int playerID) => HasPopulationSpace(_world, playerID);
         public void IncreaseMaxPopulation(int playerID, int amount) => IncreaseMaxPopulation(_world, playerID, amount);
-        // -------------------------
+        public void ModifyPopulation(int playerID, int amount) => ModifyPopulation(_world, playerID, amount);
 
-        // --- MEVCUT STATİK FONKSİYONLAR (KORUNDU) ---
+        // --- Static Helper Methods (Logic Implementation) ---
         public static SimPlayerData GetPlayer(SimWorldState world, int playerID)
         {
             if (world.Players.TryGetValue(playerID, out SimPlayerData data)) return data;

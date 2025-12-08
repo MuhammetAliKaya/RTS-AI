@@ -14,14 +14,63 @@ namespace RTS.Simulation.Systems
             _world = world ?? SimGameContext.ActiveWorld;
         }
 
+        // --- INSTANCE WRAPPERS ---
         public void UpdateAllBuildings(float dt) => UpdateAllBuildings(_world, dt);
         public void SpawnUnit(int2 basePos, SimUnitType type, int playerID) => SpawnUnit(_world, basePos, type, playerID);
 
+        // YENİ: Factory Method - Binayı oluşturur, ayarlar ve dünyaya ekler.
+        public SimBuildingData CreateBuilding(int playerID, SimBuildingType type, int2 position)
+        {
+            return CreateBuilding(_world, playerID, type, position);
+        }
+        // -------------------------
+
+        // --- STATİK VE MANTIK FONKSİYONLARI ---
+
+        /// <summary>
+        /// YENİ: Güvenli Bina Oluşturma Fonksiyonu (Factory Pattern)
+        /// Bu fonksiyon InitializeBuildingStats'ı otomatik çağırır.
+        /// </summary>
+        public static SimBuildingData CreateBuilding(SimWorldState world, int playerID, SimBuildingType type, int2 position)
+        {
+            var building = new SimBuildingData
+            {
+                ID = world.NextID(),
+                PlayerID = playerID,
+                Type = type,
+                GridPosition = position,
+                IsConstructed = false,
+                ConstructionProgress = 0f,
+                Health = 10, // Başlangıç inşaat canı
+                MaxHealth = 100 // Varsayılan
+            };
+
+            // KRİTİK ADIM: İstatistikleri ve ResourceGenerator özelliklerini yükle
+            InitializeBuildingStats(building);
+
+            // Base gibi özel binaların canını override et
+            if (type == SimBuildingType.Base) building.MaxHealth = SimConfig.BASE_MAX_HEALTH;
+
+            // Dünyaya ekle
+            world.Buildings.Add(building.ID, building);
+
+            // Haritada yerini işaretle
+            if (world.Map.IsInBounds(position))
+            {
+                var node = world.Map.Grid[position.x, position.y];
+                node.OccupantID = building.ID;
+                node.IsWalkable = false;
+            }
+
+            return building;
+        }
+
         public static void UpdateAllBuildings(SimWorldState world, float dt)
         {
+            // Koleksiyon değişimi hatasını önlemek için ToList() veya Keys kopyası alınabilir
+            // Ancak basit döngülerde şimdilik foreach yeterli
             foreach (var building in world.Buildings.Values)
             {
-                // Sadece tamamlanmış binalar çalışır
                 if (!building.IsConstructed) continue;
 
                 UpdateProduction(building, world, dt);
@@ -36,25 +85,21 @@ namespace RTS.Simulation.Systems
 
             building.ConstructionProgress += amount;
 
-            // --- GÖRSEL DÜZELTME: Canı ilerlemeye göre artır ---
-            float healthPct = amount / SimConfig.BUILDING_MAX_PROGRESS;
+            // Canı ilerlemeye göre artır
+            float healthPct = building.ConstructionProgress / SimConfig.BUILDING_MAX_PROGRESS;
             int hpAdd = Mathf.CeilToInt(building.MaxHealth * healthPct);
-            building.Health = Mathf.Min(building.Health + hpAdd, building.MaxHealth);
-            // --------------------------------------------------
+            // Mevcut canı güncelle (Min-Max clamp ile)
+            building.Health = Mathf.Clamp(hpAdd, 10, building.MaxHealth);
 
             if (building.ConstructionProgress >= SimConfig.BUILDING_MAX_PROGRESS)
             {
                 building.ConstructionProgress = SimConfig.BUILDING_MAX_PROGRESS;
-
-                // Tamamlandığında canı ve bayrağı kesinleştir
                 building.Health = building.MaxHealth;
                 building.IsConstructed = true;
 
                 OnBuildingCompleted(building, world);
 
-                // Log ile teyit et
                 if (SimConfig.EnableLogs) Debug.Log($"🏗️ BİNA TAMAMLANDI: {building.Type} (ID: {building.ID})");
-
                 return true;
             }
             return false;
@@ -70,8 +115,8 @@ namespace RTS.Simulation.Systems
 
         public static void InitializeBuildingStats(SimBuildingData b)
         {
-            b.MaxHealth = 1000;
-            b.Health = 10; // Başlangıç canı düşük (İnşaat ilerledikçe artacak)
+            b.MaxHealth = 1000; // Varsayılan yüksek değer
+            b.Health = 10;
             b.ConstructionProgress = b.IsConstructed ? SimConfig.BUILDING_MAX_PROGRESS : 0f;
 
             // Kaynak Üreticisi Ayarları
@@ -91,16 +136,19 @@ namespace RTS.Simulation.Systems
                     b.AttackRange = SimConfig.TOWER_ATTACK_RANGE;
                     b.AttackSpeed = SimConfig.TOWER_ATTACK_SPEED;
                     break;
+                case SimBuildingType.Wall:
+                    b.MaxHealth = SimConfig.WALL_MAX_HEALTH;
+                    break;
             }
         }
 
-        // Yardımcı Fonksiyon: Kod tekrarını önler
         private static void ConfigureGenerator(SimBuildingData b, SimResourceType type)
         {
             b.IsResourceGenerator = true;
             b.ResourceType = type;
             b.ResourceInterval = SimConfig.RESOURCE_GENERATION_INTERVAL;
             b.ResourceAmountPerCycle = SimConfig.RESOURCE_GENERATION_AMOUNT;
+            // Debug.Log($"⚙️ Configured Generator: {b.Type} -> {type}"); // Test için açılabilir
         }
 
         public static void StartTraining(SimBuildingData building, SimWorldState world, SimUnitType unitType)
@@ -143,8 +191,8 @@ namespace RTS.Simulation.Systems
                 building.ResourceTimer = 0f;
                 SimResourceSystem.AddResource(world, building.PlayerID, building.ResourceType, building.ResourceAmountPerCycle);
 
-                // Debug Log(Sadece test için açılabilir)
-                Debug.Log($"💰 {building.ResourceType} Üretildi! (+{building.ResourceAmountPerCycle})");
+                // Kaynak üretimi logu (Çok sık çıkarsa kapatılabilir)
+                // if(SimConfig.EnableLogs) Debug.Log($"💰 {building.ResourceType} (+{building.ResourceAmountPerCycle})");
             }
         }
 

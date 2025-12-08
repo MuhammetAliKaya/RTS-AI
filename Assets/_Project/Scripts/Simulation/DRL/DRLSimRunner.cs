@@ -354,7 +354,7 @@ public class DRLSimRunner : MonoBehaviour
         if (currentSoldiers > _lastSoldierCount)
         {
             int diff = currentSoldiers - _lastSoldierCount;
-            Agent.AddReward(15.0f * diff);
+            Agent.AddReward(5.0f * diff);
         }
         _lastSoldierCount = currentSoldiers;
 

@@ -67,6 +67,8 @@ namespace RTS.Simulation.Systems
         public const int SOLDIER_MAX_HEALTH = 120;
         public const int BASE_MAX_HEALTH = 5000;
         public const int BUILDING_DEFAULT_HEALTH = 1000;
+        public const int WALL_MAX_HEALTH = 10000;
+
 
         public const float WORKER_MOVE_SPEED = 5.0f;
         public const float SOLDIER_MOVE_SPEED = 4.0f;
