@@ -83,9 +83,11 @@ namespace RTS.Simulation.Systems
 
         private static void UpdateCombat(SimUnitData unit, SimWorldState world, float dt)
         {
+            // --- HEDEF KONTROLÜ ---
             bool isUnit = world.Units.TryGetValue(unit.TargetID, out SimUnitData enemyUnit);
             bool isBuilding = world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData enemyBuilding);
 
+            // Hedef yoksa veya öldüyse/yıkıldıysa saldırıyı durdur
             if ((!isUnit && !isBuilding) ||
                 (isUnit && enemyUnit.State == SimTaskType.Dead) ||
                 (isBuilding && !enemyBuilding.IsConstructed && enemyBuilding.PlayerID == unit.PlayerID))
@@ -95,30 +97,64 @@ namespace RTS.Simulation.Systems
                 return;
             }
 
+            // --- MESAFE KONTROLÜ ---
             int2 targetPos = isUnit ? enemyUnit.GridPosition : enemyBuilding.GridPosition;
             float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, targetPos);
             float rangeSq = unit.AttackRange * unit.AttackRange;
 
+            // Menzildeyse VUR
             if (distSq <= rangeSq)
             {
                 unit.AttackTimer += dt;
                 if (unit.AttackTimer >= unit.AttackSpeed)
                 {
                     unit.AttackTimer = 0f;
+
                     if (isUnit)
                     {
+                        // HASAR UYGULA
                         enemyUnit.Health -= unit.Damage;
-                        if (enemyUnit.Health <= 0) KillUnit(enemyUnit, world);
+
+                        // --- DETAYLI LOG (BİRİM) ---
+                        UnityEngine.Debug.Log(
+                            $"⚔️ [BİRİM VURDU] " +
+                            $"Saldıran: {unit.UnitType} (ID:{unit.ID}) (P:{unit.PlayerID}) -> " +
+                            $"Hedef: {enemyUnit.UnitType} (ID:{enemyUnit.ID}) (P:{enemyUnit.PlayerID}) | " +
+                            $"Konum: {targetPos} | Hasar: {unit.Damage} | Kalan Can: {enemyUnit.Health}"
+                        );
+                        // -------------------------
+
+                        if (enemyUnit.Health <= 0)
+                        {
+                            UnityEngine.Debug.Log($"☠️ [ÖLÜM] {enemyUnit.UnitType} (ID:{enemyUnit.ID}) öldürüldü!");
+                            KillUnit(enemyUnit, world);
+                        }
                     }
                     else if (isBuilding)
                     {
+                        // HASAR UYGULA
                         enemyBuilding.Health -= unit.Damage;
-                        if (enemyBuilding.Health <= 0) DestroyBuilding(enemyBuilding, world);
+
+                        // --- DETAYLI LOG (BİNA) ---
+                        UnityEngine.Debug.Log(
+                            $"🔥 [BİNA VURDU] " +
+                            $"Saldıran: {unit.UnitType} (ID:{unit.ID}) (P:{unit.PlayerID}) -> " +
+                            $"Hedef Bina: {enemyBuilding.Type} (ID:{enemyBuilding.ID}) (P:{enemyBuilding.PlayerID}) | " +
+                            $"Konum: {targetPos} | Hasar: {unit.Damage} | Kalan Can: {enemyBuilding.Health}"
+                        );
+                        // -------------------------
+
+                        if (enemyBuilding.Health <= 0)
+                        {
+                            UnityEngine.Debug.Log($"💥 [YIKIM] {enemyBuilding.Type} (ID:{enemyBuilding.ID}) yıkıldı!");
+                            DestroyBuilding(enemyBuilding, world);
+                        }
                     }
                 }
             }
             else
             {
+                // Menzilde değilse YÜRÜ
                 if (unit.Path == null || unit.Path.Count == 0)
                 {
                     if (isBuilding)
@@ -126,7 +162,10 @@ namespace RTS.Simulation.Systems
                         int2? standPos = SimGridSystem.FindWalkableNeighbor(world, targetPos);
                         if (standPos.HasValue) unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, standPos.Value);
                     }
-                    else unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
+                    else
+                    {
+                        unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
+                    }
                 }
                 unit.State = SimTaskType.Moving;
             }

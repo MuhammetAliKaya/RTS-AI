@@ -24,6 +24,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     [Header("Rakip Ayarları")]
     public bool UseMacroAI = true;
+    [Tooltip("Passive: Saldırmaz, Defensive: Asker basar saldırmaz, Aggressive: Tam güç saldırır")]
+    public AIDifficulty EnemyDifficulty = AIDifficulty.Passive; // Başlangıçta Passive öneririm
 
     // SİSTEMLER
     private SimWorldState _world;
@@ -31,6 +33,10 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private SimUnitSystem _unitSys;
     private SimBuildingSystem _buildSys;
     private SimResourceSystem _resSys;
+
+    private int _lastEnemyUnitCount = 0;
+    private int _lastEnemyBuildingCount = 0;
+    private float _lastEnemyBaseHealth = 1000f;
 
     // RAKİP
     private SimpleMacroAI _enemyAI;
@@ -75,6 +81,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // 3. Simülasyonu İlerlet <-- DEĞİŞTİRİLDİ
         if (_buildSys != null) _buildSys.UpdateAllBuildings(dt);
 
+        CalculateCombatRewards();
+
         var unitIds = _world.Units.Keys.ToList();
         foreach (var uid in unitIds)
         {
@@ -90,6 +98,58 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             EndGame(0); // Berabere / Zaman Doldu
         }
+    }
+
+    private void CalculateCombatRewards()
+    {
+        if (Agent == null) return;
+
+        // Anlık düşman sayılarını al
+        int currentEnemyUnits = 0;
+        int currentEnemyBuildings = 0;
+        float currentEnemyBaseHealth = 0;
+
+        foreach (var u in _world.Units.Values)
+            if (u.PlayerID == 2 && u.State != SimTaskType.Dead) currentEnemyUnits++;
+
+        foreach (var b in _world.Buildings.Values)
+        {
+            if (b.PlayerID == 2)
+            {
+                currentEnemyBuildings++;
+                if (b.Type == SimBuildingType.Base) currentEnemyBaseHealth = b.Health;
+            }
+        }
+
+        // 1. DÜŞMAN BİRİMİ ÖLDÜRME ÖDÜLÜ
+        // Eğer sayı azaldıysa, düşman ölmüştür (biz öldürdük varsayıyoruz)
+        if (currentEnemyUnits < _lastEnemyUnitCount)
+        {
+            int killCount = _lastEnemyUnitCount - currentEnemyUnits;
+            Agent.AddReward(0.5f * killCount); // Adam başı 0.5 puan (Büyük ödül)
+            // Debug.Log($"⚔️ Düşman öldürüldü! +{0.5f * killCount}");
+        }
+
+        // 2. DÜŞMAN BİNASI YIKMA ÖDÜLÜ
+        if (currentEnemyBuildings < _lastEnemyBuildingCount)
+        {
+            int destroyCount = _lastEnemyBuildingCount - currentEnemyBuildings;
+            Agent.AddReward(1.0f * destroyCount); // Bina yıkmak çok değerlidir
+        }
+
+        // 3. DÜŞMAN ÜSSÜNE HASAR VERME ÖDÜLÜ
+        // Üssü yıkamasa bile vurdukça ödül alsın ki saldırmaya devam etsin
+        if (currentEnemyBaseHealth < _lastEnemyBaseHealth)
+        {
+            float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
+            // Her 100 hasar için 0.1 puan (Hasar başına 0.001)
+            Agent.AddReward(damage * 0.001f);
+        }
+
+        // Değerleri güncelle
+        _lastEnemyUnitCount = currentEnemyUnits;
+        _lastEnemyBuildingCount = currentEnemyBuildings;
+        _lastEnemyBaseHealth = currentEnemyBaseHealth;
     }
 
     public void ResetSimulation()
@@ -147,7 +207,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // 5. Rakip AI Başlat
         if (UseMacroAI)
         {
-            _enemyAI = new SimpleMacroAI(_world, 2);
+            // Zorluk seviyesini buraya parametre olarak geçiyoruz
+            _enemyAI = new SimpleMacroAI(_world, 2, EnemyDifficulty);
         }
         else
         {
@@ -158,6 +219,10 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             Visualizer.Initialize(_world);
         }
+
+        _lastEnemyUnitCount = 0; // Başlangıçta 0 kabul et (veya spawn sonrası say)
+        _lastEnemyBuildingCount = 1; // Başlangıçta 1 base var
+        _lastEnemyBaseHealth = 1000f;
 
     }
 

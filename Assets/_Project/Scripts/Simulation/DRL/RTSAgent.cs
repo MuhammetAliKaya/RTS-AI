@@ -64,29 +64,57 @@ public class RTSAgent : Agent
         int targetX = actions.DiscreteActions[1];
         int targetY = actions.DiscreteActions[2];
 
-        _lastDebugCommand = command;
-        _lastDebugX = targetX;
-        _lastDebugY = targetY;
-
+        // Hamleyi uygula
         bool isSuccess = _translator.ExecuteAction(command, targetX, targetY);
 
-        // Ödül Sistemi
         if (!isSuccess && command != 0)
         {
-            AddReward(-0.005f); // Geçersiz hamle cezası
+            // Geçersiz hamleye ceza (Bunu tut, saçmalamayı önler)
+            AddReward(-0.005f);
         }
-        else if (command != 0)
+        else if (isSuccess)
         {
-            AddReward(0.001f); // Geçerli hamle teşviki
+            // --- BURASI DEĞİŞTİ ---
+            // Eski kod: AddReward(0.001f); // <-- BU SATIR SPAM YAPTIRIYORDU!
+
+            // YENİ MANTIK: Sadece anlamlı işlere ödül ver
+
+            // 1. Kışla kurmak önemlidir (Ama sadece ilk 1-2 tanesi)
+            if (command == 2) // Eğer komut Kışla (Barracks) ise (Index 2 varsayıldı)
+            {
+                int barracksCount = 0;
+                foreach (var b in _world.Buildings.Values)
+                    if (b.PlayerID == 1 && b.Type == SimBuildingType.Barracks) barracksCount++;
+
+                // Sadece ilk kışlaya büyük ödül ver, sonrakilere verme
+                if (barracksCount <= 1) AddReward(0.1f);
+            }
+
+            // 2. Asker üretmek her zaman iyidir (Savaş için şart)
+            if (command == 4) // Asker Üret komutu
+            {
+                AddReward(0.05f);
+            }
+
+            // 3. Saldırı emri vermek (Emir vermeyi teşvik et)
+            if (command == 5) // Saldır komutu
+            {
+                AddReward(0.01f);
+            }
         }
+
+        // Her adımda çok küçük bir "Varolma Cezası" (Step Penalty)
+        // Bu, ajanı oyunu hızlı bitirmeye teşvik eder.
+        AddReward(-0.0001f);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
+        // Dünya veya oyuncu yoksa hiçbir şey yapma
         if (_world == null || !_world.Players.ContainsKey(1)) return;
         var player = _world.Players[1];
 
-        // --- VARLIK KONTROLLERİ ---
+        // --- 1. VARLIK KONTROLLERİ (Sahip olduklarımızı say) ---
         bool hasWorker = false;
         int soldierCount = 0;
         bool hasBarracks = false;
@@ -109,7 +137,8 @@ public class RTSAgent : Agent
             }
         }
 
-        // --- SEVİYE KISITLAMALARI (Sadece DRLSimRunner kullanıyorsa) ---
+        // --- 2. SEVİYE KISITLAMALARI (Sadece DRLSimRunner/Eğitim Modu varsa) ---
+        // Eğer CombatRunner (Savaş) varsa bu blok atlanır, tüm teknoloji açık olur.
         if (Runner != null)
         {
             if (Runner.CurrentLevel < 3)
@@ -127,29 +156,36 @@ public class RTSAgent : Agent
             }
         }
 
-        // --- BİRİM GEREKSİNİMLERİ ---
+        // --- 3. TEMEL MANTIK KISITLAMALARI (Hem Eğitim Hem Savaş İçin Geçerli) ---
+
+        // İşçimiz yoksa, işçi gerektiren eylemleri kapat (Bina inşa etmek gibi)
         if (!hasWorker)
         {
-            int[] workerActions = { 1, 2, 6, 7, 8, 9 };
+            int[] workerActions = { 1, 2, 6, 7, 8, 9 }; // İnşaat aksiyonları
             foreach (var act in workerActions) actionMask.SetActionEnabled(0, act, false);
         }
+
+        // Askerimiz yoksa, saldırı emrini kapat
         if (soldierCount == 0)
         {
             actionMask.SetActionEnabled(0, 5, false); // Saldır
         }
 
-        // --- KAYNAK KONTROLLERİ ---
+        // --- 4. KAYNAK KONTROLLERİ (Maliyet Maskeleme) ---
         CheckAffordability(actionMask, 1, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
         CheckAffordability(actionMask, 2, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
         CheckAffordability(actionMask, 7, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
         CheckAffordability(actionMask, 8, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
         CheckAffordability(actionMask, 9, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
 
-        // --- ÜRETİM KONTROLLERİ ---
+        // --- 5. ÜRETİM KONTROLLERİ ---
+
+        // İşçi Üretimi: Ana bina lazım + Kaynak lazım + Nüfus yeri lazım
         bool canAffordWorker = SimResourceSystem.CanAfford(_world, 1, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
         if (!hasBase || !canAffordWorker || player.CurrentPopulation >= player.MaxPopulation)
             actionMask.SetActionEnabled(0, 3, false);
 
+        // Asker Üretimi: Kışla lazım + Kaynak lazım + Nüfus yeri lazım
         bool canAffordSoldier = SimResourceSystem.CanAfford(_world, 1, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
         if (!hasBarracks || !canAffordSoldier || player.CurrentPopulation >= player.MaxPopulation)
             actionMask.SetActionEnabled(0, 4, false);

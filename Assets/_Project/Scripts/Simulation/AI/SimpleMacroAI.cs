@@ -4,7 +4,7 @@ using RTS.Simulation.Core;
 using System.Linq;
 using System.Collections.Generic;
 
-// UnityEngine YOK!
+public enum AIDifficulty { Passive, Defensive, Aggressive }
 
 public class SimpleMacroAI
 {
@@ -12,12 +12,16 @@ public class SimpleMacroAI
     private int _playerID;
     private float _timer = 0f;
     private float _decisionInterval = 1.0f;
-    private bool _isAttacking = false; // Saldırı modunda mıyız?
+    private bool _isAttacking = false;
 
-    public SimpleMacroAI(SimWorldState world, int playerID)
+    // YENİ: Zorluk Seviyesi
+    private AIDifficulty _difficulty;
+
+    public SimpleMacroAI(SimWorldState world, int playerID, AIDifficulty difficulty = AIDifficulty.Aggressive)
     {
         _world = world;
         _playerID = playerID;
+        _difficulty = difficulty;
     }
 
     public void Update(float dt)
@@ -41,14 +45,15 @@ public class SimpleMacroAI
         bool hasBarracks = myBuildings.Any(b => b.Type == SimBuildingType.Barracks);
         var baseB = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
 
-        // 1. İŞÇİ BAS (HEDEF 5)
+        // 1. İŞÇİ BAS (HEDEF 5) - Her zorlukta yapar
         if (baseB != null && !baseB.IsTraining && workerCount < 5)
         {
             if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT))
                 SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
         }
 
-        // 2. KIŞLA KUR (5 İŞÇİ VARSA)
+        // 2. KIŞLA KUR (5 İŞÇİ VARSA) - Passive modda kışla kurmayabilir veya asker basmayabilir, 
+        // ama base savunması için genelde kurduruyoruz. Passive sadece saldırmaz.
         if (workerCount >= 5 && !hasBarracks)
         {
             if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT))
@@ -67,10 +72,12 @@ public class SimpleMacroAI
             }
         }
 
-        // 3. ASKER BAS (HEDEF 5)
-        if (hasBarracks && soldierCount < 5)
+        // 3. ASKER BAS (HEDEF 5) - Passive modda 0-1 asker basabilir, Defensive'de basar.
+        int targetSoldierCount = (_difficulty == AIDifficulty.Passive) ? 0 : 5;
+
+        if (hasBarracks && soldierCount < targetSoldierCount)
         {
-            _isAttacking = false; // Asker azaldıysa saldırıyı durdur, üretime dön
+            _isAttacking = false;
             var barracks = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Barracks && b.IsConstructed);
             if (barracks != null && !barracks.IsTraining)
             {
@@ -79,13 +86,22 @@ public class SimpleMacroAI
             }
         }
 
-        // 4. İŞÇİ YÖNETİMİ (HEDEFE GÖRE)
+        // 4. İŞÇİ YÖNETİMİ
         ManageWorkersSmart(myUnits, pData, hasBarracks);
 
-        // 5. SALDIRI (RUSH)
-        if (soldierCount >= 5)
+        // 5. SALDIRI MANTIĞI (Zorluğa göre değişir)
+        if (_difficulty == AIDifficulty.Aggressive)
         {
-            _isAttacking = true; // Saldırı modunu aç
+            if (soldierCount >= 5) _isAttacking = true;
+        }
+        else if (_difficulty == AIDifficulty.Defensive)
+        {
+            // Sadece savunma yapar, _isAttacking asla true olmaz (veya sadece karşı saldırı)
+            _isAttacking = false;
+        }
+        else // Passive
+        {
+            _isAttacking = false;
         }
 
         if (_isAttacking)

@@ -1727,9 +1727,9 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: ece15da121d59a84fbe20f7020cebc8e, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: 52d9438eed8838e4f849b7f61741f481, type: 3}
   m_InferenceDevice: 0
-  m_BehaviorType: 0
+  m_BehaviorType: 2
   m_BehaviorName: RTSCombatAgent
   TeamId: 0
   m_UseChildSensors: 1
@@ -2224,11 +2224,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Agent: {fileID: 645419872}
   MapSize: 20
-  MaxSteps: 5000
+  MaxSteps: 20000
   SimulationTimeScale: 1
-  dt: 0.001
+  dt: 0.05
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
+  EnemyDifficulty: 2
 --- !u!1 &804183093
 GameObject:
   m_ObjectHideFlags: 0
@@ -2625,7 +2626,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1047055262
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2633,7 +2634,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1047055261}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f5a1d14ccb4f29741b78cfba3fca2c34, type: 3}
   m_Name: 
@@ -2645,7 +2646,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1047055261}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dde80e69161386241bf717eca46f980f, type: 3}
   m_Name: 
@@ -4110,7 +4111,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1875443515
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4397,7 +4398,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1937205422
 RectTransform:
   m_ObjectHideFlags: 0
