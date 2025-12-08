@@ -10,7 +10,7 @@ public class RTSAgent : Agent
 {
     private SimWorldState _world;
     private SimGridSystem _gridSystem;
-    private SimUnitSystem _unitSystem;
+    private SimUnitSystem _unitSystem; // ARTIK BU ÖNEMLİ
     private SimBuildingSystem _buildingSystem;
 
     private DRLActionTranslator _translator;
@@ -19,7 +19,6 @@ public class RTSAgent : Agent
     public DRLSimRunner Runner;
     public AdversarialTrainerRunner CombatRunner;
 
-    // Debug
     private int _lastDebugX = -1;
     private int _lastDebugY = -1;
     private int _lastDebugCommand = 0;
@@ -33,25 +32,91 @@ public class RTSAgent : Agent
 
         _gridSensor = new RTSGridSensor(_world, _gridSystem);
         _translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem);
+
+        // Setup çağrıldığında eventleri yeniden bağlamamız gerekebilir
+        // Ama genellikle OnEnable yeterlidir. Setup OnEnable'dan sonra çağrılırsa diye:
+        RebindEvents();
+    }
+
+    // --- DEĞİŞİKLİK BURADA: Static Event yerine Instance Event ---
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+        RebindEvents();
+    }
+
+    protected override void OnDisable()
+    {
+        base.OnDisable();
+        if (_unitSystem != null)
+        {
+            _unitSystem.OnUnitAttackedUnit -= HandleUnitAttackedUnit;
+            _unitSystem.OnUnitAttackedBuilding -= HandleUnitAttackedBuilding;
+            _unitSystem.OnUnitKilledEnemy -= HandleUnitKilledEnemy;
+            _unitSystem.OnUnitDestroyedBuilding -= HandleUnitDestroyedBuilding;
+        }
+    }
+
+    private void RebindEvents()
+    {
+        // Önce temizle (çift aboneliği önlemek için)
+        if (_unitSystem != null)
+        {
+            _unitSystem.OnUnitAttackedUnit -= HandleUnitAttackedUnit;
+            _unitSystem.OnUnitAttackedBuilding -= HandleUnitAttackedBuilding;
+            _unitSystem.OnUnitKilledEnemy -= HandleUnitKilledEnemy;
+            _unitSystem.OnUnitDestroyedBuilding -= HandleUnitDestroyedBuilding;
+
+            // Sonra ekle
+            _unitSystem.OnUnitAttackedUnit += HandleUnitAttackedUnit;
+            _unitSystem.OnUnitAttackedBuilding += HandleUnitAttackedBuilding;
+            _unitSystem.OnUnitKilledEnemy += HandleUnitKilledEnemy;
+            _unitSystem.OnUnitDestroyedBuilding += HandleUnitDestroyedBuilding;
+        }
+    }
+    // -------------------------------------------------------------
+
+    private void HandleUnitAttackedUnit(SimUnitData attacker, SimUnitData victim, float damage)
+    {
+        if (attacker.PlayerID == 1) AddReward(damage * 0.002f);
+    }
+
+    private void HandleUnitAttackedBuilding(SimUnitData attacker, SimBuildingData building, float damage)
+    {
+        if (attacker.PlayerID == 1)
+        {
+            float multiplier = (building.Type == SimBuildingType.Base) ? 0.005f : 0.002f;
+            AddReward(damage * multiplier);
+        }
+    }
+
+    private void HandleUnitKilledEnemy(SimUnitData attacker, SimUnitData victim)
+    {
+        if (attacker.PlayerID == 1) AddReward(1.0f);
+    }
+
+    private void HandleUnitDestroyedBuilding(SimUnitData attacker, SimBuildingData building)
+    {
+        if (attacker.PlayerID == 1)
+        {
+            if (building.Type == SimBuildingType.Base)
+            {
+                AddReward(10.0f);
+                EndEpisode();
+            }
+            else AddReward(2.0f);
+        }
     }
 
     public override void OnEpisodeBegin()
     {
-        // HANGİ RUNNER KULLANILIYORSA ONU RESETLE
-        if (Runner != null)
-        {
-            Runner.ResetSimulation();
-        }
-        else if (CombatRunner != null)
-        {
-            CombatRunner.ResetSimulation();
-        }
+        if (Runner != null) Runner.ResetSimulation();
+        else if (CombatRunner != null) CombatRunner.ResetSimulation();
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
         if (_world == null || _gridSensor == null) return;
-
         _gridSensor.AddGlobalStats(sensor);
         _gridSensor.AddGridObservations(sensor);
     }
@@ -64,57 +129,29 @@ public class RTSAgent : Agent
         int targetX = actions.DiscreteActions[1];
         int targetY = actions.DiscreteActions[2];
 
-        // Hamleyi uygula
         bool isSuccess = _translator.ExecuteAction(command, targetX, targetY);
 
-        if (!isSuccess && command != 0)
-        {
-            // Geçersiz hamleye ceza (Bunu tut, saçmalamayı önler)
-            AddReward(-0.005f);
-        }
+        if (!isSuccess && command != 0) AddReward(-0.005f);
         else if (isSuccess)
         {
-            // --- BURASI DEĞİŞTİ ---
-            // Eski kod: AddReward(0.001f); // <-- BU SATIR SPAM YAPTIRIYORDU!
-
-            // YENİ MANTIK: Sadece anlamlı işlere ödül ver
-
-            // 1. Kışla kurmak önemlidir (Ama sadece ilk 1-2 tanesi)
-            if (command == 2) // Eğer komut Kışla (Barracks) ise (Index 2 varsayıldı)
+            if (command == 2)
             {
                 int barracksCount = 0;
                 foreach (var b in _world.Buildings.Values)
                     if (b.PlayerID == 1 && b.Type == SimBuildingType.Barracks) barracksCount++;
-
-                // Sadece ilk kışlaya büyük ödül ver, sonrakilere verme
                 if (barracksCount <= 1) AddReward(0.1f);
             }
-
-            // 2. Asker üretmek her zaman iyidir (Savaş için şart)
-            if (command == 4) // Asker Üret komutu
-            {
-                AddReward(0.05f);
-            }
-
-            // 3. Saldırı emri vermek (Emir vermeyi teşvik et)
-            if (command == 5) // Saldır komutu
-            {
-                AddReward(0.01f);
-            }
+            if (command == 4) AddReward(0.05f);
         }
-
-        // Her adımda çok küçük bir "Varolma Cezası" (Step Penalty)
-        // Bu, ajanı oyunu hızlı bitirmeye teşvik eder.
-        AddReward(-0.0001f);
+        AddReward(-0.0005f);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        // Dünya veya oyuncu yoksa hiçbir şey yapma
+        // (Bu kısım değişmedi, aynen kalabilir)
         if (_world == null || !_world.Players.ContainsKey(1)) return;
         var player = _world.Players[1];
 
-        // --- 1. VARLIK KONTROLLERİ (Sahip olduklarımızı say) ---
         bool hasWorker = false;
         int soldierCount = 0;
         bool hasBarracks = false;
@@ -137,55 +174,41 @@ public class RTSAgent : Agent
             }
         }
 
-        // --- 2. SEVİYE KISITLAMALARI (Sadece DRLSimRunner/Eğitim Modu varsa) ---
-        // Eğer CombatRunner (Savaş) varsa bu blok atlanır, tüm teknoloji açık olur.
         if (Runner != null)
         {
             if (Runner.CurrentLevel < 3)
             {
-                actionMask.SetActionEnabled(0, 1, false); // Ev
-                actionMask.SetActionEnabled(0, 2, false); // Kışla
-                actionMask.SetActionEnabled(0, 7, false); // Çiftlik
-                actionMask.SetActionEnabled(0, 8, false); // Oduncu
-                actionMask.SetActionEnabled(0, 9, false); // Taş Ocağı
+                actionMask.SetActionEnabled(0, 1, false);
+                actionMask.SetActionEnabled(0, 2, false);
+                actionMask.SetActionEnabled(0, 7, false);
+                actionMask.SetActionEnabled(0, 8, false);
+                actionMask.SetActionEnabled(0, 9, false);
             }
             if (Runner.CurrentLevel < 4)
             {
-                actionMask.SetActionEnabled(0, 4, false); // Asker Üret
-                actionMask.SetActionEnabled(0, 5, false); // Saldır
+                actionMask.SetActionEnabled(0, 4, false);
+                actionMask.SetActionEnabled(0, 5, false);
             }
         }
 
-        // --- 3. TEMEL MANTIK KISITLAMALARI (Hem Eğitim Hem Savaş İçin Geçerli) ---
-
-        // İşçimiz yoksa, işçi gerektiren eylemleri kapat (Bina inşa etmek gibi)
         if (!hasWorker)
         {
-            int[] workerActions = { 1, 2, 6, 7, 8, 9 }; // İnşaat aksiyonları
+            int[] workerActions = { 1, 2, 6, 7, 8, 9 };
             foreach (var act in workerActions) actionMask.SetActionEnabled(0, act, false);
         }
 
-        // Askerimiz yoksa, saldırı emrini kapat
-        if (soldierCount == 0)
-        {
-            actionMask.SetActionEnabled(0, 5, false); // Saldır
-        }
+        if (soldierCount == 0) actionMask.SetActionEnabled(0, 5, false);
 
-        // --- 4. KAYNAK KONTROLLERİ (Maliyet Maskeleme) ---
         CheckAffordability(actionMask, 1, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
         CheckAffordability(actionMask, 2, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
         CheckAffordability(actionMask, 7, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
         CheckAffordability(actionMask, 8, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
         CheckAffordability(actionMask, 9, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
 
-        // --- 5. ÜRETİM KONTROLLERİ ---
-
-        // İşçi Üretimi: Ana bina lazım + Kaynak lazım + Nüfus yeri lazım
         bool canAffordWorker = SimResourceSystem.CanAfford(_world, 1, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
         if (!hasBase || !canAffordWorker || player.CurrentPopulation >= player.MaxPopulation)
             actionMask.SetActionEnabled(0, 3, false);
 
-        // Asker Üretimi: Kışla lazım + Kaynak lazım + Nüfus yeri lazım
         bool canAffordSoldier = SimResourceSystem.CanAfford(_world, 1, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
         if (!hasBarracks || !canAffordSoldier || player.CurrentPopulation >= player.MaxPopulation)
             actionMask.SetActionEnabled(0, 4, false);
@@ -194,9 +217,7 @@ public class RTSAgent : Agent
     private void CheckAffordability(IDiscreteActionMask mask, int actionIndex, int w, int s, int m)
     {
         if (!SimResourceSystem.CanAfford(_world, 1, w, s, m))
-        {
             mask.SetActionEnabled(0, actionIndex, false);
-        }
     }
 
     private void OnDrawGizmos()

@@ -1,5 +1,5 @@
 using RTS.Simulation.Data;
-using RTS.Simulation.Core; // SimGameContext için
+using RTS.Simulation.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +8,16 @@ namespace RTS.Simulation.Systems
 {
     public class SimUnitSystem
     {
-        // --- YENİ: Instance Yapısı ---
+        // ==============================================================================================
+        // BÖLÜM 1: INSTANCE (ÖRNEK) YAPISI - DRL EĞİTİMİ İÇİN (Event Destekli)
+        // ==============================================================================================
+
+        // --- EVENTS (Sadece Instance üzerinden çalışanlar dinleyebilir) ---
+        public event Action<SimUnitData, SimUnitData, float> OnUnitAttackedUnit;
+        public event Action<SimUnitData, SimBuildingData, float> OnUnitAttackedBuilding;
+        public event Action<SimUnitData, SimUnitData> OnUnitKilledEnemy;
+        public event Action<SimUnitData, SimBuildingData> OnUnitDestroyedBuilding;
+
         private SimWorldState _world;
 
         public SimUnitSystem(SimWorldState world = null)
@@ -16,16 +25,94 @@ namespace RTS.Simulation.Systems
             _world = world ?? SimGameContext.ActiveWorld;
         }
 
-        // --- Instance Wrapper'lar ---
-        public void UpdateUnit(SimUnitData unit, float dt) => UpdateUnit(unit, _world, dt);
+        // --- INSTANCE METOTLARI (Event Tetikler) ---
+        public void UpdateUnit(SimUnitData unit, float dt)
+        {
+            if (unit.State == SimTaskType.Dead) return;
+
+            switch (unit.State)
+            {
+                case SimTaskType.Moving: UpdateMovement(unit, _world, dt); break; // Mantık aynı, static'i çağırabilir
+                case SimTaskType.Gathering: UpdateGathering(unit, _world, dt); break;
+                case SimTaskType.Building: UpdateConstruction(unit, _world, dt); break;
+                case SimTaskType.Attacking: UpdateCombatInstance(unit, dt); break; // DİKKAT: Combat Instance özeldir!
+                case SimTaskType.Idle: break;
+            }
+        }
+
+        // Event tetikleyen özel Combat fonksiyonu
+        private void UpdateCombatInstance(SimUnitData unit, float dt)
+        {
+            bool isUnit = _world.Units.TryGetValue(unit.TargetID, out SimUnitData enemyUnit);
+            bool isBuilding = _world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData enemyBuilding);
+
+            if ((!isUnit && !isBuilding) ||
+                (isUnit && enemyUnit.State == SimTaskType.Dead) ||
+                (isBuilding && !enemyBuilding.IsConstructed && enemyBuilding.PlayerID == unit.PlayerID))
+            {
+                unit.State = SimTaskType.Idle;
+                unit.TargetID = -1;
+                return;
+            }
+
+            int2 targetPos = isUnit ? enemyUnit.GridPosition : enemyBuilding.GridPosition;
+            float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, targetPos);
+            float rangeSq = unit.AttackRange * unit.AttackRange;
+
+            if (distSq <= rangeSq)
+            {
+                unit.AttackTimer += dt;
+                if (unit.AttackTimer >= unit.AttackSpeed)
+                {
+                    unit.AttackTimer = 0f;
+
+                    if (isUnit)
+                    {
+                        enemyUnit.Health -= unit.Damage;
+
+                        // EVENT TETİKLEME
+                        OnUnitAttackedUnit?.Invoke(unit, enemyUnit, unit.Damage);
+
+                        if (enemyUnit.Health <= 0)
+                        {
+                            OnUnitKilledEnemy?.Invoke(unit, enemyUnit);
+                            KillUnit(enemyUnit, _world);
+                        }
+                    }
+                    else if (isBuilding)
+                    {
+                        enemyBuilding.Health -= unit.Damage;
+
+                        // EVENT TETİKLEME
+                        OnUnitAttackedBuilding?.Invoke(unit, enemyBuilding, unit.Damage);
+
+                        if (enemyBuilding.Health <= 0)
+                        {
+                            OnUnitDestroyedBuilding?.Invoke(unit, enemyBuilding);
+                            DestroyBuilding(enemyBuilding, _world);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Menzilde değilse yürü (Static fonksiyonu kullanabiliriz)
+                MoveToTarget(unit, targetPos, isBuilding, _world);
+            }
+        }
+
+        // Wrapper Metotlar (Instance -> Static yönlendirmesi, kod tekrarını önler)
         public void OrderMove(SimUnitData unit, int2 targetPos) => OrderMove(unit, targetPos, _world);
         public void OrderBuild(SimUnitData worker, SimBuildingData building) => OrderBuild(worker, building, _world);
         public void OrderAttack(SimUnitData unit, SimBuildingData building) => OrderAttack(unit, building, _world);
         public void OrderAttackUnit(SimUnitData unit, SimUnitData target) => OrderAttackUnit(unit, target, _world);
         public bool TryAssignGatherTask(SimUnitData unit, SimResourceData res) => TryAssignGatherTask(unit, res, _world);
-        // -----------------------------
 
-        // --- MEVCUT STATİK FONKSİYONLAR (KORUNDU) ---
+
+        // ==============================================================================================
+        // BÖLÜM 2: STATIC (STATİK) YAPISI - ESKİ KODLARIN ÇALIŞMASI İÇİN (Legacy Support)
+        // ==============================================================================================
+
         public static void UpdateUnit(SimUnitData unit, SimWorldState world, float dt)
         {
             if (unit.State == SimTaskType.Dead) return;
@@ -35,9 +122,71 @@ namespace RTS.Simulation.Systems
                 case SimTaskType.Moving: UpdateMovement(unit, world, dt); break;
                 case SimTaskType.Gathering: UpdateGathering(unit, world, dt); break;
                 case SimTaskType.Building: UpdateConstruction(unit, world, dt); break;
-                case SimTaskType.Attacking: UpdateCombat(unit, world, dt); break;
+                case SimTaskType.Attacking: UpdateCombatStatic(unit, world, dt); break; // Event TETİKLEMEZ
                 case SimTaskType.Idle: break;
             }
+        }
+
+        // Eski Statik Combat (Event Yok)
+        private static void UpdateCombatStatic(SimUnitData unit, SimWorldState world, float dt)
+        {
+            bool isUnit = world.Units.TryGetValue(unit.TargetID, out SimUnitData enemyUnit);
+            bool isBuilding = world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData enemyBuilding);
+
+            if ((!isUnit && !isBuilding) ||
+                (isUnit && enemyUnit.State == SimTaskType.Dead) ||
+                (isBuilding && !enemyBuilding.IsConstructed && enemyBuilding.PlayerID == unit.PlayerID))
+            {
+                unit.State = SimTaskType.Idle;
+                unit.TargetID = -1;
+                return;
+            }
+
+            int2 targetPos = isUnit ? enemyUnit.GridPosition : enemyBuilding.GridPosition;
+            float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, targetPos);
+            float rangeSq = unit.AttackRange * unit.AttackRange;
+
+            if (distSq <= rangeSq)
+            {
+                unit.AttackTimer += dt;
+                if (unit.AttackTimer >= unit.AttackSpeed)
+                {
+                    unit.AttackTimer = 0f;
+                    if (isUnit)
+                    {
+                        enemyUnit.Health -= unit.Damage;
+                        if (enemyUnit.Health <= 0) KillUnit(enemyUnit, world);
+                    }
+                    else if (isBuilding)
+                    {
+                        enemyBuilding.Health -= unit.Damage;
+                        if (enemyBuilding.Health <= 0) DestroyBuilding(enemyBuilding, world);
+                    }
+                }
+            }
+            else
+            {
+                MoveToTarget(unit, targetPos, isBuilding, world);
+            }
+        }
+
+        // --- ORTAK MANTIK FONKSİYONLARI (Hem Static Hem Instance Kullanır) ---
+
+        private static void MoveToTarget(SimUnitData unit, int2 targetPos, bool isBuilding, SimWorldState world)
+        {
+            if (unit.Path == null || unit.Path.Count == 0)
+            {
+                if (isBuilding)
+                {
+                    int2? standPos = SimGridSystem.FindWalkableNeighbor(world, targetPos);
+                    if (standPos.HasValue) unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, standPos.Value);
+                }
+                else
+                {
+                    unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
+                }
+            }
+            unit.State = SimTaskType.Moving;
         }
 
         private static void UpdateMovement(SimUnitData unit, SimWorldState world, float dt)
@@ -78,96 +227,6 @@ namespace RTS.Simulation.Systems
                     unit.Path.RemoveAt(0);
                 }
                 else unit.Path.Clear();
-            }
-        }
-
-        private static void UpdateCombat(SimUnitData unit, SimWorldState world, float dt)
-        {
-            // --- HEDEF KONTROLÜ ---
-            bool isUnit = world.Units.TryGetValue(unit.TargetID, out SimUnitData enemyUnit);
-            bool isBuilding = world.Buildings.TryGetValue(unit.TargetID, out SimBuildingData enemyBuilding);
-
-            // Hedef yoksa veya öldüyse/yıkıldıysa saldırıyı durdur
-            if ((!isUnit && !isBuilding) ||
-                (isUnit && enemyUnit.State == SimTaskType.Dead) ||
-                (isBuilding && !enemyBuilding.IsConstructed && enemyBuilding.PlayerID == unit.PlayerID))
-            {
-                unit.State = SimTaskType.Idle;
-                unit.TargetID = -1;
-                return;
-            }
-
-            // --- MESAFE KONTROLÜ ---
-            int2 targetPos = isUnit ? enemyUnit.GridPosition : enemyBuilding.GridPosition;
-            float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, targetPos);
-            float rangeSq = unit.AttackRange * unit.AttackRange;
-
-            // Menzildeyse VUR
-            if (distSq <= rangeSq)
-            {
-                unit.AttackTimer += dt;
-                if (unit.AttackTimer >= unit.AttackSpeed)
-                {
-                    unit.AttackTimer = 0f;
-
-                    if (isUnit)
-                    {
-                        // HASAR UYGULA
-                        enemyUnit.Health -= unit.Damage;
-
-                        // --- DETAYLI LOG (BİRİM) ---
-                        UnityEngine.Debug.Log(
-                            $"⚔️ [BİRİM VURDU] " +
-                            $"Saldıran: {unit.UnitType} (ID:{unit.ID}) (P:{unit.PlayerID}) -> " +
-                            $"Hedef: {enemyUnit.UnitType} (ID:{enemyUnit.ID}) (P:{enemyUnit.PlayerID}) | " +
-                            $"Konum: {targetPos} | Hasar: {unit.Damage} | Kalan Can: {enemyUnit.Health}"
-                        );
-                        // -------------------------
-
-                        if (enemyUnit.Health <= 0)
-                        {
-                            UnityEngine.Debug.Log($"☠️ [ÖLÜM] {enemyUnit.UnitType} (ID:{enemyUnit.ID}) öldürüldü!");
-                            KillUnit(enemyUnit, world);
-                        }
-                    }
-                    else if (isBuilding)
-                    {
-                        // HASAR UYGULA
-                        enemyBuilding.Health -= unit.Damage;
-
-                        // --- DETAYLI LOG (BİNA) ---
-                        UnityEngine.Debug.Log(
-                            $"🔥 [BİNA VURDU] " +
-                            $"Saldıran: {unit.UnitType} (ID:{unit.ID}) (P:{unit.PlayerID}) -> " +
-                            $"Hedef Bina: {enemyBuilding.Type} (ID:{enemyBuilding.ID}) (P:{enemyBuilding.PlayerID}) | " +
-                            $"Konum: {targetPos} | Hasar: {unit.Damage} | Kalan Can: {enemyBuilding.Health}"
-                        );
-                        // -------------------------
-
-                        if (enemyBuilding.Health <= 0)
-                        {
-                            UnityEngine.Debug.Log($"💥 [YIKIM] {enemyBuilding.Type} (ID:{enemyBuilding.ID}) yıkıldı!");
-                            DestroyBuilding(enemyBuilding, world);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // Menzilde değilse YÜRÜ
-                if (unit.Path == null || unit.Path.Count == 0)
-                {
-                    if (isBuilding)
-                    {
-                        int2? standPos = SimGridSystem.FindWalkableNeighbor(world, targetPos);
-                        if (standPos.HasValue) unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, standPos.Value);
-                    }
-                    else
-                    {
-                        unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, targetPos);
-                    }
-                }
-                unit.State = SimTaskType.Moving;
             }
         }
 
@@ -220,6 +279,23 @@ namespace RTS.Simulation.Systems
                 if (finished) unit.State = SimTaskType.Idle;
             }
         }
+
+        private static void KillUnit(SimUnitData unit, SimWorldState world)
+        {
+            unit.State = SimTaskType.Dead;
+            world.Map.Grid[unit.GridPosition.x, unit.GridPosition.y].OccupantID = -1;
+            world.Units.Remove(unit.ID);
+            SimResourceSystem.ModifyPopulation(world, unit.PlayerID, -1);
+        }
+
+        private static void DestroyBuilding(SimBuildingData b, SimWorldState world)
+        {
+            world.Map.Grid[b.GridPosition.x, b.GridPosition.y].OccupantID = -1;
+            world.Map.Grid[b.GridPosition.x, b.GridPosition.y].IsWalkable = true;
+            world.Buildings.Remove(b.ID);
+        }
+
+        // --- STATIC KOMUT METOTLARI (Eski kodlar için 3 parametreli) ---
 
         public static void OrderMove(SimUnitData unit, int2 targetPos, SimWorldState world)
         {
@@ -275,21 +351,6 @@ namespace RTS.Simulation.Systems
             unit.TargetID = targetUnit.ID;
             if (unit.Path != null && unit.Path.Count > 0) unit.State = SimTaskType.Moving;
             else unit.State = SimTaskType.Attacking;
-        }
-
-        private static void KillUnit(SimUnitData unit, SimWorldState world)
-        {
-            unit.State = SimTaskType.Dead;
-            world.Map.Grid[unit.GridPosition.x, unit.GridPosition.y].OccupantID = -1;
-            world.Units.Remove(unit.ID);
-            SimResourceSystem.ModifyPopulation(world, unit.PlayerID, -1);
-        }
-
-        private static void DestroyBuilding(SimBuildingData b, SimWorldState world)
-        {
-            world.Map.Grid[b.GridPosition.x, b.GridPosition.y].OccupantID = -1;
-            world.Map.Grid[b.GridPosition.x, b.GridPosition.y].IsWalkable = true;
-            world.Buildings.Remove(b.ID);
         }
     }
 }

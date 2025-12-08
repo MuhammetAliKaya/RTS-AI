@@ -2224,12 +2224,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Agent: {fileID: 645419872}
   MapSize: 20
-  MaxSteps: 20000
+  MaxSteps: 500
   SimulationTimeScale: 1
-  dt: 0.05
+  dt: 5
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
-  EnemyDifficulty: 2
+  EnemyDifficulty: 0
+  LogInterval: 1000
 --- !u!1 &804183093
 GameObject:
   m_ObjectHideFlags: 0
