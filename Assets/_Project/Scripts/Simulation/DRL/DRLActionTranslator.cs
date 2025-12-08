@@ -34,7 +34,7 @@ public class DRLActionTranslator
 
         switch (actionType)
         {
-            case 0: // No-Op (Bekle) - Stratejik bekleme her zaman başarılıdır
+            case 0: // Bekle
                 return true;
 
             case 1: // İNŞA ET: EV
@@ -54,6 +54,17 @@ public class DRLActionTranslator
                 break;
             case 6: // TOPLA
                 success = CommandGatherResource(targetPos);
+                break;
+
+            // --- YENİ EKLENEN EKONOMİK BİNALAR ---
+            case 7: // İNŞA ET: ÇİFTLİK (FARM) -> ET ÜRETİMİ
+                success = TryBuildBuilding(SimBuildingType.Farm, targetX, targetY);
+                break;
+            case 8: // İNŞA ET: ODUNCU (WOODCUTTER) -> ODUN ÜRETİMİ
+                success = TryBuildBuilding(SimBuildingType.WoodCutter, targetX, targetY);
+                break;
+            case 9: // İNŞA ET: TAŞ OCAĞI (STONEPIT) -> TAŞ ÜRETİMİ
+                success = TryBuildBuilding(SimBuildingType.StonePit, targetX, targetY);
                 break;
         }
         return success;

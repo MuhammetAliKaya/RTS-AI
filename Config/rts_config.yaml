@@ -14,10 +14,53 @@ behaviors:
       normalize: false
       hidden_units: 512
       num_layers: 2
+      vis_encode_type: simple
     reward_signals:
       extrinsic:
         gamma: 0.99
         strength: 1.0
-    max_steps: 10000000
-    time_horizon: 1024
+    max_steps: 20000000 # Adım sayısı artırıldı (5 ders olduğu için)
+    time_horizon: 128
     summary_freq: 10000
+
+environment_parameters:
+  rts_level:
+    curriculum:
+      - name: Lesson0_Wood # DERS 0: Odun Topla
+        completion_criteria:
+          measure: reward
+          behavior: RTSBrain
+          signal_smoothing: true
+          min_lesson_length: 50
+          threshold: 0.95 # 1.0 ödülün %95'ini alınca geç
+        value: 0.0
+
+      - name: Lesson1_Stone # DERS 1: Taş Topla
+        completion_criteria:
+          measure: reward
+          behavior: RTSBrain
+          signal_smoothing: true
+          min_lesson_length: 50
+          threshold: 0.95
+        value: 1.0
+
+      - name: Lesson2_Meat # DERS 2: Et Topla
+        completion_criteria:
+          measure: reward
+          behavior: RTSBrain
+          signal_smoothing: true
+          min_lesson_length: 50
+          threshold: 0.95
+        value: 2.0
+
+      - name: Lesson3_Builder # DERS 3: Kışla Yap
+        completion_criteria:
+          measure: reward
+          behavior: RTSBrain
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 1.9 # 2.0 ödülün %95'i
+        value: 3.0
+
+      - name: Lesson4_General # DERS 4: Asker Üret (Final)
+        value: 4.0
