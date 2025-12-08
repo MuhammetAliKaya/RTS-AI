@@ -17,6 +17,7 @@ public class RTSAgent : Agent
     private RTSGridSensor _gridSensor;
 
     public DRLSimRunner Runner;
+    public AdversarialTrainerRunner CombatRunner;
 
     // Debug
     private int _lastDebugX = -1;
@@ -36,12 +37,21 @@ public class RTSAgent : Agent
 
     public override void OnEpisodeBegin()
     {
-        if (Runner != null) Runner.ResetSimulation();
+        // HANGİ RUNNER KULLANILIYORSA ONU RESETLE
+        if (Runner != null)
+        {
+            Runner.ResetSimulation();
+        }
+        else if (CombatRunner != null)
+        {
+            CombatRunner.ResetSimulation();
+        }
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (_world == null) return;
+        if (_world == null || _gridSensor == null) return;
+
         _gridSensor.AddGlobalStats(sensor);
         _gridSensor.AddGridObservations(sensor);
     }
@@ -68,12 +78,6 @@ public class RTSAgent : Agent
         else if (command != 0)
         {
             AddReward(0.001f); // Geçerli hamle teşviki
-        }
-
-        // Loglama (Sadece izleme modunda)
-        if (Runner != null && !Runner.TrainMode && command != 0)
-        {
-            // Log mantığı burada...
         }
     }
 
@@ -105,25 +109,27 @@ public class RTSAgent : Agent
             }
         }
 
-        // --- 1. SEVİYE KISITLAMALARI ---
-        if (Runner.CurrentLevel < 3)
+        // --- SEVİYE KISITLAMALARI (Sadece DRLSimRunner kullanıyorsa) ---
+        if (Runner != null)
         {
-            actionMask.SetActionEnabled(0, 1, false); // Ev
-            actionMask.SetActionEnabled(0, 2, false); // Kışla
-            actionMask.SetActionEnabled(0, 7, false); // Çiftlik
-            actionMask.SetActionEnabled(0, 8, false); // Oduncu
-            actionMask.SetActionEnabled(0, 9, false); // Taş Ocağı
-        }
-        if (Runner.CurrentLevel < 4)
-        {
-            actionMask.SetActionEnabled(0, 4, false); // Asker Üret
-            actionMask.SetActionEnabled(0, 5, false); // Saldır
+            if (Runner.CurrentLevel < 3)
+            {
+                actionMask.SetActionEnabled(0, 1, false); // Ev
+                actionMask.SetActionEnabled(0, 2, false); // Kışla
+                actionMask.SetActionEnabled(0, 7, false); // Çiftlik
+                actionMask.SetActionEnabled(0, 8, false); // Oduncu
+                actionMask.SetActionEnabled(0, 9, false); // Taş Ocağı
+            }
+            if (Runner.CurrentLevel < 4)
+            {
+                actionMask.SetActionEnabled(0, 4, false); // Asker Üret
+                actionMask.SetActionEnabled(0, 5, false); // Saldır
+            }
         }
 
-        // --- 2. BİRİM GEREKSİNİMLERİ ---
+        // --- BİRİM GEREKSİNİMLERİ ---
         if (!hasWorker)
         {
-            // İşçi yoksa inşaat ve toplama yapılamaz
             int[] workerActions = { 1, 2, 6, 7, 8, 9 };
             foreach (var act in workerActions) actionMask.SetActionEnabled(0, act, false);
         }
@@ -132,20 +138,18 @@ public class RTSAgent : Agent
             actionMask.SetActionEnabled(0, 5, false); // Saldır
         }
 
-        // --- 3. KAYNAK KONTROLLERİ (Generic) ---
+        // --- KAYNAK KONTROLLERİ ---
         CheckAffordability(actionMask, 1, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
         CheckAffordability(actionMask, 2, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
         CheckAffordability(actionMask, 7, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
         CheckAffordability(actionMask, 8, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
         CheckAffordability(actionMask, 9, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
 
-        // --- 4. ÜRETİM KONTROLLERİ ---
-        // İşçi Üretimi (Base + Kaynak + Popülasyon)
+        // --- ÜRETİM KONTROLLERİ ---
         bool canAffordWorker = SimResourceSystem.CanAfford(_world, 1, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
         if (!hasBase || !canAffordWorker || player.CurrentPopulation >= player.MaxPopulation)
             actionMask.SetActionEnabled(0, 3, false);
 
-        // Asker Üretimi (Kışla + Kaynak + Popülasyon)
         bool canAffordSoldier = SimResourceSystem.CanAfford(_world, 1, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
         if (!hasBarracks || !canAffordSoldier || player.CurrentPopulation >= player.MaxPopulation)
             actionMask.SetActionEnabled(0, 4, false);
