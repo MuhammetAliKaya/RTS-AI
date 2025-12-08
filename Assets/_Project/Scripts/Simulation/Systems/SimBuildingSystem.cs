@@ -1,5 +1,5 @@
 using RTS.Simulation.Data;
-using RTS.Simulation.Core; // SimGameContext için
+using RTS.Simulation.Core;
 using UnityEngine;
 using System.Linq;
 
@@ -7,7 +7,6 @@ namespace RTS.Simulation.Systems
 {
     public class SimBuildingSystem
     {
-        // --- YENİ: Instance Yapısı ---
         private SimWorldState _world;
 
         public SimBuildingSystem(SimWorldState world = null)
@@ -15,17 +14,16 @@ namespace RTS.Simulation.Systems
             _world = world ?? SimGameContext.ActiveWorld;
         }
 
-        // --- Instance Wrapper ---
         public void UpdateAllBuildings(float dt) => UpdateAllBuildings(_world, dt);
         public void SpawnUnit(int2 basePos, SimUnitType type, int playerID) => SpawnUnit(_world, basePos, type, playerID);
-        // -------------------------
 
-        // --- MEVCUT STATİK FONKSİYONLAR (KORUNDU) ---
         public static void UpdateAllBuildings(SimWorldState world, float dt)
         {
             foreach (var building in world.Buildings.Values)
             {
+                // Sadece tamamlanmış binalar çalışır
                 if (!building.IsConstructed) continue;
+
                 UpdateProduction(building, world, dt);
                 UpdateResourceGeneration(building, world, dt);
                 UpdateTowerCombat(building, world, dt);
@@ -35,12 +33,28 @@ namespace RTS.Simulation.Systems
         public static bool AdvanceConstruction(SimBuildingData building, SimWorldState world, float amount)
         {
             if (building.IsConstructed) return true;
+
             building.ConstructionProgress += amount;
+
+            // --- GÖRSEL DÜZELTME: Canı ilerlemeye göre artır ---
+            float healthPct = amount / SimConfig.BUILDING_MAX_PROGRESS;
+            int hpAdd = Mathf.CeilToInt(building.MaxHealth * healthPct);
+            building.Health = Mathf.Min(building.Health + hpAdd, building.MaxHealth);
+            // --------------------------------------------------
+
             if (building.ConstructionProgress >= SimConfig.BUILDING_MAX_PROGRESS)
             {
                 building.ConstructionProgress = SimConfig.BUILDING_MAX_PROGRESS;
+
+                // Tamamlandığında canı ve bayrağı kesinleştir
+                building.Health = building.MaxHealth;
                 building.IsConstructed = true;
+
                 OnBuildingCompleted(building, world);
+
+                // Log ile teyit et
+                if (SimConfig.EnableLogs) Debug.Log($"🏗️ BİNA TAMAMLANDI: {building.Type} (ID: {building.ID})");
+
                 return true;
             }
             return false;
@@ -57,28 +71,20 @@ namespace RTS.Simulation.Systems
         public static void InitializeBuildingStats(SimBuildingData b)
         {
             b.MaxHealth = 1000;
-            b.Health = 1000;
+            b.Health = 10; // Başlangıç canı düşük (İnşaat ilerledikçe artacak)
             b.ConstructionProgress = b.IsConstructed ? SimConfig.BUILDING_MAX_PROGRESS : 0f;
 
+            // Kaynak Üreticisi Ayarları
             switch (b.Type)
             {
                 case SimBuildingType.Farm:
-                    b.IsResourceGenerator = true;
-                    b.ResourceType = SimResourceType.Meat;
-                    b.ResourceInterval = SimConfig.RESOURCE_GENERATION_INTERVAL;
-                    b.ResourceAmountPerCycle = SimConfig.RESOURCE_GENERATION_AMOUNT;
+                    ConfigureGenerator(b, SimResourceType.Meat);
                     break;
                 case SimBuildingType.WoodCutter:
-                    b.IsResourceGenerator = true;
-                    b.ResourceType = SimResourceType.Wood;
-                    b.ResourceInterval = SimConfig.RESOURCE_GENERATION_INTERVAL;
-                    b.ResourceAmountPerCycle = SimConfig.RESOURCE_GENERATION_AMOUNT;
+                    ConfigureGenerator(b, SimResourceType.Wood);
                     break;
                 case SimBuildingType.StonePit:
-                    b.IsResourceGenerator = true;
-                    b.ResourceType = SimResourceType.Stone;
-                    b.ResourceInterval = SimConfig.RESOURCE_GENERATION_INTERVAL;
-                    b.ResourceAmountPerCycle = SimConfig.RESOURCE_GENERATION_AMOUNT;
+                    ConfigureGenerator(b, SimResourceType.Stone);
                     break;
                 case SimBuildingType.Tower:
                     b.Damage = SimConfig.TOWER_DAMAGE;
@@ -88,28 +94,28 @@ namespace RTS.Simulation.Systems
             }
         }
 
+        // Yardımcı Fonksiyon: Kod tekrarını önler
+        private static void ConfigureGenerator(SimBuildingData b, SimResourceType type)
+        {
+            b.IsResourceGenerator = true;
+            b.ResourceType = type;
+            b.ResourceInterval = SimConfig.RESOURCE_GENERATION_INTERVAL;
+            b.ResourceAmountPerCycle = SimConfig.RESOURCE_GENERATION_AMOUNT;
+        }
+
         public static void StartTraining(SimBuildingData building, SimWorldState world, SimUnitType unitType)
         {
-            if (building.IsTraining)
-            {
-                if (SimConfig.EnableLogs) Debug.LogWarning($"⛔ Üretim Reddedildi: Bina {building.ID} zaten meşgul.");
-                return;
-            }
+            if (building.IsTraining) return;
 
-            int meatCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_MEAT : SimConfig.SOLDIER_COST_MEAT;
-            int woodCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_WOOD : SimConfig.SOLDIER_COST_WOOD;
-            int stoneCost = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_STONE : SimConfig.SOLDIER_COST_STONE;
+            int meat = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_MEAT : SimConfig.SOLDIER_COST_MEAT;
+            int wood = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_WOOD : SimConfig.SOLDIER_COST_WOOD;
+            int stone = (unitType == SimUnitType.Worker) ? SimConfig.WORKER_COST_STONE : SimConfig.SOLDIER_COST_STONE;
 
-            if (SimResourceSystem.SpendResources(world, building.PlayerID, woodCost, stoneCost, meatCost))
+            if (SimResourceSystem.SpendResources(world, building.PlayerID, wood, stone, meat))
             {
                 building.IsTraining = true;
                 building.UnitInProduction = unitType;
                 building.TrainingTimer = 0f;
-                if (SimConfig.EnableLogs) Debug.Log($"✅ ÜRETİM BAŞLADI: {unitType} @ {building.GridPosition} (Player {building.PlayerID})");
-            }
-            else
-            {
-                if (SimConfig.EnableLogs) Debug.LogWarning($"💸 Yetersiz Kaynak ({unitType}): Odun:{woodCost} Taş:{stoneCost} Et:{meatCost}");
             }
         }
 
@@ -130,11 +136,15 @@ namespace RTS.Simulation.Systems
         private static void UpdateResourceGeneration(SimBuildingData building, SimWorldState world, float dt)
         {
             if (!building.IsResourceGenerator) return;
+
             building.ResourceTimer += dt;
             if (building.ResourceTimer >= building.ResourceInterval)
             {
                 building.ResourceTimer = 0f;
                 SimResourceSystem.AddResource(world, building.PlayerID, building.ResourceType, building.ResourceAmountPerCycle);
+
+                // Debug Log(Sadece test için açılabilir)
+                Debug.Log($"💰 {building.ResourceType} Üretildi! (+{building.ResourceAmountPerCycle})");
             }
         }
 

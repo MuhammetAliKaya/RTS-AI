@@ -83,9 +83,16 @@ public class DRLActionTranslator
         var node = _gridSystem.GetNode(x, y);
         if (node.Type != SimTileType.Grass) return false;
 
-        // KONTROL 3: İşçi Var mı?
-        SimUnitData worker = FindBestWorker(pos);
-        if (worker == null) return false;
+        // KONTROL 3: BOŞTA (IDLE) İşçi Var mı?
+        // Ajanın sadece boşta duran işçileri kullanmasına izin veriyoruz.
+        // Eğer tüm işçiler çalışıyorsa, inşaat emri BAŞARISIZ olur.
+        SimUnitData worker = FindIdleWorker(pos);
+
+        if (worker == null)
+        {
+            // Hiç boşta işçi yoksa, inşaat başlatılamaz.
+            return false;
+        }
 
         // KONTROL 4: Kaynak Var mı?
         int wood = 0, stone = 0, meat = 0;
@@ -112,10 +119,15 @@ public class DRLActionTranslator
             Type = type,
             GridPosition = pos,
             IsConstructed = false,
-            ConstructionProgress = 0
+            ConstructionProgress = 0,
+            Health = 10, // İnşaat başlangıç canı
+            MaxHealth = 100 // Tipe göre değişebilir, basitleştirildi
         };
 
-        SimBuildingSystem.InitializeBuildingStats(b);
+        // Bina tipine göre max canı düzelt (Basitçe)
+        if (type == SimBuildingType.Base) b.MaxHealth = SimConfig.BASE_MAX_HEALTH;
+        // Diğerleri için varsayılanlar eklenebilir
+
         _world.Buildings.Add(b.ID, b);
 
         if (node != null)
@@ -124,9 +136,31 @@ public class DRLActionTranslator
             node.IsWalkable = false;
         }
 
+        // Bulunan BOŞ işçiye emri ata
         _unitSystem.OrderBuild(worker, b);
 
         return true;
+    }
+
+    // Yeni Yardımcı Fonksiyon: Sadece Idle (Boş) İşçi Bulur
+    private SimUnitData FindIdleWorker(int2 target)
+    {
+        SimUnitData best = null;
+        float minDist = float.MaxValue;
+
+        foreach (var u in _world.Units.Values)
+        {
+            if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle)
+            {
+                float dist = SimGridSystem.GetDistanceSq(u.GridPosition, target);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    best = u;
+                }
+            }
+        }
+        return best;
     }
 
     private bool TryTrainUnit(SimUnitType type)
@@ -187,21 +221,52 @@ public class DRLActionTranslator
     private bool CommandGatherResource(int2 targetPos)
     {
         SimResourceData targetRes = null;
-        foreach (var res in _world.Resources.Values)
+
+        // 1. Önce tam hedeflenen noktaya bak
+        // OccupantID üzerinden kaynağı bulmaya çalışıyoruz
+        var directNode = _gridSystem.GetNode(targetPos.x, targetPos.y);
+        if (directNode != null && directNode.OccupantID != -1 && _world.Resources.ContainsKey(directNode.OccupantID))
         {
-            if (res.GridPosition.x == targetPos.x && res.GridPosition.y == targetPos.y)
+            targetRes = _world.Resources[directNode.OccupantID];
+        }
+
+        // 2. Eğer tam noktada kaynak yoksa, 3x3'lük bir alanı tara (Akıllı Hedefleme)
+        if (targetRes == null)
+        {
+            float minDistance = float.MaxValue;
+
+            // Tıklanan noktanın çevresini ara
+            for (int x = targetPos.x - 1; x <= targetPos.x + 1; x++)
             {
-                targetRes = res; break;
+                for (int y = targetPos.y - 1; y <= targetPos.y + 1; y++)
+                {
+                    if (!_world.Map.IsInBounds(new int2(x, y))) continue;
+
+                    var node = _gridSystem.GetNode(x, y);
+                    if (node.OccupantID != -1 && _world.Resources.ContainsKey(node.OccupantID))
+                    {
+                        // En yakındakini seç
+                        // DÜZELTME: math.distancesq yerine SimGridSystem.GetDistanceSq kullanıldı
+                        float dist = SimGridSystem.GetDistanceSq(new int2(x, y), targetPos);
+                        if (dist < minDistance)
+                        {
+                            minDistance = dist;
+                            targetRes = _world.Resources[node.OccupantID];
+                        }
+                    }
+                }
             }
         }
 
+        // Kaynak bulunduysa işçi ata
         if (targetRes != null)
         {
-            SimUnitData worker = FindBestWorker(targetPos);
+            // DÜZELTME: Bu fonksiyonun aşağıda tanımlı olduğundan emin ol
+            SimUnitData worker = FindBestWorkerForGathering(targetRes.GridPosition);
             if (worker != null)
             {
                 _unitSystem.TryAssignGatherTask(worker, targetRes);
-                return true;
+                return true; // Başarılı!
             }
         }
         return false;
@@ -234,5 +299,51 @@ public class DRLActionTranslator
             }
         }
         return best;
+    }
+    private SimUnitData FindBestWorkerForGathering(int2 target)
+    {
+        // 1. Önce BOŞTA (Idle) olanlara bak (En İyisi)
+        SimUnitData bestIdle = null;
+        float minIdleDist = float.MaxValue;
+
+        foreach (var u in _world.Units.Values)
+        {
+            if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle)
+            {
+                float dist = SimGridSystem.GetDistanceSq(u.GridPosition, target);
+                if (dist < minIdleDist)
+                {
+                    minIdleDist = dist;
+                    bestIdle = u;
+                }
+            }
+        }
+
+        // Eğer boşta işçi varsa onu döndür
+        if (bestIdle != null) return bestIdle;
+
+        // 2. Idle yoksa, İNŞAAT YAPMAYAN en yakın işçiyi al (Acil durum)
+        // (Örneğin: Uzakta odun toplayanı alıp, yakındaki taşa gönderebiliriz ama inşaatçıya dokunmayız)
+        SimUnitData bestAny = null;
+        float minAnyDist = float.MaxValue;
+
+        foreach (var u in _world.Units.Values)
+        {
+            if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker)
+            {
+                // --- KRİTİK KORUMA ---
+                // Eğer işçi inşaat yapıyorsa (Build) onu listeden ele!
+                // Not: Projendeki Enum ismi 'Build' değilse (örn: Construct) burayı düzeltmelisin.
+                if (u.State == SimTaskType.Building) continue;
+
+                float dist = SimGridSystem.GetDistanceSq(u.GridPosition, target);
+                if (dist < minAnyDist)
+                {
+                    minAnyDist = dist;
+                    bestAny = u;
+                }
+            }
+        }
+        return bestAny;
     }
 }

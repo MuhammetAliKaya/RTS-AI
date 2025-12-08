@@ -11,56 +11,56 @@ behaviors:
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
+      normalize: true
       hidden_units: 512
       num_layers: 2
       vis_encode_type: simple
     reward_signals:
       extrinsic:
-        gamma: 0.99
+        gamma: 0.995
         strength: 1.0
-    max_steps: 20000000 # Adım sayısı artırıldı (5 ders olduğu için)
-    time_horizon: 128
+    max_steps: 50000000
+    time_horizon: 512
     summary_freq: 10000
 
 environment_parameters:
   rts_level:
     curriculum:
-      - name: Lesson0_Wood # DERS 0: Odun Topla
+      - name: Lesson0_Wood
         completion_criteria:
           measure: reward
           behavior: RTSBrain
           signal_smoothing: true
           min_lesson_length: 50
-          threshold: 0.95 # 1.0 ödülün %95'ini alınca geç
+          threshold: 0.85
         value: 0.0
 
-      - name: Lesson1_Stone # DERS 1: Taş Topla
+      - name: Lesson1_Stone
         completion_criteria:
           measure: reward
           behavior: RTSBrain
           signal_smoothing: true
           min_lesson_length: 50
-          threshold: 0.95
+          threshold: 0.85
         value: 1.0
 
-      - name: Lesson2_Meat # DERS 2: Et Topla
-        completion_criteria:
-          measure: reward
-          behavior: RTSBrain
-          signal_smoothing: true
-          min_lesson_length: 50
-          threshold: 0.95
-        value: 2.0
-
-      - name: Lesson3_Builder # DERS 3: Kışla Yap
+      - name: Lesson2_Meat_Investment
         completion_criteria:
           measure: reward
           behavior: RTSBrain
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 1.9 # 2.0 ödülün %95'i
+          threshold: 1.5
+        value: 2.0
+
+      - name: Lesson3_Builder
+        completion_criteria:
+          measure: reward
+          behavior: RTSBrain
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 1.8
         value: 3.0
 
-      - name: Lesson4_General # DERS 4: Asker Üret (Final)
+      - name: Lesson4_General
         value: 4.0

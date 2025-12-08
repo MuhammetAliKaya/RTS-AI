@@ -9,8 +9,8 @@ public class RTSGridSensor
     private SimGridSystem _gridSystem;
 
     private const float MAX_HP = 500f;
-    private const float MAX_RESOURCE_AMOUNT = 10000f; // Normalize etmek için
-    private const int TEAM_ME = 1; // Bizim Ajanımız (Genellikle ID 1)
+    private const float MAX_RESOURCE_AMOUNT = 5000f;
+    private const int TEAM_ME = 1;
 
     public RTSGridSensor(SimWorldState world, SimGridSystem gridSystem)
     {
@@ -23,62 +23,71 @@ public class RTSGridSensor
         int width = _world.Map.Width;
         int height = _world.Map.Height;
 
-        // Grid'i tarıyoruz (CNN için görsel veri oluşturuyoruz)
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
             {
                 var node = _gridSystem.GetNode(x, y);
 
-                // --- GÖZLEM KANALLARI ---
-                // Kanal 1: Entity Tipi (0: Boş, 0.3: Bina, 0.6: Ünite, 1.0: Kaynak)
-                float entityType = 0f;
-                // Kanal 2: Takım Bilgisi (1: Ben, -1: Düşman, 0: Tarafsız/Kaynak)
-                float teamInfo = 0f;
-                // Kanal 3: Sağlık / Miktar Oranı (0..1 arası)
-                float statRatio = 0f;
-                // Kanal 4: Kaynak Türü (0: Yok, 0.3: Odun, 0.6: Taş, 1.0: Et)
-                float resourceType = 0f;
+                // --- ONE-HOT ENCODING KANALLARI (Toplam 9 Kanal) ---
+                // Bu değerler, tek bir sayı yerine her özellik için ayrı bir kanal (giriş) oluşturur.
+                // AI bu sayede "Bu 0.3 mü yoksa 0.6 mı?" diye matematik yapmak zorunda kalmaz.
+
+                float channel_MyUnit = 0f;
+                float channel_EnemyUnit = 0f;
+                float channel_MyBuilding = 0f;
+                float channel_EnemyBuilding = 0f;
+                float channel_ResWood = 0f;
+                float channel_ResStone = 0f;
+                float channel_ResMeat = 0f;
+
+                float channel_HealthRatio = 0f;
+                float channel_ConstructionRatio = 0f; // 1.0 = Tamamlandı, 0.5 = Yarısı bitti
 
                 if (node != null && node.OccupantID != -1)
                 {
-                    // 1. DURUM: BİNA MI?
+                    // 1. BİNA
                     if (_world.Buildings.TryGetValue(node.OccupantID, out SimBuildingData b))
                     {
-                        entityType = 0.3f; // Bina değeri
-                        teamInfo = (b.PlayerID == TEAM_ME) ? 1f : -1f;
-                        statRatio = (float)b.Health / MAX_HP;
+                        if (b.PlayerID == TEAM_ME) channel_MyBuilding = 1f;
+                        else channel_EnemyBuilding = 1f;
+
+                        channel_HealthRatio = Mathf.Clamp01((float)b.Health / MAX_HP);
+                        channel_ConstructionRatio = b.IsConstructed ? 1f : Mathf.Clamp01(b.ConstructionProgress / 100f);
                     }
-                    // 2. DURUM: ÜNİTE Mİ?
+                    // 2. ÜNİTE
                     else if (_world.Units.TryGetValue(node.OccupantID, out SimUnitData u))
                     {
-                        entityType = 0.6f; // Ünite değeri
-                        teamInfo = (u.PlayerID == TEAM_ME) ? 1f : -1f;
-                        statRatio = (float)u.Health / MAX_HP;
+                        if (u.PlayerID == TEAM_ME) channel_MyUnit = 1f;
+                        else channel_EnemyUnit = 1f;
+
+                        channel_HealthRatio = Mathf.Clamp01((float)u.Health / MAX_HP);
+                        channel_ConstructionRatio = 1f; // Üniteler hep tamamlanmıştır
                     }
-                    // 3. DURUM: KAYNAK MI? (BURASI EKLENDİ)
+                    // 3. KAYNAK
                     else if (_world.Resources.TryGetValue(node.OccupantID, out SimResourceData r))
                     {
-                        entityType = 1.0f; // Kaynak değeri
-                        teamInfo = 0f; // Kaynaklar tarafsızdır
+                        channel_HealthRatio = Mathf.Clamp01((float)r.AmountRemaining / MAX_RESOURCE_AMOUNT);
 
-                        statRatio = (float)r.AmountRemaining / MAX_RESOURCE_AMOUNT;
-
-                        // Kaynak türünü ayırt etmesi için ekstra bilgi
                         switch (r.Type)
                         {
-                            case SimResourceType.Wood: resourceType = 0.3f; break;
-                            case SimResourceType.Stone: resourceType = 0.6f; break;
-                            case SimResourceType.Meat: resourceType = 1.0f; break;
+                            case SimResourceType.Wood: channel_ResWood = 1f; break;
+                            case SimResourceType.Stone: channel_ResStone = 1f; break;
+                            case SimResourceType.Meat: channel_ResMeat = 1f; break;
                         }
                     }
                 }
 
-                // Verileri sensöre ekle
-                sensor.AddObservation(entityType);
-                sensor.AddObservation(teamInfo);
-                sensor.AddObservation(statRatio);
-                sensor.AddObservation(resourceType); // Yeni kanal
+                // Kanalları sırasıyla ekle (Config dosyasında stacked observation otomatik algılanır)
+                sensor.AddObservation(channel_MyUnit);        // 1
+                sensor.AddObservation(channel_EnemyUnit);     // 2
+                sensor.AddObservation(channel_MyBuilding);    // 3
+                sensor.AddObservation(channel_EnemyBuilding); // 4
+                sensor.AddObservation(channel_ResWood);       // 5
+                sensor.AddObservation(channel_ResStone);      // 6
+                sensor.AddObservation(channel_ResMeat);       // 7
+                sensor.AddObservation(channel_HealthRatio);   // 8
+                sensor.AddObservation(channel_ConstructionRatio); // 9
             }
         }
     }
@@ -88,20 +97,44 @@ public class RTSGridSensor
         if (_world.Players.ContainsKey(TEAM_ME))
         {
             var player = _world.Players[TEAM_ME];
-            // Normalize edilmiş değerler (0-1 arası olması öğrenmeyi hızlandırır)
-            sensor.AddObservation(player.Wood / 2000f);
-            sensor.AddObservation(player.Meat / 2000f);
-            sensor.AddObservation(player.Stone / 2000f);
-            sensor.AddObservation((float)player.CurrentPopulation / 20f); // Max 20 pop varsayımı
+
+            // --- NORMALİZASYON ---
+            // Değerleri 0 ile 1 arasına sıkıştırıyoruz. 
+            // 5000 kaynak miktarı makul bir üst limit.
+            sensor.AddObservation(Mathf.Clamp01(player.Wood / 5000f));
+            sensor.AddObservation(Mathf.Clamp01(player.Meat / 5000f));
+            sensor.AddObservation(Mathf.Clamp01(player.Stone / 5000f));
+
+            // Nüfus (Max 50 varsayımı)
+            sensor.AddObservation(Mathf.Clamp01(player.CurrentPopulation / 50f));
+
+            // Boşta işçi oranı (Çok kritik bir veri)
+            int idleWorkers = 0;
+            int totalWorkers = 0;
+            foreach (var u in _world.Units.Values)
+            {
+                if (u.PlayerID == TEAM_ME && u.UnitType == SimUnitType.Worker)
+                {
+                    totalWorkers++;
+                    if (u.State == SimTaskType.Idle) idleWorkers++;
+                }
+            }
+
+            // Eğer hiç işçi yoksa 0, varsa oranı
+            float idleRatio = totalWorkers > 0 ? (float)idleWorkers / totalWorkers : 0f;
+            sensor.AddObservation(idleRatio);
         }
         else
         {
+            // Oyuncu yoksa (Hata durumu)
+            sensor.AddObservation(0f);
             sensor.AddObservation(0f);
             sensor.AddObservation(0f);
             sensor.AddObservation(0f);
             sensor.AddObservation(0f);
         }
-        // Zaman/Step bilgisi (Opsiyonel ama ritmi öğrenmesi için iyi)
-        sensor.AddObservation((float)_world.TickCount / 5000f);
+
+        // Zaman / Step Bilgisi (Normalized)
+        sensor.AddObservation(Mathf.Clamp01((float)_world.TickCount / 5000f));
     }
 }

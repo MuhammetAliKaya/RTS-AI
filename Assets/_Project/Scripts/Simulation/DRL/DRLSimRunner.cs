@@ -12,7 +12,7 @@ public class DRLSimRunner : MonoBehaviour
     public RTSAgent Agent;
     public bool TrainMode = true;
     [Range(0, 4)]
-    public int DebugLevel = 4; // <--- YENİ: Elle level seçimi (Varsayılan 4-General)
+    public int DebugLevel = 4;
 
     public int MaxSteps = 5000;
 
@@ -29,18 +29,29 @@ public class DRLSimRunner : MonoBehaviour
     private int _currentStep = 0;
     private bool _isInitialized = false;
 
-    // --- ÖDÜL TAKİBİ ---
+    // --- ÖDÜL TAKİBİ VE SAYAÇLAR ---
     private int _lastWood = 0;
-    private int _lastStone = 0; // Yeni
-    private int _lastMeat = 0;  // Yeni
-    private int _lastUnitCount = 0;
-    private int _lastBuildingCount = 0;
+    private int _lastStone = 0;
+    private int _lastMeat = 0;
+
+    // Ünite Sayaçları
+    private int _lastWorkerCount = 0;
+    private int _lastSoldierCount = 0;
+
+    // Bina Sayaçları
+    private int _lastHouseCount = 0;
+    private int _lastFarmCount = 0;
+    private int _lastWoodCutterCount = 0;
+    private int _lastStonePitCount = 0;
     private int _lastBarracksCount = 0;
+    private int _lastTowerCount = 0;
+
+    private int _lastOtherBuildingsCount = 0; // Geriye uyumluluk için
+
     private float _decisionTimer = 0f;
 
-    // --- CURRICULUM (MÜFREDAT) AYARLARI ---
-    private float _currentLevel = 0; // Varsayılan: 0 (Odun Toplama)
-
+    // --- CURRICULUM ---
+    private float _currentLevel = 0;
     public float CurrentLevel => _currentLevel;
 
     private void Start()
@@ -49,7 +60,7 @@ public class DRLSimRunner : MonoBehaviour
         if (Agent != null) Agent.Runner = this;
 
         Application.targetFrameRate = !TrainMode ? 60 : -1;
-        Time.timeScale = !TrainMode ? 1.0f : 20.0f; // Eğitimde hızı 20x-100x yapabilirsiniz
+        Time.timeScale = !TrainMode ? 1.0f : 20.0f;
 
         ResetSimulation();
     }
@@ -88,7 +99,7 @@ public class DRLSimRunner : MonoBehaviour
 
         // Ödül ve Bitiş Kontrolü
         CalculateDenseRewards();
-        CheckWinCondition(); // <-- Ders seviyesine göre kazanma kontrolü burada
+        CheckWinCondition();
         _currentStep++;
 
         if (_currentStep >= MaxSteps)
@@ -108,12 +119,11 @@ public class DRLSimRunner : MonoBehaviour
         }
         else
         {
-            _currentLevel = 4.0f; // Level 4 = General (Her şey serbest)
-            Debug.Log("🎥 İZLEME MODU: Ajan General Seviyesinde (Level 4) Başlatıldı.");
+            _currentLevel = DebugLevel;
+            Debug.Log($"🎥 İZLEME MODU: Ajan Level {_currentLevel} Başlatıldı.");
         }
 
-        // Level 2 (Et) ve sonrası için süreyi biraz uzat ki strateji kurabilsin
-        MaxSteps = _currentLevel == 2 ? 2000 : (_currentLevel < 2 ? 1500 : 5000);
+        MaxSteps = _currentLevel == 2 ? 2500 : (_currentLevel < 2 ? 1500 : 5000);
 
         if (!TrainMode) Debug.Log($"🔄 SİMÜLASYON BAŞLADI | Ders: {_currentLevel}");
 
@@ -127,40 +137,34 @@ public class DRLSimRunner : MonoBehaviour
 
         if (Agent != null) Agent.Setup(_world, _gridSys, _unitSys, _buildSys);
 
-        // --- 2. KAYNAK AYARLAMASI (YENİ STRATEJİ) ---
-
+        // --- KAYNAK AYARLAMASI ---
         int startWood = 2000;
         int startStone = 2000;
-        int startMeat = 2000; // Varsayılan zengin başlangıç
+        int startMeat = 2000;
 
-        // DERS 0: Odun Toplama
-        if (_currentLevel == 0)
+        // DERS 0: Odun
+        if (_currentLevel == 0) startWood = 0;
+        // DERS 1: Taş
+        else if (_currentLevel == 1) startStone = 0;
+        // DERS 2: Et (Yatırım)
+        else if (_currentLevel == 2) startMeat = 300;
+        // DERS 4: General (Savaş)
+        else if (_currentLevel >= 4)
         {
-            startWood = 0;
-        }
-        // DERS 1: Taş Toplama
-        else if (_currentLevel == 1)
-        {
-            startStone = 0;
-        }
-        // DERS 2: Et Toplama & YATIRIM DERSİ
-        else if (_currentLevel == 2)
-        {
-            // KRİTİK HAMLE: Ajana 1 işçi parası (250) veriyoruz!
-            // Böylece "Parayı harcayıp işçi mi basayım, yoksa saklayayım mı?" ikilemini yaşayacak.
-            // Doğru cevap: İşçi basmak.
-            startMeat = 300;
+            // DÜZELTME: 6 İşçi (1500) + 3 Asker (600) = 2100 Et lazım.
+            // 2000 Et ile başlarsa tıkanıyor. Bu yüzden biraz fazlasını veriyoruz.
+            startMeat = 2500;
         }
 
         _resSys.AddResource(1, SimResourceType.Wood, startWood);
         _resSys.AddResource(1, SimResourceType.Stone, startStone);
         _resSys.AddResource(1, SimResourceType.Meat, startMeat);
 
-        _resSys.IncreaseMaxPopulation(1, 10); // Nüfus limitini baştan açtık
+        _resSys.IncreaseMaxPopulation(1, 10);
 
         SetupBase(1, new int2(2, 2));
 
-        // ... (Değişken sıfırlama kısımları aynı) ...
+        // Değişkenleri Sıfırla
         _currentStep = 0;
         _isInitialized = true;
         _decisionTimer = 0f;
@@ -169,9 +173,18 @@ public class DRLSimRunner : MonoBehaviour
         _lastWood = p.Wood;
         _lastStone = p.Stone;
         _lastMeat = p.Meat;
-        _lastUnitCount = 1;
-        _lastBuildingCount = 1;
+
+        _lastWorkerCount = 1;
+        _lastSoldierCount = 0;
+
+        // Bina sayaçlarını sıfırla
+        _lastHouseCount = 0;
+        _lastFarmCount = 0;
+        _lastWoodCutterCount = 0;
+        _lastStonePitCount = 0;
         _lastBarracksCount = 0;
+        _lastTowerCount = 0;
+        _lastOtherBuildingsCount = 1;
 
         if (Visualizer != null) Visualizer.Initialize(_world);
     }
@@ -180,49 +193,25 @@ public class DRLSimRunner : MonoBehaviour
     {
         var player = SimResourceSystem.GetPlayer(_world, 1);
 
-        // DERS 0: ODUN (Hedef 300)
-        if (_currentLevel == 0)
-        {
-            if (player.Wood >= 300) EndGame(1.0f);
-            return;
-        }
+        if (_currentLevel == 0 && player.Wood >= 300) { EndGame(1.0f); return; }
+        if (_currentLevel == 1 && player.Stone >= 200) { EndGame(1.0f); return; }
+        if (_currentLevel == 2 && player.Meat >= 600) { EndGame(2.0f); return; }
 
-        // DERS 1: TAŞ (Hedef 200)
-        if (_currentLevel == 1)
-        {
-            if (player.Stone >= 200) EndGame(1.0f);
-            return;
-        }
-
-        // DERS 2: ET & YATIRIM (Hedef Yükseltildi: 600)
-        // Neden 600? Çünkü 300 ile başlıyor. Sadece 300 toplarsa dersi geçerse yatırım yapmaz.
-        // Ama 600 yaparsak, tek işçi ile yetişemez, mecburen işçi basıp (harcama yapıp) hızlanmak zorunda kalır.
-        if (_currentLevel == 2)
-        {
-            if (player.Meat >= 600) EndGame(2.0f); // Zor görev, büyük ödül
-            return;
-        }
-
-        // DERS 3: İNŞAAT (Kışla)
         if (_currentLevel == 3)
         {
-            bool hasBarracks = _world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks);
-            if (hasBarracks) EndGame(2.0f);
-            return;
+            bool hasBarracks = _world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed);
+            if (hasBarracks) { EndGame(2.0f); return; }
         }
 
-        // DERS 4: SAVAŞ (Asker)
         if (_currentLevel >= 4)
         {
             int soldierCount = _world.Units.Values.Count(u => u.UnitType == SimUnitType.Soldier);
-            if (soldierCount >= 3) EndGame(2.0f);
+            if (soldierCount >= 3) { EndGame(2.0f); return; }
         }
 
-        // KAYBETME: İşçi kalmadıysa
-        int workerCount = _world.Units.Values.Count(u => u.UnitType == SimUnitType.Worker);
-        int soldierTotal = _world.Units.Values.Count(u => u.UnitType == SimUnitType.Soldier);
-
-        if (workerCount == 0 && soldierTotal == 0 && _currentStep > 10)
+        // Kaybetme: Hiçbir ünite kalmadıysa
+        int totalUnits = _world.Units.Values.Count(u => u.PlayerID == 1);
+        if (totalUnits == 0 && _currentStep > 10)
         {
             EndGame(-1.0f);
         }
@@ -233,54 +222,152 @@ public class DRLSimRunner : MonoBehaviour
         var player = SimResourceSystem.GetPlayer(_world, 1);
         if (player == null) return;
 
+        // 1. KAYNAK TOPLAMA (Savaş Ekonomisi Mantığı)
         int deltaWood = player.Wood - _lastWood;
         int deltaStone = player.Stone - _lastStone;
         int deltaMeat = player.Meat - _lastMeat;
+
+        float resMultiplier = 0.0001f; // Normalde çok düşük
+
+        // YENİ: Eğer asker sayısı 3'ten azsa ve paramız yoksa, kaynak toplamak çok değerlidir!
+        int currentSoldiers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
+        if (currentSoldiers < 3 && player.Meat < 300)
+        {
+            // "Asker basmam lazım ama param yok" durumu
+            if (deltaMeat > 0) Agent.AddReward(deltaMeat * 0.01f); // 100 kat daha değerli ödül!
+        }
+        else
+        {
+            if (deltaWood > 0) Agent.AddReward(deltaWood * resMultiplier);
+            if (deltaStone > 0) Agent.AddReward(deltaStone * resMultiplier);
+            if (deltaMeat > 0) Agent.AddReward(deltaMeat * resMultiplier);
+        }
 
         _lastWood = player.Wood;
         _lastStone = player.Stone;
         _lastMeat = player.Meat;
 
-        // ÖDÜL AYARLAMALARI
-        if (_currentLevel == 0) // Odun
+        // 2. İNŞAAT ÖDÜLLERİ
+        float rewardPerResource = 0.002f;
+        float barracksBonus = 15.0f;
+        float houseCrisisBonus = 0.5f;
+
+        int curHouse = 0, curFarm = 0, curWood = 0, curStone = 0, curBarracks = 0, curTower = 0;
+
+        foreach (var b in _world.Buildings.Values)
         {
-            if (deltaWood > 0) Agent.AddReward(0.01f * deltaWood);
-        }
-        else if (_currentLevel == 1) // Taş
-        {
-            if (deltaStone > 0) Agent.AddReward(0.01f * deltaStone);
-        }
-        else if (_currentLevel == 2) // Et (TEŞVİK ARTIRILDI)
-        {
-            // Et toplamak bu levelde çok daha değerli olsun ki dikkati dağılmasın
-            if (deltaMeat > 0) Agent.AddReward(0.05f * deltaMeat);
-        }
-        else // Serbest Piyasa
-        {
-            float resourceReward = 0;
-            if (deltaWood > 0) resourceReward += deltaWood;
-            if (deltaStone > 0) resourceReward += deltaStone;
-            if (deltaMeat > 0) resourceReward += deltaMeat;
-            if (resourceReward > 0) Agent.AddReward(0.001f * resourceReward);
+            if (b.PlayerID == 1 && b.IsConstructed)
+            {
+                switch (b.Type)
+                {
+                    case SimBuildingType.House: curHouse++; break;
+                    case SimBuildingType.Farm: curFarm++; break;
+                    case SimBuildingType.WoodCutter: curWood++; break;
+                    case SimBuildingType.StonePit: curStone++; break;
+                    case SimBuildingType.Barracks: curBarracks++; break;
+                    case SimBuildingType.Tower: curTower++; break;
+                }
+            }
         }
 
-        // ... (Bina ve Ünite ödülleri aynı kalsın - Özellikle Worker Teşviği Önemli) ...
-        // İşçi basma ödülünü (0.5f) koruduğumuzdan emin ol (önceki adımda eklemiştik)
+        // EV (House)
+        if (curHouse > _lastHouseCount)
+        {
+            float cost = SimConfig.HOUSE_COST_WOOD + SimConfig.HOUSE_COST_STONE + SimConfig.HOUSE_COST_MEAT;
+            float houseReward = cost * rewardPerResource;
 
-        // --- 3. ÜNİTE VE NÜFUS ÖDÜLÜ (Önceki Turn'den Hatırlatma) ---
+            // Popülasyon %70 dolunca ev bonusu ver (Önceki 0.8 bazen geç kalıyordu)
+            if ((float)player.CurrentPopulation / player.MaxPopulation >= 0.7f)
+            {
+                houseReward += houseCrisisBonus;
+            }
+            Agent.AddReward(houseReward * (curHouse - _lastHouseCount));
+        }
+
+        if (curFarm > _lastFarmCount)
+        {
+            float cost = SimConfig.FARM_COST_WOOD + SimConfig.FARM_COST_STONE + SimConfig.FARM_COST_MEAT;
+            Agent.AddReward((cost * rewardPerResource) * (curFarm - _lastFarmCount));
+        }
+        if (curWood > _lastWoodCutterCount)
+        {
+            float cost = SimConfig.WOODCUTTER_COST_WOOD + SimConfig.WOODCUTTER_COST_STONE + SimConfig.WOODCUTTER_COST_MEAT;
+            Agent.AddReward((cost * rewardPerResource) * (curWood - _lastWoodCutterCount));
+        }
+        if (curStone > _lastStonePitCount)
+        {
+            float cost = SimConfig.STONEPIT_COST_WOOD + SimConfig.STONEPIT_COST_STONE + SimConfig.STONEPIT_COST_MEAT;
+            Agent.AddReward((cost * rewardPerResource) * (curStone - _lastStonePitCount));
+        }
+        if (curTower > _lastTowerCount)
+        {
+            float cost = SimConfig.TOWER_COST_WOOD + SimConfig.TOWER_COST_STONE + SimConfig.TOWER_COST_MEAT;
+            Agent.AddReward((cost * rewardPerResource) * (curTower - _lastTowerCount));
+        }
+
+        // KIŞLA (Jackpot)
+        if (curBarracks > _lastBarracksCount)
+        {
+            float cost = SimConfig.BARRACKS_COST_WOOD + SimConfig.BARRACKS_COST_STONE + SimConfig.BARRACKS_COST_MEAT;
+
+            // YENİ MANTIK: Eğer bu inşa edilen İLK kışla ise Bonus ver.
+            // 2., 3. kışlalar sadece maliyet ödülü alır (Bonus yok).
+            // Bu sayede ajan "Et bitti bari kışla yapayım" demez, et toplamaya gider.
+
+            float currentBonus = 0f;
+            if (curBarracks == 1) // Sadece ilkinde bonus!
+            {
+                currentBonus = barracksBonus; // +15.0 Puan
+            }
+
+            float totalReward = (cost * rewardPerResource) + currentBonus;
+            Agent.AddReward(totalReward * (curBarracks - _lastBarracksCount));
+        }
+
+        _lastHouseCount = curHouse;
+        _lastFarmCount = curFarm;
+        _lastWoodCutterCount = curWood;
+        _lastStonePitCount = curStone;
+        _lastBarracksCount = curBarracks;
+        _lastTowerCount = curTower;
+
+        // 3. ÜNİTE ÜRETİMİ
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
-        int currentTotal = _world.Units.Count;
+        int idleWorkerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle);
 
-        if (currentTotal > _lastUnitCount)
+        // İşçi Kotası (Anti-Spam)
+        if (currentWorkers > _lastWorkerCount)
         {
-            // İşçi sayısı arttıysa ve level 2 ise bu harika bir şeydir!
-            if (currentWorkers > 0) Agent.AddReward(0.5f);
+            int workerHardCap = (_currentLevel >= 4) ? 6 : 20;
+            if (currentWorkers > workerHardCap)
+            {
+                Agent.AddReward(-1.0f); // Kota aşımı cezası
+            }
+            else if (idleWorkerCount <= 2)
+            {
+                Agent.AddReward(1.0f); // İhtiyaç varsa ödül
+            }
         }
-        _lastUnitCount = currentTotal;
+        _lastWorkerCount = currentWorkers;
 
-        // Ceza (Hızlandırma)
+        // Asker Ödülü (Süper Yüksek)
+        if (currentSoldiers > _lastSoldierCount)
+        {
+            int diff = currentSoldiers - _lastSoldierCount;
+            Agent.AddReward(15.0f * diff);
+        }
+        _lastSoldierCount = currentSoldiers;
+
+        // Tembellik Cezası
+        if (idleWorkerCount > 0)
+        {
+            Agent.AddReward(-0.001f * idleWorkerCount);
+        }
+
+        // Varoluş Cezası
         Agent.AddReward(-0.0005f);
     }
+
     private void EndGame(float reward)
     {
         if (Agent != null)
@@ -290,14 +377,8 @@ public class DRLSimRunner : MonoBehaviour
         }
     }
 
-    // ... (GenerateRTSMap ve SetupBase fonksiyonlarınız aynı kalabilir) ...
     private void GenerateRTSMap()
     {
-        // (Sizin düzelttiğiniz OccupantID = res.ID içeren kod buraya gelecek)
-        // Kodu kısa tutmak için burayı atlıyorum, eski haliyle aynı kalabilir.
-        // Sadece OccupantID satırının olduğundan emin olun.
-
-        // Önceki turn'de düzelttiğimiz GenerateRTSMap kodunu buraya yapıştırın.
         int mapSize = 20;
         for (int x = 0; x < mapSize; x++)
         {
@@ -319,7 +400,7 @@ public class DRLSimRunner : MonoBehaviour
                     else { res.Type = SimResourceType.Meat; }
 
                     _world.Resources.Add(res.ID, res);
-                    node.OccupantID = res.ID; // KRİTİK SATIR
+                    node.OccupantID = res.ID;
                     node.IsWalkable = false;
                 }
             }

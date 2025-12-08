@@ -477,8 +477,20 @@ public class GameVisualizer : MonoBehaviour
         if (obj == null) return;
 
         UpdatePosition(obj, b.GridPosition, false);
-        float alpha = !b.IsConstructed ? 0.3f + (b.ConstructionProgress / 100f * 0.7f) : 1.0f;
-        UpdateVisualEffects(obj, b.ID, b.PlayerID, b.Health, b.MaxHealth, alpha);
+
+        // 1. İnşaat Şeffaflığı
+        float alpha = 1.0f;
+        bool isUnderConstruction = !b.IsConstructed; // İnşaat durumu kontrolü
+
+        if (isUnderConstruction)
+        {
+            // İnşaat %0 iken 0.3, %100 iken 1.0 olsun
+            alpha = 0.3f + (b.ConstructionProgress / 100f * 0.7f);
+        }
+
+        // 2. Efektleri Güncelle
+        // 'isUnderConstruction' parametresini gönderiyoruz
+        UpdateVisualEffects(obj, b.ID, b.PlayerID, b.Health, b.MaxHealth, alpha, isUnderConstruction);
     }
 
     void SyncResource(SimResourceData r, GameObject prefab)
@@ -493,11 +505,12 @@ public class GameVisualizer : MonoBehaviour
         if (sr) sr.color = new Color(1f, 1f, 1f, alpha);
     }
 
-    void UpdateVisualEffects(GameObject obj, int id, int playerID, int currentHealth, int maxHealth, float baseAlpha = 1.0f)
+    void UpdateVisualEffects(GameObject obj, int id, int playerID, int currentHealth, int maxHealth, float baseAlpha = 1.0f, bool ignoreHealthFade = false)
     {
         var sr = obj.GetComponent<SpriteRenderer>();
         if (sr == null) return;
 
+        // ... (Flash Timers kısıımları AYNI kalsın) ...
         if (!_lastKnownHealth.ContainsKey(id)) _lastKnownHealth[id] = currentHealth;
         if (currentHealth < _lastKnownHealth[id]) _flashTimers[id] = 0.2f;
         _lastKnownHealth[id] = currentHealth;
@@ -512,8 +525,17 @@ public class GameVisualizer : MonoBehaviour
         Color targetColor = (playerID == 2) ? Player2Color : Color.white;
         if (isFlashing) targetColor = DamageFlashColor;
 
-        float healthPercent = (float)currentHealth / maxHealth;
-        float healthAlpha = Mathf.Lerp(0.4f, 1.0f, healthPercent);
+        // D. Can Azalınca Soluklaşma (Health Fade)
+        float healthAlpha = 1.0f;
+
+        // --- DÜZELTME ---
+        // Eğer bina inşaat halindeyse, canının az olması normaldir, soluklaştırma YAPMA.
+        if (!ignoreHealthFade || true)
+        {
+            float healthPercent = (float)currentHealth / maxHealth;
+            healthAlpha = Mathf.Lerp(0.4f, 1.0f, healthPercent);
+        }
+
         sr.color = new Color(targetColor.r, targetColor.g, targetColor.b, baseAlpha * healthAlpha);
     }
 
