@@ -8,6 +8,7 @@ using RTS.Simulation.Core;
 using System.Linq; // Linq kütüphanesini eklemeyi unutma
 
 
+
 public class RTSAgent : Agent
 {
     private SimWorldState _world;
@@ -24,6 +25,9 @@ public class RTSAgent : Agent
     private int _lastDebugX = -1;
     private int _lastDebugY = -1;
     private int _lastDebugCommand = 0;
+    private RTSGridSensorComponent _gridSensorComp;
+    public bool ShowDebugLogs = true;
+
 
     public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys)
     {
@@ -32,7 +36,17 @@ public class RTSAgent : Agent
         _unitSystem = unitSys;
         _buildingSystem = buildSys;
 
-        _gridSensor = new RTSGridSensor(_world, _gridSystem);
+        // --- YENİ EKLENEN KISIM ---
+        // Bileşeni bul (Agent ile aynı obje üzerinde olmalı)
+        if (_gridSensorComp == null)
+            _gridSensorComp = GetComponent<RTSGridSensorComponent>();
+
+        // Sensöre world verisini gönder ki okuyabilsin
+        if (_gridSensorComp != null)
+        {
+            _gridSensorComp.InitializeSensor(_world, _gridSystem);
+        }
+        // --------------------------
         _translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem);
 
         // Setup çağrıldığında eventleri yeniden bağlamamız gerekebilir
@@ -118,50 +132,29 @@ public class RTSAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (_world == null) return;
+        if (_world == null)
+        {
+            for (int i = 0; i < 6; i++) sensor.AddObservation(0f);
+            return;
+        }
 
-        // 1. Grid Sensor (Eğer kullanıyorsan kalsın, ama RUSH için çok şart değil)
-        // if (_gridSensor != null) _gridSensor.AddGridObservations(sensor);
-
-        // 2. Global İstatistikler (RTSGridSensor içindekini buraya alıyoruz ki kontrol bizde olsun)
         if (_world.Players.ContainsKey(1))
         {
             var me = _world.Players[1];
-            sensor.AddObservation(me.Wood / 2000f); // Kaynaklar
-            sensor.AddObservation(me.Stone / 1000f);
-            sensor.AddObservation(me.Meat / 1000f);
+            sensor.AddObservation(me.Wood / 1000f);
+            sensor.AddObservation(me.Stone / 500f);
+            sensor.AddObservation(me.Meat / 500f);
             sensor.AddObservation(me.CurrentPopulation / 50f);
 
-            // Asker Sayısı (Çok Önemli)
-            int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
+            int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
+            int workerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
+
             sensor.AddObservation(soldierCount / 20f);
+            sensor.AddObservation(workerCount / 20f);
         }
         else
         {
-            sensor.AddObservation(new float[5]); // Boş veri
-        }
-
-        // 3. PUSULA (Düşman Nerede?) - İŞTE BU ÇOK ÖNEMLİ
-        var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
-        var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != 1 && b.Type == SimBuildingType.Base);
-
-        if (myBase != null && enemyBase != null)
-        {
-            // Düşmana olan yön vektörü
-            Vector2 dir = new Vector2(enemyBase.GridPosition.x - myBase.GridPosition.x,
-                                      enemyBase.GridPosition.y - myBase.GridPosition.y).normalized;
-            sensor.AddObservation(dir); // 2 float
-
-            // Mesafe (Yaklaştıkça saldırı isteği artsın)
-            float dist = Vector2.Distance(new Vector2(myBase.GridPosition.x, myBase.GridPosition.y),
-                                          new Vector2(enemyBase.GridPosition.x, enemyBase.GridPosition.y));
-            sensor.AddObservation(dist / 40f); // Harita boyutuna böl
-        }
-        else
-        {
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
+            for (int i = 0; i < 6; i++) sensor.AddObservation(0f);
         }
     }
 
@@ -169,117 +162,112 @@ public class RTSAgent : Agent
     {
         if (_world == null) return;
 
-        // Sadece 1 tane discrete action alıyoruz (0-7 arası)
-        int command = actions.DiscreteActions[0];
+        int actionType = actions.DiscreteActions[0];
+        int targetIndex = actions.DiscreteActions[1];
 
-        // Eski TargetX, TargetY artık yok. Translator kendi buluyor.
-        bool isSuccess = _translator.ExecuteAction(command);
-
-        // --- MİKRO ÖDÜLLER ---
-
-        // Geçersiz hamle cezası (Param yokken kışla basmaya çalışma)
-        if (!isSuccess && command != 0)
+        // --- DEBUG LOG: NE GELDİ? ---
+        if (ShowDebugLogs && actionType != 0) // Bekle (0) dışındaki her şeyi yaz
         {
-            AddReward(-0.01f);
+            Debug.Log($"[AGENT] Action Received -> Type: {actionType}, TargetIndex: {targetIndex}");
         }
 
-        // Asker basma teşviği (Rush stratejisi için)
-        if (isSuccess && command == 4) // Asker
-        {
-            AddReward(0.5f); // Asker basmak iyidir
-        }
+        bool isSuccess = _translator.ExecuteAction(actionType, targetIndex);
 
-        // Saldırı komutu teşviği (Sadece askerim varsa)
-        if (isSuccess && command == 5) // Attack Base
-        {
-            int soldiers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
-            if (soldiers > 3)
-            {
-                AddReward(1.0f); // Ordun var ve saldırdın, bravo!
-            }
-            else
-            {
-                AddReward(-0.5f); // Askerin yokken intihar etme
-            }
-        }
-
-        // Ufak bir zaman cezası (Hızlı bitirmeye teşvik)
+        if (!isSuccess && actionType != 0) AddReward(-0.001f);
         AddReward(-0.0001f);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        // (Bu kısım değişmedi, aynen kalabilir)
         if (_world == null || !_world.Players.ContainsKey(1)) return;
         var player = _world.Players[1];
 
+        // 1. Mevcut Durumu Analiz Et
         bool hasWorker = false;
         int soldierCount = 0;
         bool hasBarracks = false;
         bool hasBase = false;
 
+        // Üniteleri say
         foreach (var u in _world.Units.Values)
         {
-            if (u.PlayerID == 1)
+            if (u.PlayerID == 1 && u.State != SimTaskType.Dead)
             {
                 if (u.UnitType == SimUnitType.Worker) hasWorker = true;
                 if (u.UnitType == SimUnitType.Soldier) soldierCount++;
             }
         }
+
+        // Binaları kontrol et
         foreach (var b in _world.Buildings.Values)
         {
-            if (b.PlayerID == 1 && b.IsConstructed)
+            if (b.PlayerID == 1 && b.IsConstructed && b.Health > 0)
             {
                 if (b.Type == SimBuildingType.Barracks) hasBarracks = true;
                 if (b.Type == SimBuildingType.Base) hasBase = true;
             }
         }
 
-        if (Runner != null)
-        {
-            // if (Runner.CurrentLevel < 3)
-            // {
-            //     actionMask.SetActionEnabled(0, 1, false);
-            //     actionMask.SetActionEnabled(0, 2, false);
-            //     actionMask.SetActionEnabled(0, 7, false);
-            //     actionMask.SetActionEnabled(0, 8, false);
-            //     actionMask.SetActionEnabled(0, 9, false);
-            // }
-            // if (Runner.CurrentLevel < 4)
-            // {
-            //     actionMask.SetActionEnabled(0, 4, false);
-            //     actionMask.SetActionEnabled(0, 5, false);
-            // }
-        }
+        // --- AKSİYON MASKELEME (0-11 Arası) ---
+        // 0: Bekle (Her zaman açık)
 
-        if (!hasWorker)
-        {
-            int[] workerActions = { 1, 2, 6, 7, 8, 9 };
-            foreach (var act in workerActions) actionMask.SetActionEnabled(0, act, false);
-        }
-
-        if (soldierCount == 0) actionMask.SetActionEnabled(0, 5, false);
-
-        CheckAffordability(actionMask, 1, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
-        CheckAffordability(actionMask, 2, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
-        CheckAffordability(actionMask, 7, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
-        CheckAffordability(actionMask, 8, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
-        CheckAffordability(actionMask, 9, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
-
+        // 1: İşçi Üret (Base lazım, Kaynak lazım, Nüfus yerim var mı?)
         bool canAffordWorker = SimResourceSystem.CanAfford(_world, 1, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
         if (!hasBase || !canAffordWorker || player.CurrentPopulation >= player.MaxPopulation)
-            actionMask.SetActionEnabled(0, 3, false);
+        {
+            actionMask.SetActionEnabled(0, 1, false);
+        }
 
+        // 2: Asker Üret (Barracks lazım, Kaynak lazım, Nüfus yerim var mı?)
         bool canAffordSoldier = SimResourceSystem.CanAfford(_world, 1, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
         if (!hasBarracks || !canAffordSoldier || player.CurrentPopulation >= player.MaxPopulation)
-            actionMask.SetActionEnabled(0, 4, false);
+        {
+            actionMask.SetActionEnabled(0, 2, false);
+        }
+
+        // --- İNŞAATLAR (İşçi Lazım + Kaynak Lazım) ---
+        // Eğer işçim yoksa inşaat yapamam (3-9 arası kilitlenir)
+        if (!hasWorker)
+        {
+            for (int i = 3; i <= 9; i++) actionMask.SetActionEnabled(0, i, false);
+
+            // İşçi yoksa "İşçi Komutu" da verilemez (Action 11)
+            actionMask.SetActionEnabled(0, 11, false);
+        }
+        else
+        {
+            // İşçim var, peki param var mı?
+            CheckAffordability(actionMask, 3, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);        // House
+            CheckAffordability(actionMask, 4, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);          // Farm
+            CheckAffordability(actionMask, 5, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT); // WoodCutter
+            CheckAffordability(actionMask, 6, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT); // StonePit
+            CheckAffordability(actionMask, 7, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT); // Barracks
+
+            // Kule ve Duvar maliyetleri Config'de yoksa manuel girebilirsin veya Config'e ekle
+            // Örnek değerler: Tower (100,50,0), Wall (20,10,0)
+            if (!SimResourceSystem.CanAfford(_world, 1, 100, 50, 0)) actionMask.SetActionEnabled(0, 8, false); // Tower
+            if (!SimResourceSystem.CanAfford(_world, 1, 20, 10, 0)) actionMask.SetActionEnabled(0, 9, false);  // Wall
+        }
+
+        // 10: ORDUYU YÖNET (Askerim yoksa kapalı)
+        if (soldierCount == 0)
+        {
+            actionMask.SetActionEnabled(0, 10, false);
+        }
+
+        // 11: İŞÇİYİ YÖNET (Yukarıda !hasWorker bloğunda zaten kapattık ama açıkta kalan durum varsa)
+        // Eğer işçi varsa her zaman komut verilebilir (Topla/Yürü), ekstra kaynağa gerek yok.
     }
 
     private void CheckAffordability(IDiscreteActionMask mask, int actionIndex, int w, int s, int m)
     {
         if (!SimResourceSystem.CanAfford(_world, 1, w, s, m))
+        {
             mask.SetActionEnabled(0, actionIndex, false);
+        }
     }
+
+
 
     private void OnDrawGizmos()
     {
@@ -297,5 +285,80 @@ public class RTSAgent : Agent
         Gizmos.color = debugColor;
         Gizmos.DrawWireCube(targetPos, new Vector3(0.9f, 0.1f, 0.9f));
         Gizmos.DrawLine(transform.position, targetPos);
+    }
+
+    // --- HEURISTIC KONTROL (OYUNCU GİRDİSİ) ---
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        Debug.Log($"[HEURISTIC] Right Click Detected at Index: HEREEE");
+        var discreteActions = actionsOut.DiscreteActions;
+        discreteActions[0] = 0;
+        discreteActions[1] = 0;
+
+        // 1. MOUSE POZİSYONU
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Plane groundPlane = new Plane(Vector3.up, 0);
+        float rayDist;
+
+        int gridIndex = 0;
+        if (groundPlane.Raycast(ray, out rayDist))
+        {
+            Vector3 worldPos = ray.GetPoint(rayDist);
+            int gx = Mathf.RoundToInt(worldPos.x);
+            int gy = Mathf.RoundToInt(worldPos.z);
+
+            if (gx >= 0 && gx < _world.Map.Width && gy >= 0 && gy < _world.Map.Height)
+            {
+                gridIndex = (gy * _world.Map.Width) + gx;
+                discreteActions[1] = gridIndex;
+            }
+        }
+
+        // 2. KLAVYE/MOUSE INPUTLARI (Loglu)
+        int selectedAction = 0;
+
+        if (Input.GetKey(KeyCode.Q)) selectedAction = 1;      // İşçi
+        else if (Input.GetKey(KeyCode.W)) selectedAction = 2; // Asker
+        else if (Input.GetKey(KeyCode.H)) selectedAction = 3; // House
+        else if (Input.GetKey(KeyCode.F)) selectedAction = 4; // Farm (Barracks yazılmış eski kodda, dikkat et)
+                                                              // NOT: Senin translator sıralaman şuydu: 
+                                                              // 1:House, 2:Barracks, 3:Worker, 4:Soldier. DÜZELTİYORUM:
+
+        // Translator Case'lerine göre Doğru Mapping:
+        // Case 1: House
+        // Case 2: Barracks
+        // Case 3: Worker
+        // Case 4: Soldier
+        // Case 5: Rush Attack
+        // Case 6: Nearest Attack
+        // Case 7: Auto Gather
+        // Case 10: Manual Army
+        // Case 11: Manual Worker
+
+        if (Input.GetKey(KeyCode.H)) selectedAction = 1;      // House
+        else if (Input.GetKey(KeyCode.B)) selectedAction = 2; // Barracks
+        else if (Input.GetKey(KeyCode.Q)) selectedAction = 3; // Worker
+        else if (Input.GetKey(KeyCode.W)) selectedAction = 4; // Soldier
+        else if (Input.GetKeyDown(KeyCode.Space)) selectedAction = 5; // Rush
+        else if (Input.GetKey(KeyCode.A)) selectedAction = 6; // Attack Nearest
+        else if (Input.GetKey(KeyCode.G)) selectedAction = 7; // Auto Gather
+
+        // --- MOUSE TIKLAMALARI ---
+        else if (Input.GetMouseButton(1))
+        {
+            selectedAction = 10; // Sağ Tık (Ordu)
+            if (ShowDebugLogs) Debug.Log($"[HEURISTIC] Right Click Detected at Index: {gridIndex}");
+        }
+        else if (Input.GetMouseButton(0))
+        {
+            selectedAction = 11; // Sol Tık (İşçi)
+            if (ShowDebugLogs) Debug.Log($"[HEURISTIC] Left Click Detected at Index: {gridIndex}");
+        }
+
+        if (selectedAction != 0)
+        {
+            discreteActions[0] = selectedAction;
+            if (ShowDebugLogs) Debug.Log($"[HEURISTIC] Input Detected -> Key Action: {selectedAction}");
+        }
     }
 }

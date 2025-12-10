@@ -5,39 +5,38 @@ using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using Unity.MLAgents;
-// using RTS.Simulation.Data;
 
-// --- EKSİK OLAN KISIM BURASIYDI ---
-// Bunu class'ın dışına ekledik, artık hata vermez.
 public enum AIDifficulty
 {
     Passive,
     Defensive,
     Aggressive
 }
-// ----------------------------------
 
 public class AdversarialTrainerRunner : MonoBehaviour
 {
     [Header("Ayarlar")]
     public RTSAgent Agent;
-    public int MapSize = 20;
+    public int MapSize = 32;
     public int MaxSteps = 5000;
 
-    [Range(1f, 100f)]
-    [Tooltip("Simülasyonun Çalışma Hızı. Unity Editor'de oyunu hızlandırmak için.")]
-    public float SimulationTimeScale = 100.0f;
+    [Header("Zaman Ayarları")]
+    [Tooltip("Eğitim için True, Demo kaydı için False yap!")]
+    public bool IsTrainingMode = false;
 
-    // Simülasyonun iç mantık adım süresi (Saniyede 10 karar)
-    private float dt = 0.1f;
+    [Range(1f, 100f)]
+    public float SimulationTimeScale = 1.0f;
+
+    // Simülasyonun bir adımı kaç saniyelik oyun süresine denk?
+    // 0.1f = Saniyede 10 karar anı.
+    private float _simStepSize = 0.1f;
+    private float _timer = 0f;
 
     [Header("Görselleştirme")]
     public GameVisualizer Visualizer;
 
     [Header("Rakip Ayarları")]
     public bool UseMacroAI = true;
-
-    [Tooltip("Eğitim sırasında bu değer Curriculum (YAML) tarafından yönetilir.")]
     public AIDifficulty EnemyDifficulty = AIDifficulty.Passive;
 
     // SİSTEMLER
@@ -47,49 +46,63 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private SimBuildingSystem _buildSys;
     private SimResourceSystem _resSys;
 
-    // TAKİP DEĞİŞKENLERİ (Ödüller için)
+    // TAKİP DEĞİŞKENLERİ
     private int _lastEnemyUnitCount = 0;
     private int _lastEnemyBuildingCount = 0;
     private float _lastEnemyBaseHealth = 1000f;
-
-    // Ekonomi takibi (Sadece Passive modda ödül vermek için)
     private int _lastWood = 0;
     private int _lastMeat = 0;
     private int _lastStone = 0;
     private int _lastWorkerCount = 0;
 
-    // RAKİP
     private SimpleMacroAI _enemyAI;
     private int _currentStep = 0;
-
-    // Oyun bitti mi kontrolü
     private bool _gameEnded = false;
 
     void Start()
     {
         if (Agent == null) Agent = GetComponentInChildren<RTSAgent>();
 
-        // Unity Zaman Ayarı
-        Application.targetFrameRate = -1;
-        Time.timeScale = SimulationTimeScale;
+        // Demo modundaysak FPS kilidini kaldırıp normal hıza dönelim
+        if (!IsTrainingMode)
+        {
+            Application.targetFrameRate = 60;
+            Time.timeScale = SimulationTimeScale;
+        }
+        else
+        {
+            Application.targetFrameRate = -1; // Maksimum hız
+            Time.timeScale = 20.0f; // Eğitimi hızlandır
+        }
 
         ResetSimulation();
     }
 
     void Update()
     {
-        // Bir karede 50 simülasyon adımı işlet (Hızlı eğitim için)
-        for (int i = 0; i < 50; i++)
+        if (_gameEnded) return;
+
+        // --- DÜZELTİLEN ZAMAN MANTIĞI ---
+        if (IsTrainingMode)
         {
-            if (_world != null && !_gameEnded)
+            // Eğitim Modu: Frame başına sabit bir adım işle
+            SimulationStep(_simStepSize);
+        }
+        else
+        {
+            // Demo/Heuristic Modu: Gerçek zamanlı akış (Accumulator Pattern)
+            _timer += Time.deltaTime * SimulationTimeScale;
+
+            while (_timer >= _simStepSize)
             {
-                // dt burada sabit 0.1f kalmalı!
-                SimulationStep();
+                SimulationStep(_simStepSize);
+                _timer -= _simStepSize;
             }
         }
     }
 
-    public void SimulationStep()
+    // Artık dt parametre olarak geliyor
+    public void SimulationStep(float dt)
     {
         // 1. Düşman AI Hamlesi
         if (_enemyAI != null)
@@ -103,11 +116,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // 3. Simülasyonu İlerlet
         if (_buildSys != null) _buildSys.UpdateAllBuildings(dt);
 
-        // Ödül Hesaplamaları
-        CalculateCombatRewards();
-        CalculateEconomyRewards();
-        ApplyIdlePenalty();
-
+        // Birimleri güncelle
         var unitIds = _world.Units.Keys.ToList();
         foreach (var uid in unitIds)
         {
@@ -115,27 +124,26 @@ public class AdversarialTrainerRunner : MonoBehaviour
                 if (_unitSys != null) _unitSys.UpdateUnit(unit, dt);
         }
 
+        // Ödüller
+        CalculateCombatRewards();
+        CalculateEconomyRewards();
+        ApplyIdlePenalty();
+
         // 4. Bitiş Kontrolü
         CheckGameResult();
 
         _currentStep++;
         if (_currentStep >= MaxSteps && !_gameEnded)
         {
-            // Zaman doldu - Berabere/Nötr
             EndGame(0);
         }
     }
 
     private void CalculateEconomyRewards()
     {
-        if (Agent == null) return;
-
-        // Ekonomi ödülleri SADECE PASSIVE modda verilir.
-        if (EnemyDifficulty != AIDifficulty.Passive) return;
+        if (Agent == null || EnemyDifficulty != AIDifficulty.Passive) return;
 
         var myPlayer = _world.Players[1];
-
-        // Kaynak Toplama Ödülü
         int woodDelta = myPlayer.Wood - _lastWood;
         int meatDelta = myPlayer.Meat - _lastMeat;
         int stoneDelta = myPlayer.Stone - _lastStone;
@@ -144,14 +152,9 @@ public class AdversarialTrainerRunner : MonoBehaviour
         if (meatDelta > 0) Agent.AddReward(meatDelta * 0.001f);
         if (stoneDelta > 0) Agent.AddReward(stoneDelta * 0.001f);
 
-        // İşçi Basma Ödülü
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
-        if (currentWorkers > _lastWorkerCount)
-        {
-            Agent.AddReward(0.05f);
-        }
+        if (currentWorkers > _lastWorkerCount) Agent.AddReward(0.05f);
 
-        // Değerleri güncelle
         _lastWood = myPlayer.Wood;
         _lastMeat = myPlayer.Meat;
         _lastStone = myPlayer.Stone;
@@ -178,21 +181,18 @@ public class AdversarialTrainerRunner : MonoBehaviour
             }
         }
 
-        // 1. Düşman Öldürme
         if (currentEnemyUnits < _lastEnemyUnitCount)
         {
             int killCount = _lastEnemyUnitCount - currentEnemyUnits;
             Agent.AddReward(0.5f * killCount);
         }
 
-        // 2. Bina Yıkma
         if (currentEnemyBuildings < _lastEnemyBuildingCount)
         {
             int destroyCount = _lastEnemyBuildingCount - currentEnemyBuildings;
             Agent.AddReward(2.0f * destroyCount);
         }
 
-        // 3. Üsse Hasar Verme
         if (currentEnemyBaseHealth < _lastEnemyBaseHealth)
         {
             float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
@@ -208,110 +208,52 @@ public class AdversarialTrainerRunner : MonoBehaviour
     {
         _currentStep = 0;
         _gameEnded = false;
+        _timer = 0; // Timer'ı sıfırla
 
-        // --- CURRICULUM BAĞLANTISI ---
-        // Config dosyasından 'enemy_difficulty_level' değerini oku. Varsayılan 0.0.
-        float difficultyLevel = Academy.Instance.EnvironmentParameters.GetWithDefault("enemy_difficulty_level", 0.0f);
+        float difficultyLevel = 0.0f;
+        if (Academy.IsInitialized)
+            difficultyLevel = Academy.Instance.EnvironmentParameters.GetWithDefault("enemy_difficulty_level", 0.0f);
 
-        // Enum'ı güncelle (Görsel ve logic kontrolü için)
         if (difficultyLevel < 0.2f) EnemyDifficulty = AIDifficulty.Passive;
         else if (difficultyLevel < 1.8f) EnemyDifficulty = AIDifficulty.Defensive;
         else EnemyDifficulty = AIDifficulty.Aggressive;
 
-        // Yeni Dünya Oluştur
+        // Dünya Kurulumu
         _world = new SimWorldState(MapSize, MapSize);
         GenerateMap();
 
-        // Oyuncu Verilerini Başlat
         if (_world.Players.ContainsKey(1))
         {
             var p1 = _world.Players[1];
             p1.Wood = 500; p1.Stone = 500; p1.Meat = 500; p1.MaxPopulation = 20;
             _lastWood = 500; _lastStone = 500; _lastMeat = 500; _lastWorkerCount = 0;
         }
-
         if (!_world.Players.ContainsKey(2))
         {
             _world.Players.Add(2, new SimPlayerData { PlayerID = 2, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
         }
 
-        // Üsleri Kur
         SetupBase(1, new int2(2, 2));
         SetupBase(2, new int2(MapSize - 3, MapSize - 3));
 
-        // Sistemleri Kur
         _gridSys = new SimGridSystem(_world);
         _unitSys = new SimUnitSystem(_world);
         _buildSys = new SimBuildingSystem(_world);
         _resSys = new SimResourceSystem(_world);
 
-        // Agent Setup
-        if (Agent != null)
-        {
-            Agent.Setup(_world, _gridSys, _unitSys, _buildSys);
-        }
+        if (Agent != null) Agent.Setup(_world, _gridSys, _unitSys, _buildSys);
 
-        // RAKİP AI KURULUMU
-        if (UseMacroAI)
-        {
-            // SimpleMacroAI artık float difficultyLevel alıyor
-            _enemyAI = new SimpleMacroAI(_world, 2, difficultyLevel);
-        }
-        else
-        {
-            _enemyAI = null;
-        }
+        if (UseMacroAI) _enemyAI = new SimpleMacroAI(_world, 2, difficultyLevel);
+        else _enemyAI = null;
 
-        // Görselleştirme
-        if (Visualizer != null)
-        {
-            Visualizer.Initialize(_world);
-        }
+        if (Visualizer != null) Visualizer.Initialize(_world);
 
-        // Combat Sayaçları Sıfırla
+        // Reset counters
         _lastEnemyUnitCount = 0;
         _lastEnemyBuildingCount = 1;
         _lastEnemyBaseHealth = 1000f;
     }
 
-    private void CheckGameResult()
-    {
-        if (_gameEnded) return;
-
-        var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
-        var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
-
-        if (myBase == null) // Kaybettik
-        {
-            EndGame(-2.0f);
-        }
-        else if (enemyBase == null) // Kazandık
-        {
-            float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
-            float speedBonus = timeFactor * 2.0f;
-            float totalWinReward = 2.0f + speedBonus;
-
-            // Debug.Log($"🏆 KAZANDIN! Puan: {totalWinReward:F2}");
-            EndGame(totalWinReward);
-        }
-    }
-
-    private void EndGame(float reward)
-    {
-        if (_gameEnded) return;
-        _gameEnded = true;
-
-        if (Agent != null)
-        {
-            // Passive modda süre biterse ve yenemezse ceza ver (Harekete geçmeye zorla)
-            if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
-
-            Agent.AddReward(reward);
-            Agent.EndEpisode();
-        }
-    }
-
-    // --- HARİTA OLUŞTURMA ---
     private void GenerateMap()
     {
         for (int x = 0; x < MapSize; x++)
@@ -396,8 +338,6 @@ public class AdversarialTrainerRunner : MonoBehaviour
     {
         if (Agent == null) return;
 
-        // Sadece Player 1'in (Ajanın) işçilerine bakıyoruz
-        // State == Idle (Boşta) olanları say
         int idleCount = _world.Units.Values.Count(u =>
             u.PlayerID == 1 &&
             u.UnitType == SimUnitType.Worker &&
@@ -406,10 +346,40 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (idleCount > 0)
         {
-            // Ceza Miktarı: İşçi başına adım başı -0.0005f
-            // Eğer 10 işçi boş yatıyorsa her adımda -0.005 puan kaybeder.
-            // Bu ceza küçük olmalı, yoksa ajan ceza yememek için işçilerini düşmana ölüme yollayabilir!
             Agent.AddReward(idleCount * -0.0005f);
+        }
+    }
+
+    private void CheckGameResult()
+    {
+        if (_gameEnded) return;
+
+        var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
+        var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
+
+        if (myBase == null) // Kaybettik
+        {
+            EndGame(-2.0f);
+        }
+        else if (enemyBase == null) // Kazandık
+        {
+            float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
+            float speedBonus = timeFactor * 2.0f;
+            EndGame(2.0f + speedBonus);
+        }
+    }
+
+    private void EndGame(float reward)
+    {
+        if (_gameEnded) return;
+        _gameEnded = true;
+
+        if (Agent != null)
+        {
+            if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
+
+            Agent.AddReward(reward);
+            Agent.EndEpisode();
         }
     }
 }

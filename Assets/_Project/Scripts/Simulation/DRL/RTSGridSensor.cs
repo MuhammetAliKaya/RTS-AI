@@ -3,138 +3,187 @@ using Unity.MLAgents.Sensors;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 
-public class RTSGridSensor
+public class RTSGridSensor : ISensor
 {
     private SimWorldState _world;
     private SimGridSystem _gridSystem;
+    private string _name;
+    private int[] _shape;
 
-    private const float MAX_HP = 500f;
-    private const float MAX_RESOURCE_AMOUNT = 5000f;
-    private const int TEAM_ME = 1;
+    // --- KANAL TANIMLARI (TOPLAM 25 KANAL) ---
+    private const int CH_OBSTACLE = 0;
+    private const int CH_RES_WOOD = 1;
+    private const int CH_RES_STONE = 2;
+    private const int CH_RES_FOOD = 3;
 
-    public RTSGridSensor(SimWorldState world, SimGridSystem gridSystem)
+    // Oyuncu 1 (BİZ)
+    private const int CH_MY_BASE = 4;
+    private const int CH_MY_BARRACKS = 5;
+    private const int CH_MY_TOWER = 6;
+    private const int CH_MY_WALL = 7;
+    private const int CH_MY_HOUSE = 8;
+    private const int CH_MY_FARM = 9;
+    private const int CH_MY_WOOD_BUILDING = 10;
+    private const int CH_MY_STONE_BUILDING = 11;
+    private const int CH_MY_WORKER = 12;
+    private const int CH_MY_SOLDIER = 13;
+
+    // Oyuncu 2 (DÜŞMAN)
+    private const int CH_ENEMY_BASE = 14;
+    private const int CH_ENEMY_BARRACKS = 15;
+    private const int CH_ENEMY_TOWER = 16;
+    private const int CH_ENEMY_WALL = 17;
+    private const int CH_ENEMY_HOUSE = 18;
+    private const int CH_ENEMY_FARM = 19;
+    private const int CH_ENEMY_WOOD_BUILDING = 20;
+    private const int CH_ENEMY_STONE_BUILDING = 21;
+    private const int CH_ENEMY_WORKER = 22;
+    private const int CH_ENEMY_SOLDIER = 23;
+
+    private const int CH_FOG_OF_WAR = 24;
+
+    private const int TOTAL_CHANNELS = 25;
+
+    public RTSGridSensor(SimWorldState world, SimGridSystem gridSystem, string name = "RTSGridSensor")
     {
         _world = world;
         _gridSystem = gridSystem;
+        _name = name;
+
+        int w = (_world != null) ? _world.Map.Width : 32;
+        int h = (_world != null) ? _world.Map.Height : 32;
+
+        // Shape: [Height, Width, Channels]
+        _shape = new int[] { h, w, TOTAL_CHANNELS };
     }
 
-    public void AddGridObservations(VectorSensor sensor)
+    public void SetReferences(SimWorldState world, SimGridSystem grid)
     {
+        _world = world;
+        _gridSystem = grid;
+    }
+
+    public string GetName() { return _name; }
+
+    public ObservationSpec GetObservationSpec()
+    {
+        return ObservationSpec.Visual(_shape[0], _shape[1], _shape[2]);
+    }
+
+    public CompressionSpec GetCompressionSpec()
+    {
+        return CompressionSpec.Default();
+    }
+
+    public byte[] GetCompressedObservation()
+    {
+        return null;
+    }
+
+    public void Update() { }
+    public void Reset() { }
+
+    // --- GÖZLEM YAZMA ---
+    public int Write(ObservationWriter writer)
+    {
+        // ZeroBuffer yerine manuel temizleme yapıyoruz
+        // Aynı döngüde zemin verisini de işleyerek performansı koruyoruz.
+
+        if (_world == null || _world.Map == null) return 0;
+
         int width = _world.Map.Width;
         int height = _world.Map.Height;
 
+        // 1. ZEMİNİ TARA VE TEMİZLE
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
             {
-                var node = _gridSystem.GetNode(x, y);
-
-                // --- ONE-HOT ENCODING KANALLARI (Toplam 9 Kanal) ---
-                // Bu değerler, tek bir sayı yerine her özellik için ayrı bir kanal (giriş) oluşturur.
-                // AI bu sayede "Bu 0.3 mü yoksa 0.6 mı?" diye matematik yapmak zorunda kalmaz.
-
-                float channel_MyUnit = 0f;
-                float channel_EnemyUnit = 0f;
-                float channel_MyBuilding = 0f;
-                float channel_EnemyBuilding = 0f;
-                float channel_ResWood = 0f;
-                float channel_ResStone = 0f;
-                float channel_ResMeat = 0f;
-
-                float channel_HealthRatio = 0f;
-                float channel_ConstructionRatio = 0f; // 1.0 = Tamamlandı, 0.5 = Yarısı bitti
-
-                if (node != null && node.OccupantID != -1)
+                // Önce o pikseldeki tüm kanalları sıfırla (Clean Slate)
+                for (int c = 0; c < TOTAL_CHANNELS; c++)
                 {
-                    // 1. BİNA
-                    if (_world.Buildings.TryGetValue(node.OccupantID, out SimBuildingData b))
-                    {
-                        if (b.PlayerID == TEAM_ME) channel_MyBuilding = 1f;
-                        else channel_EnemyBuilding = 1f;
-
-                        channel_HealthRatio = Mathf.Clamp01((float)b.Health / MAX_HP);
-                        channel_ConstructionRatio = b.IsConstructed ? 1f : Mathf.Clamp01(b.ConstructionProgress / 100f);
-                    }
-                    // 2. ÜNİTE
-                    else if (_world.Units.TryGetValue(node.OccupantID, out SimUnitData u))
-                    {
-                        if (u.PlayerID == TEAM_ME) channel_MyUnit = 1f;
-                        else channel_EnemyUnit = 1f;
-
-                        channel_HealthRatio = Mathf.Clamp01((float)u.Health / MAX_HP);
-                        channel_ConstructionRatio = 1f; // Üniteler hep tamamlanmıştır
-                    }
-                    // 3. KAYNAK
-                    else if (_world.Resources.TryGetValue(node.OccupantID, out SimResourceData r))
-                    {
-                        channel_HealthRatio = Mathf.Clamp01((float)r.AmountRemaining / MAX_RESOURCE_AMOUNT);
-
-                        switch (r.Type)
-                        {
-                            case SimResourceType.Wood: channel_ResWood = 1f; break;
-                            case SimResourceType.Stone: channel_ResStone = 1f; break;
-                            case SimResourceType.Meat: channel_ResMeat = 1f; break;
-                        }
-                    }
+                    writer[y, x, c] = 0.0f;
                 }
 
-                // Kanalları sırasıyla ekle (Config dosyasında stacked observation otomatik algılanır)
-                sensor.AddObservation(channel_MyUnit);        // 1
-                sensor.AddObservation(channel_EnemyUnit);     // 2
-                sensor.AddObservation(channel_MyBuilding);    // 3
-                sensor.AddObservation(channel_EnemyBuilding); // 4
-                sensor.AddObservation(channel_ResWood);       // 5
-                sensor.AddObservation(channel_ResStone);      // 6
-                sensor.AddObservation(channel_ResMeat);       // 7
-                sensor.AddObservation(channel_HealthRatio);   // 8
-                sensor.AddObservation(channel_ConstructionRatio); // 9
+                // Sonra Zemin Verisini Yaz
+                var node = _world.Map.Grid[x, y];
+                if (!node.IsWalkable && node.Type != SimTileType.Water) writer[y, x, CH_OBSTACLE] = 1.0f;
+
+                if (node.Type == SimTileType.Forest) writer[y, x, CH_RES_WOOD] = 1.0f;
+                else if (node.Type == SimTileType.Stone) writer[y, x, CH_RES_STONE] = 1.0f;
+                else if (node.Type == SimTileType.MeatBush) writer[y, x, CH_RES_FOOD] = 1.0f;
+
+                writer[y, x, CH_FOG_OF_WAR] = 1.0f;
             }
         }
-    }
 
-    public void AddGlobalStats(VectorSensor sensor)
-    {
-        if (_world.Players.ContainsKey(TEAM_ME))
+        // 2. BİNALAR
+        foreach (var kvp in _world.Buildings)
         {
-            var player = _world.Players[TEAM_ME];
+            var b = kvp.Value;
+            if (b.Health <= 0) continue;
 
-            // --- NORMALİZASYON ---
-            // Değerleri 0 ile 1 arasına sıkıştırıyoruz. 
-            // 5000 kaynak miktarı makul bir üst limit.
-            sensor.AddObservation(Mathf.Clamp01(player.Wood / 5000f));
-            sensor.AddObservation(Mathf.Clamp01(player.Meat / 5000f));
-            sensor.AddObservation(Mathf.Clamp01(player.Stone / 5000f));
+            int x = b.GridPosition.x;
+            int y = b.GridPosition.y;
 
-            // Nüfus (Max 50 varsayımı)
-            sensor.AddObservation(Mathf.Clamp01(player.CurrentPopulation / 50f));
+            // Sınır kontrolü
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
-            // Boşta işçi oranı (Çok kritik bir veri)
-            int idleWorkers = 0;
-            int totalWorkers = 0;
-            foreach (var u in _world.Units.Values)
+            bool isMe = (b.PlayerID == 1);
+            int channel = -1;
+
+            if (isMe)
             {
-                if (u.PlayerID == TEAM_ME && u.UnitType == SimUnitType.Worker)
+                switch (b.Type)
                 {
-                    totalWorkers++;
-                    if (u.State == SimTaskType.Idle) idleWorkers++;
+                    case SimBuildingType.Base: channel = CH_MY_BASE; break;
+                    case SimBuildingType.Barracks: channel = CH_MY_BARRACKS; break;
+                    case SimBuildingType.Tower: channel = CH_MY_TOWER; break;
+                    case SimBuildingType.Wall: channel = CH_MY_WALL; break;
+                    case SimBuildingType.House: channel = CH_MY_HOUSE; break;
+                    case SimBuildingType.Farm: channel = CH_MY_FARM; break;
+                    case SimBuildingType.WoodCutter: channel = CH_MY_WOOD_BUILDING; break;
+                    case SimBuildingType.StonePit: channel = CH_MY_STONE_BUILDING; break;
+                }
+            }
+            else
+            {
+                switch (b.Type)
+                {
+                    case SimBuildingType.Base: channel = CH_ENEMY_BASE; break;
+                    case SimBuildingType.Barracks: channel = CH_ENEMY_BARRACKS; break;
+                    case SimBuildingType.Tower: channel = CH_ENEMY_TOWER; break;
+                    case SimBuildingType.Wall: channel = CH_ENEMY_WALL; break;
+                    case SimBuildingType.House: channel = CH_ENEMY_HOUSE; break;
+                    case SimBuildingType.Farm: channel = CH_ENEMY_FARM; break;
+                    case SimBuildingType.WoodCutter: channel = CH_ENEMY_WOOD_BUILDING; break;
+                    case SimBuildingType.StonePit: channel = CH_ENEMY_STONE_BUILDING; break;
                 }
             }
 
-            // Eğer hiç işçi yoksa 0, varsa oranı
-            float idleRatio = totalWorkers > 0 ? (float)idleWorkers / totalWorkers : 0f;
-            sensor.AddObservation(idleRatio);
-        }
-        else
-        {
-            // Oyuncu yoksa (Hata durumu)
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
-            sensor.AddObservation(0f);
+            if (channel != -1) writer[y, x, channel] = 1.0f;
         }
 
-        // Zaman / Step Bilgisi (Normalized)
-        sensor.AddObservation(Mathf.Clamp01((float)_world.TickCount / 5000f));
+        // 3. ÜNİTELER
+        foreach (var kvp in _world.Units)
+        {
+            var u = kvp.Value;
+            if (u.State == SimTaskType.Dead) continue;
+
+            int x = u.GridPosition.x;
+            int y = u.GridPosition.y;
+
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+
+            bool isMe = (u.PlayerID == 1);
+            int channel = -1;
+
+            if (isMe) channel = (u.UnitType == SimUnitType.Soldier) ? CH_MY_SOLDIER : CH_MY_WORKER;
+            else channel = (u.UnitType == SimUnitType.Soldier) ? CH_ENEMY_SOLDIER : CH_ENEMY_WORKER;
+
+            if (channel != -1) writer[y, x, channel] = 1.0f;
+        }
+
+        return _shape[0] * _shape[1] * _shape[2];
     }
 }

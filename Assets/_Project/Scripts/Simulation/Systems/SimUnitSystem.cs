@@ -238,6 +238,25 @@ namespace RTS.Simulation.Systems
                 return;
             }
 
+            // --- GÜVENLİK KONTROLÜ: KAYNAĞIN YANINDA MIYIZ? ---
+            float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, res.GridPosition);
+            if (distSq > 2.1f) // Yan yana (çapraz dahil) maksimum mesafe ~2 birim karedir.
+            {
+                // Yanında değilsek oraya yürü
+                if (TryAssignGatherTask(unit, res, world))
+                {
+                    // State otomatik Moving olacak
+                    return;
+                }
+                else
+                {
+                    // Gidemiyorsak iptal et
+                    unit.State = SimTaskType.Idle;
+                    return;
+                }
+            }
+            // ----------------------------------------------------
+
             unit.ActionTimer += dt;
             if (unit.ActionTimer >= SimConfig.GATHER_INTERVAL)
             {
