@@ -37,16 +37,16 @@ public class SimGameplayUI : MonoBehaviour
 
     // --- İNŞAAT BUTONLARI ---
     // Agent Translator Kodları: House=1, Barracks=2, Tower=8, Wall=9
+    // YENİ EKLEMELER: WoodCutter=5, StonePit=6, Farm=7
 
     public void OnClickBuildHouse() { PrepareBuildOrder(1, SimBuildingType.House); }
     public void OnClickBuildBarracks() { PrepareBuildOrder(2, SimBuildingType.Barracks); }
     public void OnClickBuildTower() { PrepareBuildOrder(8, SimBuildingType.Tower); }
     public void OnClickBuildWall() { PrepareBuildOrder(9, SimBuildingType.Wall); }
-
-    // Translator'da henüz tanımlı olmayanlar (Sadece Manuel çalışır)
-    public void OnClickBuildFarm() { PrepareBuildOrder(-1, SimBuildingType.Farm); }
-    public void OnClickBuildWoodCutter() { PrepareBuildOrder(-1, SimBuildingType.WoodCutter); }
-    public void OnClickBuildStonePit() { PrepareBuildOrder(-1, SimBuildingType.StonePit); }
+    // DRL Action Translator'a uygun olarak güncellendi:
+    public void OnClickBuildWoodCutter() { PrepareBuildOrder(5, SimBuildingType.WoodCutter); }
+    public void OnClickBuildStonePit() { PrepareBuildOrder(6, SimBuildingType.StonePit); }
+    public void OnClickBuildFarm() { PrepareBuildOrder(7, SimBuildingType.Farm); }
 
     private void PrepareBuildOrder(int actionID, SimBuildingType type)
     {

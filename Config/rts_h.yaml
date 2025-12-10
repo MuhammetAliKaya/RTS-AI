@@ -35,12 +35,12 @@ behaviors:
         learning_rate: 3.0e-4
         use_actions: false
         use_vail: false
-        demo_path: Assets/Demonstrations/RTSDemoHuman01_7.demo
+        demo_path: Assets/Demonstrations/RTSDemoHuman01_8.demo
 
     # --- BURASI ÇOK ÖNEMLİ: BEHAVIORAL CLONING (Taklitçi) ---
     behavioral_cloning:
       strength: 1.0 # Birebir kopyalamaya zorlar
-      demo_path: Assets/Demonstrations/RTSDemoHuman01_7.demo
+      demo_path: Assets/Demonstrations/RTSDemoHuman01_8.demo
       steps: 50000 # İlk 50k adımda sadece taklit etsin, sonra kendi öğrensin
       batch_size: 2048 # Hiperparametrelerdeki batch_size ile aynı veya yakın olsun
 

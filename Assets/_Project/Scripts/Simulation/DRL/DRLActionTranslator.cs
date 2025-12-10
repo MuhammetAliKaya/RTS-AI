@@ -51,9 +51,19 @@ public class DRLActionTranslator
             case 0: return true; // Bekle
 
             // --- İNŞAAT (Kaynak: WORKER olmalı) ---
+            // 1. Ev (House)
             case 1: return TryBuild(sourceUnit, SimBuildingType.House, targetPos);
+            // 2. Kışla (Barracks)
             case 2: return TryBuild(sourceUnit, SimBuildingType.Barracks, targetPos);
+            // 5. Oduncu (Woodcutter) - YENİ
+            case 5: return TryBuild(sourceUnit, SimBuildingType.WoodCutter, targetPos);
+            // 6. Taş Ocağı (StonePit) - YENİ
+            case 6: return TryBuild(sourceUnit, SimBuildingType.StonePit, targetPos);
+            // 7. Çiftlik (Farm) - YENİ
+            case 7: return TryBuild(sourceUnit, SimBuildingType.Farm, targetPos);
+            // 8. Kule (Tower)
             case 8: return TryBuild(sourceUnit, SimBuildingType.Tower, targetPos);
+            // 9. Duvar (Wall)
             case 9: return TryBuild(sourceUnit, SimBuildingType.Wall, targetPos);
 
             // --- ÜRETİM (Kaynak: BİNA olmalı) ---
@@ -62,7 +72,7 @@ public class DRLActionTranslator
             case 4: return TryTrain(sourceBuilding, SimUnitType.Soldier);
 
             // --- HAREKET / SALDIRI / TOPLAMA (Kaynak: UNIT olmalı) ---
-            // Asker veya İşçi fark etmez, hedefe göre akıllı karar veririz.
+            // Akıllı Komut (Hedefe göre Move/Attack/Gather kararı verir)
             case 10: return CommandUnitSmart(sourceUnit, targetPos);
         }
         return false;
@@ -128,13 +138,13 @@ public class DRLActionTranslator
             _unitSystem.OrderAttack(unit, enemyBuilding);
             return true;
         }
-        // 3. Kaynak -> İşçiyse Topla
+        // 3. Kaynak -> İşçiyse Topla (x konumundakini topla)
         else if (resource != null && unit.UnitType == SimUnitType.Worker)
         {
             return _unitSystem.TryAssignGatherTask(unit, resource);
         }
 
-        // 4. Boş Alan -> Yürü
+        // 4. Boş Alan -> Yürü (x konumuna yürü/saldır)
         _unitSystem.OrderMove(unit, targetPos);
         return true;
     }
@@ -146,6 +156,11 @@ public class DRLActionTranslator
         int w = 0, s = 0, m = 0;
         if (type == SimBuildingType.House) { w = SimConfig.HOUSE_COST_WOOD; m = SimConfig.HOUSE_COST_MEAT; }
         else if (type == SimBuildingType.Barracks) { w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; }
+        // YENİ BİNA MALİYETLERİ
+        else if (type == SimBuildingType.WoodCutter) { w = SimConfig.WOODCUTTER_COST_WOOD; }
+        else if (type == SimBuildingType.StonePit) { s = SimConfig.STONEPIT_COST_STONE; }
+        else if (type == SimBuildingType.Farm) { m = SimConfig.FARM_COST_MEAT; }
+        // MEVCUT DİĞER BİNALAR
         else if (type == SimBuildingType.Tower) { w = 100; s = 50; } // Config'e eklenebilir
         else if (type == SimBuildingType.Wall) { w = 20; s = 10; }
         return SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m);
@@ -156,6 +171,11 @@ public class DRLActionTranslator
         int w = 0, s = 0, m = 0;
         if (type == SimBuildingType.House) { w = SimConfig.HOUSE_COST_WOOD; m = SimConfig.HOUSE_COST_MEAT; }
         else if (type == SimBuildingType.Barracks) { w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; }
+        // YENİ BİNA MALİYETLERİ
+        else if (type == SimBuildingType.WoodCutter) { w = SimConfig.WOODCUTTER_COST_WOOD; }
+        else if (type == SimBuildingType.StonePit) { s = SimConfig.STONEPIT_COST_STONE; }
+        else if (type == SimBuildingType.Farm) { m = SimConfig.FARM_COST_MEAT; }
+        // MEVCUT DİĞER BİNALAR
         else if (type == SimBuildingType.Tower) { w = 100; s = 50; }
         else if (type == SimBuildingType.Wall) { w = 20; s = 10; }
         SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, w, s, m);
