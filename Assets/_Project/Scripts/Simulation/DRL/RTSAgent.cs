@@ -5,6 +5,8 @@ using Unity.MLAgents.Actuators;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
+using System.Linq; // Linq kütüphanesini eklemeyi unutma
+
 
 public class RTSAgent : Agent
 {
@@ -116,34 +118,93 @@ public class RTSAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (_world == null || _gridSensor == null) return;
-        _gridSensor.AddGlobalStats(sensor);
-        _gridSensor.AddGridObservations(sensor);
+        if (_world == null) return;
+
+        // 1. Grid Sensor (Eğer kullanıyorsan kalsın, ama RUSH için çok şart değil)
+        // if (_gridSensor != null) _gridSensor.AddGridObservations(sensor);
+
+        // 2. Global İstatistikler (RTSGridSensor içindekini buraya alıyoruz ki kontrol bizde olsun)
+        if (_world.Players.ContainsKey(1))
+        {
+            var me = _world.Players[1];
+            sensor.AddObservation(me.Wood / 2000f); // Kaynaklar
+            sensor.AddObservation(me.Stone / 1000f);
+            sensor.AddObservation(me.Meat / 1000f);
+            sensor.AddObservation(me.CurrentPopulation / 50f);
+
+            // Asker Sayısı (Çok Önemli)
+            int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
+            sensor.AddObservation(soldierCount / 20f);
+        }
+        else
+        {
+            sensor.AddObservation(new float[5]); // Boş veri
+        }
+
+        // 3. PUSULA (Düşman Nerede?) - İŞTE BU ÇOK ÖNEMLİ
+        var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
+        var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != 1 && b.Type == SimBuildingType.Base);
+
+        if (myBase != null && enemyBase != null)
+        {
+            // Düşmana olan yön vektörü
+            Vector2 dir = new Vector2(enemyBase.GridPosition.x - myBase.GridPosition.x,
+                                      enemyBase.GridPosition.y - myBase.GridPosition.y).normalized;
+            sensor.AddObservation(dir); // 2 float
+
+            // Mesafe (Yaklaştıkça saldırı isteği artsın)
+            float dist = Vector2.Distance(new Vector2(myBase.GridPosition.x, myBase.GridPosition.y),
+                                          new Vector2(enemyBase.GridPosition.x, enemyBase.GridPosition.y));
+            sensor.AddObservation(dist / 40f); // Harita boyutuna böl
+        }
+        else
+        {
+            sensor.AddObservation(0f);
+            sensor.AddObservation(0f);
+            sensor.AddObservation(0f);
+        }
     }
 
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (_world == null) return;
 
+        // Sadece 1 tane discrete action alıyoruz (0-7 arası)
         int command = actions.DiscreteActions[0];
-        int targetX = actions.DiscreteActions[1];
-        int targetY = actions.DiscreteActions[2];
 
-        bool isSuccess = _translator.ExecuteAction(command, targetX, targetY);
+        // Eski TargetX, TargetY artık yok. Translator kendi buluyor.
+        bool isSuccess = _translator.ExecuteAction(command);
 
-        if (!isSuccess && command != 0) AddReward(-0.005f);
-        else if (isSuccess)
+        // --- MİKRO ÖDÜLLER ---
+
+        // Geçersiz hamle cezası (Param yokken kışla basmaya çalışma)
+        if (!isSuccess && command != 0)
         {
-            if (command == 2)
-            {
-                int barracksCount = 0;
-                foreach (var b in _world.Buildings.Values)
-                    if (b.PlayerID == 1 && b.Type == SimBuildingType.Barracks) barracksCount++;
-                if (barracksCount <= 1) AddReward(0.1f);
-            }
-            if (command == 4) AddReward(0.05f);
+            AddReward(-0.01f);
         }
-        AddReward(-0.0005f);
+
+        // Asker basma teşviği (Rush stratejisi için)
+        if (isSuccess && command == 4) // Asker
+        {
+            AddReward(0.5f); // Asker basmak iyidir
+        }
+
+        // Saldırı komutu teşviği (Sadece askerim varsa)
+        if (isSuccess && command == 5) // Attack Base
+        {
+            int soldiers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
+            if (soldiers > 3)
+            {
+                AddReward(1.0f); // Ordun var ve saldırdın, bravo!
+            }
+            else
+            {
+                AddReward(-0.5f); // Askerin yokken intihar etme
+            }
+        }
+
+        // Ufak bir zaman cezası (Hızlı bitirmeye teşvik)
+        AddReward(-0.0001f);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -176,19 +237,19 @@ public class RTSAgent : Agent
 
         if (Runner != null)
         {
-            if (Runner.CurrentLevel < 3)
-            {
-                actionMask.SetActionEnabled(0, 1, false);
-                actionMask.SetActionEnabled(0, 2, false);
-                actionMask.SetActionEnabled(0, 7, false);
-                actionMask.SetActionEnabled(0, 8, false);
-                actionMask.SetActionEnabled(0, 9, false);
-            }
-            if (Runner.CurrentLevel < 4)
-            {
-                actionMask.SetActionEnabled(0, 4, false);
-                actionMask.SetActionEnabled(0, 5, false);
-            }
+            // if (Runner.CurrentLevel < 3)
+            // {
+            //     actionMask.SetActionEnabled(0, 1, false);
+            //     actionMask.SetActionEnabled(0, 2, false);
+            //     actionMask.SetActionEnabled(0, 7, false);
+            //     actionMask.SetActionEnabled(0, 8, false);
+            //     actionMask.SetActionEnabled(0, 9, false);
+            // }
+            // if (Runner.CurrentLevel < 4)
+            // {
+            //     actionMask.SetActionEnabled(0, 4, false);
+            //     actionMask.SetActionEnabled(0, 5, false);
+            // }
         }
 
         if (!hasWorker)

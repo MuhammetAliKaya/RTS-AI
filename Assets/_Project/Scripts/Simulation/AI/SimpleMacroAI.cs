@@ -3,25 +3,56 @@ using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using System.Linq;
 using System.Collections.Generic;
-
-public enum AIDifficulty { Passive, Defensive, Aggressive }
+using UnityEngine; // Mathf ve Random için
 
 public class SimpleMacroAI
 {
     private SimWorldState _world;
     private int _playerID;
     private float _timer = 0f;
-    private float _decisionInterval = 1.0f;
+
+    // YENİ: Zorluk artık bir float (Config'den gelen değer)
+    // 0.0 = Pasif (Sadece ekonomi)
+    // 0.5 = Çok Kolay (Savunma ağırlıklı, saldırı yok)
+    // 1.0 = Kolay (Az saldırı)
+    // 2.0 = Agresif (Tam güç)
+    private float _difficultyLevel;
+
+    // Zorluğa göre değişen iç parametreler
+    private float _decisionInterval;
+    private int _maxSoldierCount;
+    private float _attackCheckInterval;
+    private float _attackProbability; // Her kontrol anında saldırma şansı
+
     private bool _isAttacking = false;
 
-    // YENİ: Zorluk Seviyesi
-    private AIDifficulty _difficulty;
-
-    public SimpleMacroAI(SimWorldState world, int playerID, AIDifficulty difficulty = AIDifficulty.Aggressive)
+    public SimpleMacroAI(SimWorldState world, int playerID, float difficultyLevel = 0.0f)
     {
         _world = world;
         _playerID = playerID;
-        _difficulty = difficulty;
+        SetDifficulty(difficultyLevel);
+    }
+
+    // Config dosyasındaki "value" buraya gelecek
+    public void SetDifficulty(float value)
+    {
+        _difficultyLevel = Mathf.Clamp(value, 0f, 2.0f);
+
+        // 1. Karar Verme Hızı: Zor bot daha hızlı düşünür (2sn -> 0.5sn)
+        _decisionInterval = Mathf.Lerp(2.0f, 0.5f, _difficultyLevel / 2.0f);
+
+        // 2. Asker Limiti: 
+        // 0.0 -> 0 asker
+        // 0.5 -> 3 asker (Savunma için)
+        // 2.0 -> 15 asker (Full ordu)
+        if (_difficultyLevel < 0.2f) _maxSoldierCount = 0;
+        else _maxSoldierCount = (int)Mathf.Lerp(3, 15, (_difficultyLevel - 0.2f) / 1.8f);
+
+        // 3. Saldırganlık:
+        // 0.0 - 0.8 arası -> %0 Saldırı (Sadece savunma)
+        // 2.0 -> %100 Saldırı isteği
+        if (_difficultyLevel < 0.8f) _attackProbability = 0f;
+        else _attackProbability = Mathf.Lerp(0.1f, 1.0f, (_difficultyLevel - 0.8f) / 1.2f);
     }
 
     public void Update(float dt)
@@ -45,20 +76,21 @@ public class SimpleMacroAI
         bool hasBarracks = myBuildings.Any(b => b.Type == SimBuildingType.Barracks);
         var baseB = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
 
-        // 1. İŞÇİ BAS (HEDEF 5) - Her zorlukta yapar
+        // --- 1. EKONOMİ (HER ZORLUKTA AYNI) ---
+        // Hedef 5 işçi (Zorluk çok düşükse daha yavaş basabilir ama mantık aynı)
         if (baseB != null && !baseB.IsTraining && workerCount < 5)
         {
             if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT))
                 SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
         }
 
-        // 2. KIŞLA KUR (5 İŞÇİ VARSA) - Passive modda kışla kurmayabilir veya asker basmayabilir, 
-        // ama base savunması için genelde kurduruyoruz. Passive sadece saldırmaz.
-        if (workerCount >= 5 && !hasBarracks)
+        // --- 2. KIŞLA İNŞASI ---
+        // Zorluk 0.2'den büyükse ve 3 işçi varsa kışla kurmaya başlar
+        if (_difficultyLevel > 0.2f && workerCount >= 3 && !hasBarracks)
         {
             if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT))
             {
-                var worker = myUnits.FirstOrDefault(u => u.UnitType == SimUnitType.Worker);
+                var worker = myUnits.FirstOrDefault(u => u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Building);
                 if (worker != null)
                 {
                     int2 buildPos = FindBuildSpot(baseB.GridPosition);
@@ -72,12 +104,12 @@ public class SimpleMacroAI
             }
         }
 
-        // 3. ASKER BAS (HEDEF 5) - Passive modda 0-1 asker basabilir, Defensive'de basar.
-        int targetSoldierCount = (_difficulty == AIDifficulty.Passive) ? 0 : 5;
-
-        if (hasBarracks && soldierCount < targetSoldierCount)
+        // --- 3. ASKER ÜRETİMİ (DİNAMİK LİMİT) ---
+        if (hasBarracks && soldierCount < _maxSoldierCount)
         {
-            _isAttacking = false;
+            // Eğer asker sayımız limitin yarısının altındaysa, saldırıyı durdur ve toplan
+            if (soldierCount < _maxSoldierCount * 0.5f) _isAttacking = false;
+
             var barracks = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Barracks && b.IsConstructed);
             if (barracks != null && !barracks.IsTraining)
             {
@@ -86,61 +118,68 @@ public class SimpleMacroAI
             }
         }
 
-        // 4. İŞÇİ YÖNETİMİ
+        // --- 4. İŞÇİ YÖNETİMİ ---
         ManageWorkersSmart(myUnits, pData, hasBarracks);
 
-        // 5. SALDIRI MANTIĞI (Zorluğa göre değişir)
-        if (_difficulty == AIDifficulty.Aggressive)
+        // --- 5. SALDIRI KARARI ---
+        // Saldırı modu kapalıysa ve asker sayısı limite ulaştıysa şansını dene
+        if (!_isAttacking && soldierCount >= _maxSoldierCount && _maxSoldierCount > 0)
         {
-            if (soldierCount >= 5) _isAttacking = true;
-        }
-        else if (_difficulty == AIDifficulty.Defensive)
-        {
-            // Sadece savunma yapar, _isAttacking asla true olmaz (veya sadece karşı saldırı)
-            _isAttacking = false;
-        }
-        else // Passive
-        {
-            _isAttacking = false;
+            // Random.value (0.0 - 1.0)
+            if (UnityEngine.Random.value < _attackProbability)
+            {
+                _isAttacking = true;
+            }
         }
 
         if (_isAttacking)
         {
             AttackWithAllSoldiers(myUnits);
         }
+        else
+        {
+            // Saldırmıyorsak ama askerimiz varsa, Base etrafında devriye/savunma
+            DefendBase(myUnits, baseB);
+        }
+    }
+
+    // --- YARDIMCI METOTLAR (ESKİ KODDAN ALINDI & İYİLEŞTİRİLDİ) ---
+
+    private void DefendBase(List<SimUnitData> myUnits, SimBuildingData baseB)
+    {
+        if (baseB == null) return;
+        foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier))
+        {
+            if (s.State == SimTaskType.Idle)
+            {
+                // Base etrafında rastgele bir nokta
+                // Basitçe olduğu yerde beklesin veya yakına gelen düşmana saldırsın (SimUnitSystem otomatik yapar)
+            }
+        }
     }
 
     private void ManageWorkersSmart(List<SimUnitData> myUnits, SimPlayerData pData, bool hasBarracks)
     {
         var workers = myUnits.Where(u => u.UnitType == SimUnitType.Worker).ToList();
-
         foreach (var w in workers)
         {
-            // İnşaat yapan veya yürüyen işçiyi elleme
             if (w.State == SimTaskType.Building || (w.State == SimTaskType.Moving && w.TargetID != -1)) continue;
 
             SimResourceType targetType = SimResourceType.Wood;
 
-            // KURAL 1: Önce 5 işçi parası (Et)
-            if (myUnits.Count(u => u.UnitType == SimUnitType.Worker) < 5)
-            {
-                targetType = SimResourceType.Meat;
-            }
-            // KURAL 2: İşçi tamsa ve Kışla yoksa -> Kışla parası (Odun/Taş)
+            // Mantık: İşçi azsa yemek, kışla yoksa odun/taş, kışla varsa yemek/odun (asker için)
+            if (myUnits.Count(u => u.UnitType == SimUnitType.Worker) < 5) targetType = SimResourceType.Meat;
             else if (!hasBarracks)
             {
                 if (pData.Wood < SimConfig.BARRACKS_COST_WOOD) targetType = SimResourceType.Wood;
                 else targetType = SimResourceType.Stone;
             }
-            // KURAL 3: Kışla varsa -> Asker parası (Et/Odun)
             else
             {
                 if (pData.Meat < SimConfig.SOLDIER_COST_MEAT) targetType = SimResourceType.Meat;
                 else targetType = SimResourceType.Wood;
             }
 
-            // Şu anki işi doğru mu? Değilse değiştir.
-            // (Basitlik için her turda yeniden atıyoruz)
             var res = FindNearestResource(w.GridPosition, targetType);
             if (res == null) res = FindNearestResource(w.GridPosition, SimResourceType.None);
 
@@ -152,53 +191,22 @@ public class SimpleMacroAI
     private void AttackWithAllSoldiers(List<SimUnitData> myUnits)
     {
         var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != _playerID && b.Type == SimBuildingType.Base);
-        if (enemyBase == null) enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != _playerID); // Herhangi bir bina
+        // Base yoksa herhangi bir binaya saldır
+        if (enemyBase == null) enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != _playerID);
 
         if (enemyBase != null)
         {
             foreach (var soldier in myUnits.Where(u => u.UnitType == SimUnitType.Soldier))
             {
-                // Zaten saldırıyorsa elleme
-                if (soldier.State == SimTaskType.Attacking && soldier.TargetID != -1) continue;
+                // Zaten o hedefe saldırıyorsa emri yenileme
+                if (soldier.State == SimTaskType.Attacking && soldier.TargetID == enemyBase.ID) continue;
 
-                // YOL KONTROLÜ
-                bool canReach = IsReachable(soldier.GridPosition, enemyBase.GridPosition);
-                if (canReach)
-                {
-                    SimUnitSystem.OrderAttack(soldier, enemyBase, _world);
-                }
-                else
-                {
-                    var breachTarget = FindClosestEnemyBuilding(soldier.GridPosition);
-                    if (breachTarget != null) SimUnitSystem.OrderAttack(soldier, breachTarget, _world);
-                }
+                SimUnitSystem.OrderAttack(soldier, enemyBase, _world);
             }
         }
     }
 
-    // --- YARDIMCILAR (AYNI) ---
-    private bool IsReachable(int2 start, int2 end)
-    {
-        int2? standPos = SimGridSystem.FindWalkableNeighbor(_world, end);
-        if (standPos == null) return false;
-        var path = SimGridSystem.FindPath(_world, start, standPos.Value);
-        if (path.Count == 0 && start != standPos.Value) return false;
-        return true;
-    }
-
-    private SimBuildingData FindClosestEnemyBuilding(int2 pos)
-    {
-        SimBuildingData best = null;
-        float minDst = float.MaxValue;
-        foreach (var b in _world.Buildings.Values)
-        {
-            if (b.PlayerID == _playerID) continue;
-            float dst = SimGridSystem.GetDistanceSq(pos, b.GridPosition);
-            if (dst < minDst) { minDst = dst; best = b; }
-        }
-        return best;
-    }
-
+    // --- GRİD VE SPAWN YARDIMCILARI (DEĞİŞMEDİ) ---
     private int2 FindBuildSpot(int2 center)
     {
         for (int x = center.x - 4; x <= center.x + 4; x++)
@@ -234,25 +242,13 @@ public class SimpleMacroAI
             Type = type,
             GridPosition = pos,
             IsConstructed = false,
-            ConstructionProgress = 0f
+            ConstructionProgress = 0f,
+            Health = 100 // Varsayılan can
         };
-        SimBuildingSystem.InitializeBuildingStats(b);
+        // SimBuildingSystem.InitializeBuildingStats(b); // Eğer statik bir metodun varsa kullan
         _world.Buildings.Add(b.ID, b);
         _world.Map.Grid[pos.x, pos.y].OccupantID = b.ID;
         _world.Map.Grid[pos.x, pos.y].IsWalkable = false;
         return b;
-    }
-
-    private SimUnitData FindNearestEnemyUnit(int2 pos)
-    {
-        SimUnitData best = null;
-        float minDst = float.MaxValue;
-        foreach (var u in _world.Units.Values)
-        {
-            if (u.PlayerID == _playerID || u.State == SimTaskType.Dead) continue;
-            float d = SimGridSystem.GetDistanceSq(pos, u.GridPosition);
-            if (d < minDst) { minDst = d; best = u; }
-        }
-        return best;
     }
 }

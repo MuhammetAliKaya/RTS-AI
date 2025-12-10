@@ -5,6 +5,17 @@ using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using Unity.MLAgents;
+// using RTS.Simulation.Data;
+
+// --- EKSİK OLAN KISIM BURASIYDI ---
+// Bunu class'ın dışına ekledik, artık hata vermez.
+public enum AIDifficulty
+{
+    Passive,
+    Defensive,
+    Aggressive
+}
+// ----------------------------------
 
 public class AdversarialTrainerRunner : MonoBehaviour
 {
@@ -18,7 +29,6 @@ public class AdversarialTrainerRunner : MonoBehaviour
     public float SimulationTimeScale = 100.0f;
 
     // Simülasyonun iç mantık adım süresi (Saniyede 10 karar)
-    // 20.0f ÇOK YÜKSEKTİ, 0.1f olarak düzeltildi.
     private float dt = 0.1f;
 
     [Header("Görselleştirme")]
@@ -26,6 +36,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     [Header("Rakip Ayarları")]
     public bool UseMacroAI = true;
+
     [Tooltip("Eğitim sırasında bu değer Curriculum (YAML) tarafından yönetilir.")]
     public AIDifficulty EnemyDifficulty = AIDifficulty.Passive;
 
@@ -67,7 +78,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     void Update()
     {
-        // Bir karede 10 simülasyon adımı işlet (GPU/CPU izin verdiği sürece)
+        // Bir karede 50 simülasyon adımı işlet (Hızlı eğitim için)
         for (int i = 0; i < 50; i++)
         {
             if (_world != null && !_gameEnded)
@@ -94,7 +105,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         // Ödül Hesaplamaları
         CalculateCombatRewards();
-        CalculateEconomyRewards(); // YENİ: Başlangıç seviyesi için ekonomi teşviki
+        CalculateEconomyRewards();
+        ApplyIdlePenalty();
 
         var unitIds = _world.Units.Keys.ToList();
         foreach (var uid in unitIds)
@@ -109,9 +121,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         _currentStep++;
         if (_currentStep >= MaxSteps && !_gameEnded)
         {
-            // Zaman doldu - Berabere
-            // Pasif modda zamanın dolması kötüdür (saldırması lazım), Aggressive'de hayatta kalmak iyidir.
-            // Şimdilik nötr bitirelim.
+            // Zaman doldu - Berabere/Nötr
             EndGame(0);
         }
     }
@@ -120,14 +130,12 @@ public class AdversarialTrainerRunner : MonoBehaviour
     {
         if (Agent == null) return;
 
-        // Ekonomi ödülleri SADECE PASSIVE modda (Eğitimin en başında) verilir.
-        // Amaç ajana "Odun topla, işçi bas" mantığını öğretmektir.
-        // İleri seviyelerde bu ödüller kapatılır ki ajan "savaşmak yerine zengin olmaya" çalışmasın.
+        // Ekonomi ödülleri SADECE PASSIVE modda verilir.
         if (EnemyDifficulty != AIDifficulty.Passive) return;
 
         var myPlayer = _world.Players[1];
 
-        // Kaynak Toplama Ödülü (Her 1 birim kaynak için çok ufak puan)
+        // Kaynak Toplama Ödülü
         int woodDelta = myPlayer.Wood - _lastWood;
         int meatDelta = myPlayer.Meat - _lastMeat;
         int stoneDelta = myPlayer.Stone - _lastStone;
@@ -136,12 +144,11 @@ public class AdversarialTrainerRunner : MonoBehaviour
         if (meatDelta > 0) Agent.AddReward(meatDelta * 0.001f);
         if (stoneDelta > 0) Agent.AddReward(stoneDelta * 0.001f);
 
-        // İşçi Basma Ödülü (Ekonomiyi büyütmesi için teşvik)
-        // Mevcut işçi sayısını say
+        // İşçi Basma Ödülü
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
         if (currentWorkers > _lastWorkerCount)
         {
-            Agent.AddReward(0.05f); // Her yeni işçi için ufak bir "Aferin"
+            Agent.AddReward(0.05f);
         }
 
         // Değerleri güncelle
@@ -171,22 +178,21 @@ public class AdversarialTrainerRunner : MonoBehaviour
             }
         }
 
-        // 1. Düşman Öldürme (Aynı kaldı)
+        // 1. Düşman Öldürme
         if (currentEnemyUnits < _lastEnemyUnitCount)
         {
             int killCount = _lastEnemyUnitCount - currentEnemyUnits;
             Agent.AddReward(0.5f * killCount);
         }
 
-        // 2. Bina Yıkma (GÜÇLENDİRİLDİ: 1.0 -> 2.0)
+        // 2. Bina Yıkma
         if (currentEnemyBuildings < _lastEnemyBuildingCount)
         {
             int destroyCount = _lastEnemyBuildingCount - currentEnemyBuildings;
-            // Bina yıkmak artık çok daha değerli, üsse giden yolu temizlemeyi teşvik eder.
             Agent.AddReward(2.0f * destroyCount);
         }
 
-        // 3. Üsse Hasar Verme (Aynı kaldı)
+        // 3. Üsse Hasar Verme
         if (currentEnemyBaseHealth < _lastEnemyBaseHealth)
         {
             float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
@@ -203,29 +209,24 @@ public class AdversarialTrainerRunner : MonoBehaviour
         _currentStep = 0;
         _gameEnded = false;
 
-        // --- CURRICULUM (ZORLUK) AYARLAMASI ---
-        // Config dosyasından 'enemy_difficulty_level' parametresini okuyoruz.
-        // Varsayılan 0.0 (Passive)
+        // --- CURRICULUM BAĞLANTISI ---
+        // Config dosyasından 'enemy_difficulty_level' değerini oku. Varsayılan 0.0.
         float difficultyLevel = Academy.Instance.EnvironmentParameters.GetWithDefault("enemy_difficulty_level", 0.0f);
 
-        if (difficultyLevel < 0.5f) EnemyDifficulty = AIDifficulty.Passive;
-        else if (difficultyLevel < 1.5f) EnemyDifficulty = AIDifficulty.Defensive;
+        // Enum'ı güncelle (Görsel ve logic kontrolü için)
+        if (difficultyLevel < 0.2f) EnemyDifficulty = AIDifficulty.Passive;
+        else if (difficultyLevel < 1.8f) EnemyDifficulty = AIDifficulty.Defensive;
         else EnemyDifficulty = AIDifficulty.Aggressive;
 
-        // Debug.Log($"Environment Reset. Difficulty set to: {EnemyDifficulty} (Param: {difficultyLevel})");
-        // ---------------------------------------
-
-        // 1. Yeni Dünya Oluştur (Parallel Eğitim için Instance)
+        // Yeni Dünya Oluştur
         _world = new SimWorldState(MapSize, MapSize);
         GenerateMap();
 
-        // 2. Oyuncu Verilerini Başlat
+        // Oyuncu Verilerini Başlat
         if (_world.Players.ContainsKey(1))
         {
             var p1 = _world.Players[1];
             p1.Wood = 500; p1.Stone = 500; p1.Meat = 500; p1.MaxPopulation = 20;
-
-            // Takip değişkenlerini sıfırla
             _lastWood = 500; _lastStone = 500; _lastMeat = 500; _lastWorkerCount = 0;
         }
 
@@ -234,37 +235,36 @@ public class AdversarialTrainerRunner : MonoBehaviour
             _world.Players.Add(2, new SimPlayerData { PlayerID = 2, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
         }
 
-        // 3. Üsleri Kur
+        // Üsleri Kur
         SetupBase(1, new int2(2, 2));
         SetupBase(2, new int2(MapSize - 3, MapSize - 3));
 
-        // 4. Sistemleri Kur
+        // Sistemleri Kur
         _gridSys = new SimGridSystem(_world);
         _unitSys = new SimUnitSystem(_world);
         _buildSys = new SimBuildingSystem(_world);
         _resSys = new SimResourceSystem(_world);
 
-        // Agent'a yeni dünyayı ver
+        // Agent Setup
         if (Agent != null)
         {
             Agent.Setup(_world, _gridSys, _unitSys, _buildSys);
         }
 
-        // 5. Rakip AI
+        // RAKİP AI KURULUMU
         if (UseMacroAI)
         {
-            _enemyAI = new SimpleMacroAI(_world, 2, EnemyDifficulty);
+            // SimpleMacroAI artık float difficultyLevel alıyor
+            _enemyAI = new SimpleMacroAI(_world, 2, difficultyLevel);
         }
         else
         {
             _enemyAI = null;
         }
 
-        // 6. Görselleştirme (Opsiyonel - Sadece gerekliyse açın)
+        // Görselleştirme
         if (Visualizer != null)
         {
-            // Paralel eğitimde 20 tane visualizer açılmasın diye basit bir kontrol yapılabilir
-            // Veya sadece sahnedeki ilk Agent için visualizer atanabilir.
             Visualizer.Initialize(_world);
         }
 
@@ -283,27 +283,15 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (myBase == null) // Kaybettik
         {
-            EndGame(-2.0f); // Kaybetme cezası sabit
+            EndGame(-2.0f);
         }
-        else if (enemyBase == null) // Kazandık (Düşman Ana Binası Yıkıldı)
+        else if (enemyBase == null) // Kazandık
         {
-            // --- YENİ: ERKEN KAZANMA BONUSU ---
-            // MaxSteps: 5000
-            // Eğer 1000. adımda bitirirse: (5000 - 1000) / 5000 = 0.8 (%80 Bonus)
-            // Eğer 4900. adımda bitirirse: (5000 - 4900) / 5000 = 0.02 (%2 Bonus)
-
             float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
-
-            // Taban Puan: 2.0
-            // Maksimum Hız Bonusu: +2.0 (Eğer anında yenerse toplam 4.0 alır)
-            // EndGame içeride bunu 10 ile çarpıyor, yani Toplam Puan: 20 ile 40 arasında değişecek.
-
             float speedBonus = timeFactor * 2.0f;
             float totalWinReward = 2.0f + speedBonus;
 
-            // Loglayalım ki bonusu görelim (İsterseniz sonra kapatırsınız)
-            Debug.Log($"🏆 KAZANDIN! Taban: 2.0 + Hız Bonusu: {speedBonus:F2} (Adım: {_currentStep})");
-
+            // Debug.Log($"🏆 KAZANDIN! Puan: {totalWinReward:F2}");
             EndGame(totalWinReward);
         }
     }
@@ -315,8 +303,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (Agent != null)
         {
-            // Eğer reward 0 ise (zaman doldu), Passive modda bunu ceza gibi görebiliriz
-            // Çünkü passive düşmanı bile yenemediyse başarısızdır.
+            // Passive modda süre biterse ve yenemezse ceza ver (Harekete geçmeye zorla)
             if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
 
             Agent.AddReward(reward);
@@ -402,6 +389,27 @@ public class AdversarialTrainerRunner : MonoBehaviour
                 _world.Units.Add(unit.ID, unit);
                 _world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = unit.ID;
             }
+        }
+    }
+
+    private void ApplyIdlePenalty()
+    {
+        if (Agent == null) return;
+
+        // Sadece Player 1'in (Ajanın) işçilerine bakıyoruz
+        // State == Idle (Boşta) olanları say
+        int idleCount = _world.Units.Values.Count(u =>
+            u.PlayerID == 1 &&
+            u.UnitType == SimUnitType.Worker &&
+            u.State == SimTaskType.Idle
+        );
+
+        if (idleCount > 0)
+        {
+            // Ceza Miktarı: İşçi başına adım başı -0.0005f
+            // Eğer 10 işçi boş yatıyorsa her adımda -0.005 puan kaybeder.
+            // Bu ceza küçük olmalı, yoksa ajan ceza yememek için işçilerini düşmana ölüme yollayabilir!
+            Agent.AddReward(idleCount * -0.0005f);
         }
     }
 }

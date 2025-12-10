@@ -124,7 +124,8 @@ public class RTSDebugUI : MonoBehaviour
         GUI.Box(new Rect(10, currentY, boxWidth, boxHeight), "");
 
         // Başlık
-        string title = isCombatMode ? "⚔️ SAVAŞ MODU" : $"DERS: {Runner.CurrentLevel}";
+        //  {Runner.CurrentLevel}
+        string title = isCombatMode ? "⚔️ SAVAŞ MODU" : $"DERS:";
         GUI.Label(new Rect(10, currentY += 10, boxWidth, 40), title, _headerStyle);
         currentY += 40;
 

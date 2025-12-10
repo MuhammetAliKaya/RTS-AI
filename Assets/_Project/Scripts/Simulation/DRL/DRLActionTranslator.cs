@@ -2,15 +2,15 @@ using UnityEngine;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
+using System.Linq;
 
 public class DRLActionTranslator
 {
     private SimWorldState _world;
-    private SimUnitSystem _unitSystem;
+    private SimUnitSystem _unitSystem; // Senin mevcut sistemin
     private SimBuildingSystem _buildingSystem;
     private SimGridSystem _gridSystem;
 
-    // Oyuncu ID'si (Bizim ajanımız)
     private const int MY_PLAYER_ID = 1;
 
     public DRLActionTranslator(SimWorldState world, SimUnitSystem unitSys, SimBuildingSystem buildSys, SimGridSystem gridSys)
@@ -21,257 +21,195 @@ public class DRLActionTranslator
         _gridSystem = gridSys;
     }
 
-    /// <summary>
-    /// AI'dan gelen kararı uygular ve SONUCU (Başarılı/Başarısız) döndürür.
-    /// </summary>
-    public bool ExecuteAction(int actionType, int targetX, int targetY)
+    public bool ExecuteAction(int actionType)
     {
-        // 1. Harita Dışı Kontrolü
-        if (!_world.Map.IsInBounds(new int2(targetX, targetY))) return false;
-
-        int2 targetPos = new int2(targetX, targetY);
-        bool success = false;
+        // TargetX ve TargetY parametrelerini kaldırdık.
+        // Artık "En mantıklı hedefi" biz kodla bulup senin sistemine (unitSystem) veriyoruz.
 
         switch (actionType)
         {
-            case 0: // Bekle
-                return true;
-
-            case 1: // İNŞA ET: EV
-                success = TryBuildBuilding(SimBuildingType.House, targetX, targetY);
-                break;
-            case 2: // İNŞA ET: KIŞLA
-                success = TryBuildBuilding(SimBuildingType.Barracks, targetX, targetY);
-                break;
-            case 3: // ÜRET: İŞÇİ
-                success = TryTrainUnit(SimUnitType.Worker);
-                break;
-            case 4: // ÜRET: ASKER
-                success = TryTrainUnit(SimUnitType.Soldier);
-                break;
-            case 5: // SALDIR
-                success = CommandArmyAttack(targetPos);
-                break;
-            case 6: // TOPLA
-                success = CommandGatherResource(targetPos);
-                break;
-
-            // --- EKONOMİK BİNALAR ---
-            case 7: // İNŞA ET: ÇİFTLİK (FARM) -> ET ÜRETİMİ
-                success = TryBuildBuilding(SimBuildingType.Farm, targetX, targetY);
-                break;
-            case 8: // İNŞA ET: ODUNCU (WOODCUTTER) -> ODUN ÜRETİMİ
-                success = TryBuildBuilding(SimBuildingType.WoodCutter, targetX, targetY);
-                break;
-            case 9: // İNŞA ET: TAŞ OCAĞI (STONEPIT) -> TAŞ ÜRETİMİ
-                success = TryBuildBuilding(SimBuildingType.StonePit, targetX, targetY);
-                break;
+            case 0: return true; // Bekle
+            case 1: return TryBuildStructureAuto(SimBuildingType.House);
+            case 2: return TryBuildStructureAuto(SimBuildingType.Barracks);
+            case 3: return TryTrainUnit(SimUnitType.Worker);
+            case 4: return TryTrainUnit(SimUnitType.Soldier);
+            case 5: return CommandAllArmyAttackBase(); // Rush Saldırısı
+            case 6: return CommandAllArmyAttackNearest(); // Yakına Saldır
+            case 7: return CommandAutoGather(); // <--- İŞTE BURASI DÜZELDİ
         }
-        return success;
+        return false;
     }
 
-    // --- İNŞAAT MANTIĞI ---
-    private bool TryBuildBuilding(SimBuildingType type, int x, int y)
+    // --- SENİN SİSTEMİNİ KULLANAN YENİ GATHER MANTIĞI ---
+    private bool CommandAutoGather()
     {
-        int2 pos = new int2(x, y);
+        // 1. Boşta duran işçilerimi bul
+        var idleWorkers = _world.Units.Values.Where(u =>
+            u.PlayerID == MY_PLAYER_ID &&
+            u.UnitType == SimUnitType.Worker &&
+            u.State == SimTaskType.Idle
+        ).ToList();
 
-        // KONTROL 1: Yürünebilir mi?
-        if (!_gridSystem.IsWalkable(pos)) return false;
+        if (idleWorkers.Count == 0) return true; // İşçiler zaten çalışıyorsa başarılı say (Ceza verme)
 
-        // KONTROL 2: Zemin Grass mı?
-        var node = _gridSystem.GetNode(x, y);
-        if (node.Type != SimTileType.Grass) return false;
+        // 2. Haritadaki kaynakları tara
+        var resources = _world.Resources.Values.Where(r => r.AmountRemaining > 0).ToList();
+        if (resources.Count == 0) return false;
 
-        // KONTROL 3: BOŞTA (IDLE) İşçi Var mı?
-        SimUnitData worker = FindIdleWorker(pos);
-        if (worker == null) return false;
+        bool anyCommandGiven = false;
 
-        // KONTROL 4: Kaynak Var mı?
-        int wood = 0, stone = 0, meat = 0;
-        switch (type)
+        foreach (var worker in idleWorkers)
         {
-            case SimBuildingType.House: wood = SimConfig.HOUSE_COST_WOOD; break;
-            case SimBuildingType.Farm: wood = SimConfig.FARM_COST_WOOD; break;
-            case SimBuildingType.WoodCutter: meat = SimConfig.WOODCUTTER_COST_MEAT; break;
-            case SimBuildingType.StonePit: wood = SimConfig.STONEPIT_COST_WOOD; break;
-            case SimBuildingType.Barracks: wood = SimConfig.BARRACKS_COST_WOOD; stone = SimConfig.BARRACKS_COST_STONE; break;
-            case SimBuildingType.Tower: wood = SimConfig.TOWER_COST_WOOD; stone = SimConfig.TOWER_COST_STONE; break;
-            case SimBuildingType.Wall: stone = SimConfig.WALL_COST_STONE; break;
+            // İşçiye en yakın kaynağı bul
+            SimResourceData bestRes = null;
+            float minDst = float.MaxValue;
+
+            foreach (var res in resources)
+            {
+                float d = SimGridSystem.GetDistanceSq(worker.GridPosition, res.GridPosition);
+                if (d < minDst)
+                {
+                    minDst = d;
+                    bestRes = res;
+                }
+            }
+
+            // 3. SENİN VAR OLAN FONKSİYONUNU ÇAĞIR
+            if (bestRes != null)
+            {
+                // SimUnitSystem içindeki TryAssignGatherTask zaten pathfinding ve state değişimini yapıyor.
+                // Biz sadece doğru hedefi (bestRes) ona veriyoruz.
+                bool result = _unitSystem.TryAssignGatherTask(worker, bestRes);
+                if (result) anyCommandGiven = true;
+            }
         }
 
-        if (!SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, wood, stone, meat)) return false;
+        return anyCommandGiven;
+    }
 
-        // --- İŞLEM ---
-        // Kaynakları harca
-        SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, wood, stone, meat);
+    // --- DİĞER YARDIMCI METOTLAR (Önceki mantıkla aynı) ---
+    private bool TryBuildStructureAuto(SimBuildingType type)
+    {
+        if (!CanAfford(type)) return false;
 
-        // KRİTİK DEĞİŞİKLİK: Binayı artık SimBuildingSystem üzerinden oluşturuyoruz.
-        // Bu sayede "InitializeBuildingStats" otomatik çalışıyor ve bina kaynak üretebilir hale geliyor.
-        SimBuildingData newBuilding = _buildingSystem.CreateBuilding(MY_PLAYER_ID, type, pos);
+        var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == MY_PLAYER_ID && b.Type == SimBuildingType.Base);
+        if (myBase == null) return false;
 
-        // İşçiye inşaat emrini ver
+        // Base etrafında boş yer bul
+        int2 bestPos = FindBuildPosition(myBase.GridPosition, 5);
+        if (bestPos.x == -1) return false;
+
+        SimUnitData worker = FindWorker();
+        if (worker == null) return false;
+
+        SpendResources(type);
+        SimBuildingData newBuilding = _buildingSystem.CreateBuilding(MY_PLAYER_ID, type, bestPos);
+
+        // Senin sisteminle inşa emri
         _unitSystem.OrderBuild(worker, newBuilding);
-
         return true;
     }
 
-    // --- ÜRETİM MANTIĞI ---
     private bool TryTrainUnit(SimUnitType type)
     {
+        // ... (Önceki cevaptaki mantığın aynısı, senin sistemine bağlı) ...
+        var (w, s, m) = GetCost(type);
+        if (!SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m)) return false;
+
         foreach (var b in _world.Buildings.Values)
         {
             if (b.PlayerID == MY_PLAYER_ID && b.IsConstructed && !b.IsTraining)
             {
                 if ((type == SimUnitType.Worker && b.Type == SimBuildingType.Base) ||
-                    (type == SimUnitType.Soldier && b.Type == SimBuildingType.Barracks))
+                   (type == SimUnitType.Soldier && b.Type == SimBuildingType.Barracks))
                 {
-                    // SimBuildingSystem.StartTraining kaynak kontrolünü kendi içinde yapar
                     SimBuildingSystem.StartTraining(b, _world, type);
-                    return true; // İlk uygun binayı bulup işlemi başlatır ve çıkar
+                    return true;
                 }
             }
         }
         return false;
     }
 
-    // --- SALDIRI MANTIĞI ---
-    private bool CommandArmyAttack(int2 targetPos)
+    // --- SALDIRI KISMI (SENİN SİSTEMİNLE) ---
+    private bool CommandAllArmyAttackBase()
     {
-        var node = _gridSystem.GetNode(targetPos.x, targetPos.y);
-        if (node == null) return false;
+        var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != MY_PLAYER_ID && b.Type == SimBuildingType.Base);
+        if (enemyBase == null) return false;
 
-        SimUnitData targetUnit = null;
-        SimBuildingData targetBuilding = null;
-
-        // Hedef karede bir şey var mı?
-        if (node.OccupantID != -1)
-        {
-            if (_world.Units.TryGetValue(node.OccupantID, out SimUnitData u))
-            {
-                if (u.PlayerID != MY_PLAYER_ID) targetUnit = u;
-            }
-            else if (_world.Buildings.TryGetValue(node.OccupantID, out SimBuildingData b))
-            {
-                if (b.PlayerID != MY_PLAYER_ID) targetBuilding = b;
-            }
-        }
-
-        bool anyOrderGiven = false;
+        bool attacked = false;
         foreach (var u in _world.Units.Values)
         {
-            // Sadece benim askerlerime emir ver
             if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Soldier)
             {
-                if (targetUnit != null) _unitSystem.OrderAttackUnit(u, targetUnit);
-                else if (targetBuilding != null) _unitSystem.OrderAttack(u, targetBuilding);
-                else _unitSystem.OrderMove(u, targetPos); // Boş yere saldırıyorsa oraya yürü
-
-                anyOrderGiven = true;
+                // Senin saldırı fonksiyonun
+                _unitSystem.OrderAttack(u, enemyBase);
+                attacked = true;
             }
         }
-        return anyOrderGiven;
+        return attacked;
     }
 
-    // --- TOPLAMA MANTIĞI ---
-    private bool CommandGatherResource(int2 targetPos)
+    private bool CommandAllArmyAttackNearest()
     {
-        SimResourceData targetRes = null;
+        var enemy = _world.Units.Values.FirstOrDefault(u => u.PlayerID != MY_PLAYER_ID);
+        if (enemy == null) return false;
 
-        // 1. Önce tam hedeflenen noktaya bak
-        var directNode = _gridSystem.GetNode(targetPos.x, targetPos.y);
-        if (directNode != null && directNode.OccupantID != -1 && _world.Resources.ContainsKey(directNode.OccupantID))
+        foreach (var u in _world.Units.Values)
         {
-            targetRes = _world.Resources[directNode.OccupantID];
-        }
-
-        // 2. Eğer tam noktada kaynak yoksa, 3x3'lük bir alanı tara (Akıllı Hedefleme)
-        if (targetRes == null)
-        {
-            float minDistance = float.MaxValue;
-
-            for (int x = targetPos.x - 1; x <= targetPos.x + 1; x++)
+            if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Soldier)
             {
-                for (int y = targetPos.y - 1; y <= targetPos.y + 1; y++)
-                {
-                    if (!_world.Map.IsInBounds(new int2(x, y))) continue;
+                _unitSystem.OrderAttackUnit(u, enemy);
+            }
+        }
+        return true;
+    }
 
-                    var node = _gridSystem.GetNode(x, y);
-                    if (node.OccupantID != -1 && _world.Resources.ContainsKey(node.OccupantID))
+    // --- UTILS ---
+    private int2 FindBuildPosition(int2 center, int radius)
+    {
+        for (int r = 1; r <= radius; r++)
+        {
+            for (int x = center.x - r; x <= center.x + r; x++)
+            {
+                for (int y = center.y - r; y <= center.y + r; y++)
+                {
+                    int2 pos = new int2(x, y);
+                    if (_world.Map.IsInBounds(pos) && _gridSystem.IsWalkable(pos))
                     {
-                        float dist = SimGridSystem.GetDistanceSq(new int2(x, y), targetPos);
-                        if (dist < minDistance)
-                        {
-                            minDistance = dist;
-                            targetRes = _world.Resources[node.OccupantID];
-                        }
+                        if (_gridSystem.GetNode(x, y).Type == SimTileType.Grass) return pos;
                     }
                 }
             }
         }
-
-        // Kaynak bulunduysa işçi ata
-        if (targetRes != null)
-        {
-            SimUnitData worker = FindBestWorkerForGathering(targetRes.GridPosition);
-            if (worker != null)
-            {
-                _unitSystem.TryAssignGatherTask(worker, targetRes);
-                return true;
-            }
-        }
-        return false;
+        return new int2(-1, -1);
     }
 
-    // --- YARDIMCI SEÇİCİ FONKSİYONLAR ---
-
-    // Sadece tamamen boşta (Idle) duran işçiyi bulur
-    private SimUnitData FindIdleWorker(int2 target)
+    private SimUnitData FindWorker()
     {
-        SimUnitData best = null;
-        float minDist = float.MaxValue;
-
-        foreach (var u in _world.Units.Values)
-        {
-            if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle)
-            {
-                float dist = SimGridSystem.GetDistanceSq(u.GridPosition, target);
-                if (dist < minDist)
-                {
-                    minDist = dist;
-                    best = u;
-                }
-            }
-        }
-        return best;
+        return _world.Units.Values.FirstOrDefault(u => u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle)
+            ?? _world.Units.Values.FirstOrDefault(u => u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker);
     }
 
-    // Toplama işlemi için en iyi işçiyi bulur (Idle yoksa inşaat yapmayanı alır)
-    private SimUnitData FindBestWorkerForGathering(int2 target)
+    private bool CanAfford(SimBuildingType type)
     {
-        // 1. Öncelik: BOŞTA (Idle) olanlar
-        SimUnitData bestIdle = FindIdleWorker(target);
-        if (bestIdle != null) return bestIdle;
+        int w = 0, s = 0, m = 0;
+        if (type == SimBuildingType.House) { w = SimConfig.HOUSE_COST_WOOD; m = SimConfig.HOUSE_COST_MEAT; }
+        else if (type == SimBuildingType.Barracks) { w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; }
+        return SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m);
+    }
 
-        // 2. Öncelik: Başka iş yapıyor olsa bile İNŞAAT YAPMAYAN en yakın işçi
-        // (Uzakta odun toplayanı çağırıp yakındaki taşa göndermek mantıklıdır)
-        SimUnitData bestAny = null;
-        float minAnyDist = float.MaxValue;
+    private void SpendResources(SimBuildingType type)
+    {
+        int w = 0, s = 0, m = 0;
+        if (type == SimBuildingType.House) { w = SimConfig.HOUSE_COST_WOOD; m = SimConfig.HOUSE_COST_MEAT; }
+        else if (type == SimBuildingType.Barracks) { w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; }
+        SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, w, s, m);
+    }
 
-        foreach (var u in _world.Units.Values)
-        {
-            if (u.PlayerID == MY_PLAYER_ID && u.UnitType == SimUnitType.Worker)
-            {
-                // Eğer işçi inşaat yapıyorsa (Building) onu rahatsız etme!
-                if (u.State == SimTaskType.Building) continue;
-
-                float dist = SimGridSystem.GetDistanceSq(u.GridPosition, target);
-                if (dist < minAnyDist)
-                {
-                    minAnyDist = dist;
-                    bestAny = u;
-                }
-            }
-        }
-        return bestAny;
+    private (int, int, int) GetCost(SimUnitType type)
+    {
+        if (type == SimUnitType.Worker) return (SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
+        return (SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
     }
 }
