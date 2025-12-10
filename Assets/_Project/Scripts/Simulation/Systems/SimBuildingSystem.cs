@@ -113,11 +113,12 @@ namespace RTS.Simulation.Systems
                 SimResourceSystem.IncreaseMaxPopulation(world, building.PlayerID, SimConfig.POPULATION_HOUSE);
         }
 
-        public static void InitializeBuildingStats(SimBuildingData b)
+        public static void InitializeBuildingStats(SimBuildingData b, bool isMax = false)
         {
             b.MaxHealth = 1000; // Varsayılan yüksek değer
-            b.Health = 10;
-            b.ConstructionProgress = b.IsConstructed ? SimConfig.BUILDING_MAX_PROGRESS : 0f;
+            b.Health = (isMax) ? b.MaxHealth : 10;
+            b.IsConstructed = (isMax) ? true : false;
+            b.ConstructionProgress = (isMax) ? SimConfig.BUILDING_MAX_PROGRESS : 0f;
 
             // Kaynak Üreticisi Ayarları
             switch (b.Type)

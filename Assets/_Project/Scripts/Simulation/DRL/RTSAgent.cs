@@ -6,6 +6,7 @@ using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using System.Linq;
+using System;
 
 public class RTSAgent : Agent
 {
@@ -29,6 +30,11 @@ public class RTSAgent : Agent
     private int _overrideActionType = 0;
     private int _overrideSourceIndex = 0;
     private int _overrideTargetIndex = 0;
+
+    private const float LOG_ANCHOR_WOOD = 20000f;
+    private const float LOG_ANCHOR_STONE_MEAT = 20000f;
+    private const float LOG_ANCHOR_POPULATION = 100f;
+    private const float LOG_ANCHOR_UNIT_COUNT = 100f;
 
     protected override void Awake()
     {
@@ -147,6 +153,10 @@ public class RTSAgent : Agent
         _overrideSourceIndex = 0;
         _overrideTargetIndex = 0;
     }
+    private float LogScale(int value, float anchor)
+    {
+        return (float)Math.Log(1f + value) / (float)Math.Log(1f + anchor);
+    }
 
     public override void CollectObservations(VectorSensor sensor)
     {
@@ -159,16 +169,21 @@ public class RTSAgent : Agent
         if (_world.Players.ContainsKey(1))
         {
             var me = _world.Players[1];
-            sensor.AddObservation(me.Wood / 2000f);
-            sensor.AddObservation(me.Stone / 1000f);
-            sensor.AddObservation(me.Meat / 1000f);
-            sensor.AddObservation(me.CurrentPopulation / 50f);
 
+            // KAYNAK GÖZLEMLERİ: Logaritmik Ölçekleme ile sınırlandırılmamış normalizasyon
+            sensor.AddObservation(LogScale(me.Wood, LOG_ANCHOR_WOOD));
+            sensor.AddObservation(LogScale(me.Stone, LOG_ANCHOR_STONE_MEAT));
+            sensor.AddObservation(LogScale(me.Meat, LOG_ANCHOR_STONE_MEAT));
+
+            // Nüfus Gözlemi (Aynı logaritmik ölçekleme kullanılabilir)
+            sensor.AddObservation(LogScale(me.CurrentPopulation, LOG_ANCHOR_POPULATION));
+
+            // Birim Sayısı Gözlemleri
             int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
             int workerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
 
-            sensor.AddObservation(soldierCount / 20f);
-            sensor.AddObservation(workerCount / 20f);
+            sensor.AddObservation(LogScale(soldierCount, LOG_ANCHOR_UNIT_COUNT));
+            sensor.AddObservation(LogScale(workerCount, LOG_ANCHOR_UNIT_COUNT));
         }
         else
         {
@@ -189,7 +204,7 @@ public class RTSAgent : Agent
         // --- DEBUG LOG ---
         if (ShowDebugLogs && actionType != 0)
         {
-            Debug.Log($"[AGENT] Action: {actionType}, Source: {sourceIndex}, Target: {targetIndex}");
+            // Debug.Log($"[AGENT] Action: {actionType}, Source: {sourceIndex}, Target: {targetIndex}");
         }
 
         // Translator'a gönder

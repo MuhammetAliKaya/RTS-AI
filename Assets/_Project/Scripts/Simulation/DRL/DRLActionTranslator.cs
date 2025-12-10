@@ -161,8 +161,8 @@ public class DRLActionTranslator
         else if (type == SimBuildingType.StonePit) { s = SimConfig.STONEPIT_COST_STONE; }
         else if (type == SimBuildingType.Farm) { m = SimConfig.FARM_COST_MEAT; }
         // MEVCUT DİĞER BİNALAR
-        else if (type == SimBuildingType.Tower) { w = 100; s = 50; } // Config'e eklenebilir
-        else if (type == SimBuildingType.Wall) { w = 20; s = 10; }
+        else if (type == SimBuildingType.Tower) { w = SimConfig.TOWER_COST_WOOD; s = SimConfig.TOWER_COST_STONE; }
+        else if (type == SimBuildingType.Wall) { w = SimConfig.WALL_COST_STONE; }
         return SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m);
     }
 
@@ -176,8 +176,8 @@ public class DRLActionTranslator
         else if (type == SimBuildingType.StonePit) { s = SimConfig.STONEPIT_COST_STONE; }
         else if (type == SimBuildingType.Farm) { m = SimConfig.FARM_COST_MEAT; }
         // MEVCUT DİĞER BİNALAR
-        else if (type == SimBuildingType.Tower) { w = 100; s = 50; }
-        else if (type == SimBuildingType.Wall) { w = 20; s = 10; }
+        else if (type == SimBuildingType.Tower) { w = SimConfig.TOWER_COST_WOOD; s = SimConfig.TOWER_COST_STONE; }
+        else if (type == SimBuildingType.Wall) { w = SimConfig.WALL_COST_STONE; }
         SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, w, s, m);
     }
 

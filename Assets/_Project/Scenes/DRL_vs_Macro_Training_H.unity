@@ -1300,8 +1300,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Record: 1
-  NumStepsToRecord: 10000
-  DemonstrationName: RTSDemo_Human_01
+  NumStepsToRecord: 5000
+  DemonstrationName: RTSDemo_Human_Opt_01
   DemonstrationDirectory: Assets/Demonstrations
 --- !u!1 &660227090
 GameObject:
@@ -1505,10 +1505,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Agent: {fileID: 645419872}
   MapSize: 20
-  MaxSteps: 3500
+  MaxSteps: 10000
   AllowedAgentName: AdversarialTrainerRunner
+  mapSeed: 12345
+  useRandomSeed: 0
   IsTrainingMode: 0
-  SimulationTimeScale: 1
+  _simStepSize: 0.25
+  _simStepCountPerFrame: 1
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
   EnemyDifficulty: 0
@@ -4552,7 +4555,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1849618953
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4763,6 +4766,7 @@ GameObject:
   - component: {fileID: 1892751743}
   - component: {fileID: 1892751749}
   - component: {fileID: 1892751750}
+  - component: {fileID: 1892751751}
   m_Layer: 5
   m_Name: GameUI (1)
   m_TagString: Untagged
@@ -4916,6 +4920,25 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   MainCamera: {fileID: 660227092}
   Visualizer: {fileID: 1375291963}
+--- !u!114 &1892751751
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1892751742}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cddad8c175bcbfa4cb0914898be66ebc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  World:
+    TickCount: 0
+    Map:
+      Width: 0
+      Height: 0
+  Runner: {fileID: 0}
+  CombatRunner: {fileID: 775438145}
 --- !u!1 &1900106715
 GameObject:
   m_ObjectHideFlags: 0
@@ -5648,5 +5671,5 @@ SceneRoots:
   - {fileID: 660227093}
   - {fileID: 1375291964}
   - {fileID: 1372648262}
-  - {fileID: 775438144}
   - {fileID: 1892751748}
+  - {fileID: 775438144}

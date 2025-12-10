@@ -40,6 +40,18 @@ namespace RTS.Simulation.Systems
             }
         }
 
+        public void UpdateAllUnits(float dt)
+        {
+            var unitIDs = _world.Units.Keys.ToList();
+            foreach (var unitID in unitIDs)
+            {
+                if (_world.Units.TryGetValue(unitID, out SimUnitData unit))
+                {
+                    UpdateUnit(unit, dt); // Mevcut tek birimlik güncelleme metodunu çağırıyoruz
+                }
+            }
+        }
+
         // Event tetikleyen özel Combat fonksiyonu
         private void UpdateCombatInstance(SimUnitData unit, float dt)
         {
@@ -100,6 +112,7 @@ namespace RTS.Simulation.Systems
                 MoveToTarget(unit, targetPos, isBuilding, _world);
             }
         }
+
 
         // Wrapper Metotlar (Instance -> Static yönlendirmesi, kod tekrarını önler)
         public void OrderMove(SimUnitData unit, int2 targetPos) => OrderMove(unit, targetPos, _world);

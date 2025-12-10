@@ -22,16 +22,20 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     public string AllowedAgentName = "AdversarialTrainerRunner";
 
+    [Tooltip("Harita rastgeleliğini kontrol etmek için kullanılır. 0 veya negatif ise rastgele seed oluşturulur.")]
+    public int mapSeed = 12345;
+
+    [Tooltip("mapSeed 0 veya negatif olduğunda, o anki zamana göre rastgele bir seed oluşturur.")]
+    public bool useRandomSeed = true;
+
     [Header("Zaman Ayarları")]
     [Tooltip("Eğitim için True, Demo kaydı için False yap!")]
     public bool IsTrainingMode = false;
 
+    public float _simStepSize = 0.25f;
     [Range(1f, 100f)]
-    public float SimulationTimeScale = 1.0f;
+    public float _simStepCountPerFrame = 1f;
 
-    // Simülasyonun bir adımı kaç saniyelik oyun süresine denk?
-    // 0.1f = Saniyede 10 karar anı.
-    private float _simStepSize = 0.1f;
     private float _timer = 0f;
 
     [Header("Görselleştirme")]
@@ -49,6 +53,9 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private SimResourceSystem _resSys;
 
     // TAKİP DEĞİŞKENLERİ
+    private int _lastSoldiers = 0;
+
+
     private int _lastEnemyUnitCount = 0;
     private int _lastEnemyBuildingCount = 0;
     private float _lastEnemyBaseHealth = 1000f;
@@ -61,45 +68,43 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private int _currentStep = 0;
     private bool _gameEnded = false;
 
+    private float decisionTimer = 0f;
+
+    private int _agentDecisionCounter = 0;
+    // Kaç adımda bir karar versin? (Örn: 4 adımda bir. 4 * 0.25 = 1 saniyede bir karar)
+    private const int AGENT_DECISION_INTERVAL = 4;
+
     void Start()
     {
         if (Agent == null) Agent = GetComponentInChildren<RTSAgent>();
-
-        // Demo modundaysak FPS kilidini kaldırıp normal hıza dönelim
-        if (!IsTrainingMode)
+        if (IsTrainingMode)
         {
-            Application.targetFrameRate = 60;
-            Time.timeScale = SimulationTimeScale;
+            Application.targetFrameRate = 60; // Maksimum hız
         }
         else
         {
-            Application.targetFrameRate = -1; // Maksimum hız
-            Time.timeScale = 20.0f; // Eğitimi hızlandır
+            Application.targetFrameRate = 60;
         }
-
         ResetSimulation();
     }
 
     void Update()
     {
         if (_gameEnded) return;
-
-        // --- DÜZELTİLEN ZAMAN MANTIĞI ---
+        // Eğer eğitim modundaysak ve hızlanmak istiyorsak
         if (IsTrainingMode)
         {
-            // Eğitim Modu: Frame başına sabit bir adım işle
-            SimulationStep(_simStepSize);
+            // Bir karede 10 simülasyon adımı birden at
+            for (int i = 0; i < _simStepCountPerFrame; i++)
+            {
+                // dt her zaman sabit olmalı(örn: 0.1f veya 0.02f)
+                SimulationStep(_simStepSize);
+            }
         }
         else
         {
-            // Demo/Heuristic Modu: Gerçek zamanlı akış (Accumulator Pattern)
-            _timer += Time.deltaTime * SimulationTimeScale;
-
-            while (_timer >= _simStepSize)
-            {
-                SimulationStep(_simStepSize);
-                _timer -= _simStepSize;
-            }
+            // Normal oyun modunda gerçek zamanlı akış
+            SimulationStep(Time.deltaTime);
         }
     }
 
@@ -112,19 +117,25 @@ public class AdversarialTrainerRunner : MonoBehaviour
             _enemyAI.Update(dt);
         }
 
-        // 2. Agent Karar İsteği
-        if (Agent != null) Agent.RequestDecision();
+        // decisionTimer += dt;
+        // // 2. Agent Karar İsteği
+        // if (decisionTimer % (4 * dt) == 0)
+        // {
+        //     if (Agent != null) Agent.RequestDecision();
+        // }
+
+        _agentDecisionCounter++;
+        if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL)
+        {
+            _agentDecisionCounter = 0;
+            if (Agent != null) Agent.RequestDecision();
+        }
 
         // 3. Simülasyonu İlerlet
         if (_buildSys != null) _buildSys.UpdateAllBuildings(dt);
 
-        // Birimleri güncelle
-        var unitIds = _world.Units.Keys.ToList();
-        foreach (var uid in unitIds)
-        {
-            if (_world.Units.TryGetValue(uid, out SimUnitData unit))
-                if (_unitSys != null) _unitSys.UpdateUnit(unit, dt);
-        }
+        // 4. Birimleri güncelle
+        if (_unitSys != null) _unitSys.UpdateAllUnits(dt);
 
         // Ödüller
         CalculateCombatRewards();
@@ -150,12 +161,13 @@ public class AdversarialTrainerRunner : MonoBehaviour
         int meatDelta = myPlayer.Meat - _lastMeat;
         int stoneDelta = myPlayer.Stone - _lastStone;
 
-        if (woodDelta > 0) Agent.AddReward(woodDelta * 0.001f);
-        if (meatDelta > 0) Agent.AddReward(meatDelta * 0.001f);
-        if (stoneDelta > 0) Agent.AddReward(stoneDelta * 0.001f);
+        if (woodDelta > 0) Agent.AddReward(woodDelta * 0.01f);
+        if (meatDelta > 0) Agent.AddReward(meatDelta * 0.01f);
+        if (stoneDelta > 0) Agent.AddReward(stoneDelta * 0.01f);
 
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
-        if (currentWorkers > _lastWorkerCount) Agent.AddReward(0.05f);
+        if (currentWorkers > _lastWorkerCount) Agent.AddReward(0.25f);
+
 
         _lastWood = myPlayer.Wood;
         _lastMeat = myPlayer.Meat;
@@ -171,8 +183,14 @@ public class AdversarialTrainerRunner : MonoBehaviour
         int currentEnemyBuildings = 0;
         float currentEnemyBaseHealth = 0;
 
+        int currentSoldiers = 0;
+
+
         foreach (var u in _world.Units.Values)
             if (u.PlayerID == 2 && u.State != SimTaskType.Dead) currentEnemyUnits++;
+
+        foreach (var u in _world.Units.Values)
+            if (u.UnitType == SimUnitType.Soldier && u.PlayerID == 1 && u.State != SimTaskType.Dead) currentSoldiers++;
 
         foreach (var b in _world.Buildings.Values)
         {
@@ -181,6 +199,11 @@ public class AdversarialTrainerRunner : MonoBehaviour
                 currentEnemyBuildings++;
                 if (b.Type == SimBuildingType.Base) currentEnemyBaseHealth = b.Health;
             }
+        }
+
+        if (currentSoldiers > _lastSoldiers)
+        {
+            Agent.AddReward(0.5f);
         }
 
         if (currentEnemyUnits < _lastEnemyUnitCount)
@@ -200,6 +223,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
             Agent.AddReward(damage * 0.001f);
         }
+        _lastSoldiers = currentSoldiers;
 
         _lastEnemyUnitCount = currentEnemyUnits;
         _lastEnemyBuildingCount = currentEnemyBuildings;
@@ -220,9 +244,16 @@ public class AdversarialTrainerRunner : MonoBehaviour
         else if (difficultyLevel < 1.8f) EnemyDifficulty = AIDifficulty.Defensive;
         else EnemyDifficulty = AIDifficulty.Aggressive;
 
-        // Dünya Kurulumu
         _world = new SimWorldState(MapSize, MapSize);
-        GenerateMap();
+
+        int finalSeed = mapSeed;
+
+        if (useRandomSeed || mapSeed <= 0)
+        {
+            finalSeed = System.DateTime.Now.Millisecond + System.DateTime.Now.Second * 1000;
+        }
+        GenerateMap(finalSeed);
+
         if (gameObject.name == AllowedAgentName)
         {
             SimGameContext.ActiveWorld = _world;
@@ -255,13 +286,19 @@ public class AdversarialTrainerRunner : MonoBehaviour
         if (Visualizer != null) Visualizer.Initialize(_world);
 
         // Reset counters
+        _lastSoldiers = 0;
+
         _lastEnemyUnitCount = 0;
         _lastEnemyBuildingCount = 1;
         _lastEnemyBaseHealth = 1000f;
     }
 
-    private void GenerateMap()
+    private void GenerateMap(int seed) // Metot artık bir seed parametresi alıyor
     {
+        // Harita boyutunu alma kodu (eğer MapSize bir alan/özellik ise)
+        int MapSize = _world.Map.Grid.GetLength(0);
+
+        // 1. Haritayı Başlatma (Rastgelelik içermez)
         for (int x = 0; x < MapSize; x++)
         {
             for (int y = 0; y < MapSize; y++)
@@ -277,9 +314,15 @@ public class AdversarialTrainerRunner : MonoBehaviour
             }
         }
 
+        // 2. Kaynak Yerleştirme (Seed Tabanlı Deterministic Rastgelelik)
+
+        // Harita kaynaklarının rastgeleliğini kontrol etmek için seed'i ayarla
+        UnityEngine.Random.InitState(seed); //
+
         int resourceCount = 45;
         for (int i = 0; i < resourceCount; i++)
         {
+            // Seed ayarlandığı için bu Range ve value çağrıları artık deterministiktir.
             int x = UnityEngine.Random.Range(0, MapSize);
             int y = UnityEngine.Random.Range(0, MapSize);
 
@@ -312,13 +355,14 @@ public class AdversarialTrainerRunner : MonoBehaviour
             MaxHealth = 1000,
             IsConstructed = true
         };
-        SimBuildingSystem.InitializeBuildingStats(building);
+        SimBuildingSystem.InitializeBuildingStats(building, true);
         _world.Buildings.Add(building.ID, building);
         _world.Map.Grid[pos.x, pos.y].IsWalkable = false;
         _world.Map.Grid[pos.x, pos.y].OccupantID = building.ID;
 
         // Başlangıç işçileri
-        for (int i = 0; i < 3; i++)
+        int start_workercount = 1;
+        for (int i = 0; i < start_workercount; i++)
         {
             int2? spawnPos = SimGridSystem.FindWalkableNeighbor(_world, pos);
             if (spawnPos.HasValue)
@@ -336,6 +380,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
                 };
                 _world.Units.Add(unit.ID, unit);
                 _world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = unit.ID;
+                SimResourceSystem.ModifyPopulation(_world, pid, 1);
             }
         }
     }
@@ -370,7 +415,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         else if (enemyBase == null) // Kazandık
         {
             float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
-            float speedBonus = timeFactor * 2.0f;
+            float speedBonus = timeFactor * 4.0f;
             EndGame(2.0f + speedBonus);
         }
     }
