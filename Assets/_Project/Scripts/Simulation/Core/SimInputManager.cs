@@ -14,6 +14,8 @@ public class SimInputManager : MonoBehaviour
     public int SelectedUnitID { get; private set; } = -1;
     public int SelectedBuildingID { get; private set; } = -1;
 
+    private int _pendingActionID = 10;
+
     void Awake()
     {
         Instance = this;
@@ -28,7 +30,27 @@ public class SimInputManager : MonoBehaviour
         if (Input.GetMouseButtonDown(0)) HandleSelection();      // Left Click: Select
         if (Input.GetMouseButtonDown(1)) HandleMovementOrder();  // Right Click: Action
     }
+    // --- DIŞARIDAN (UI) ÇAĞRILACAK METOT ---
+    public void SetPendingAction(int actionID)
+    {
+        _pendingActionID = actionID;
+        Debug.Log($"[Input] Sıradaki işlem ayarlandı: {actionID}. Lütfen haritada bir yere sağ tıkla.");
+    }
 
+    // --- SEÇİLİ ÜNİTENİN INDEX'İNİ DÖNDÜRÜR ---
+    public int GetSelectedUnitSourceIndex()
+    {
+        var world = SimGameContext.ActiveWorld;
+        if (world == null || SelectedUnitID == -1) return -1;
+
+        if (world.Units.TryGetValue(SelectedUnitID, out SimUnitData u))
+        {
+            // Sadece kendi oyuncumuz (Player 1)
+            if (u.PlayerID == 1)
+                return (u.GridPosition.y * world.Map.Width) + u.GridPosition.x;
+        }
+        return -1;
+    }
     void HandleSelection()
     {
 
@@ -72,60 +94,42 @@ public class SimInputManager : MonoBehaviour
     void HandleMovementOrder()
     {
         var world = SimGameContext.ActiveWorld;
-
-        // Movement/Attack is only valid if a UNIT is selected
         if (world == null || SelectedUnitID == -1) return;
 
+        // Seçili üniteyi al
         if (!world.Units.TryGetValue(SelectedUnitID, out SimUnitData selectedUnit))
         {
             SelectedUnitID = -1;
             return;
         }
 
-        // Only command my own units
+        // Sadece kendi ünitelerimiz
         if (selectedUnit.PlayerID != 1) return;
 
         int2? gridPos = GetGridPositionUnderMouse();
         if (gridPos == null) return;
 
-        // --- INTEGRATION START ---
-        // Converts mouse input into "Agent Action" format.
-
+        // --- ML-AGENTS ENTEGRASYONU ---
         int mapW = world.Map.Width;
 
-        // 1. SOURCE (Who?): Position of the selected unit
+        // 1. SOURCE: Seçili ünitenin konumu
         int sourceIndex = (selectedUnit.GridPosition.y * mapW) + selectedUnit.GridPosition.x;
 
-        // 2. TARGET (Where?): Position under the mouse
+        // 2. TARGET: Farenin altındaki konum
         int targetIndex = (gridPos.Value.y * mapW) + gridPos.Value.x;
 
-        // 3. ACTION (What?): Generic Smart Move/Attack (ID: 10)
-        int actionID = 10;
-        Debug.Log("before RTSAgent.Instance");
-        // SEND TO AGENT (If available)
+        // 3. ACTION: UI'dan ayarlanmış bekleyen aksiyon (Default: 10)
+        int actionID = _pendingActionID;
+
+        // Agent'a gönder
         if (RTSAgent.Instance != null)
         {
+            // Kaydı oluştur ve ajanı çalıştır
             RTSAgent.Instance.RegisterExternalAction(actionID, sourceIndex, targetIndex);
-            Debug.Log("RTSAgent.Instance");
-            // We return here to let the Agent handle the execution logic.
-            // This prevents duplicate commands and ensures the Agent learns from this input.
+
+            // Emri verdikten sonra modu varsayılan "Move" (10) moduna döndür
+            _pendingActionID = 10;
             return;
-        }
-        // --- INTEGRATION END ---
-
-
-        // --- FALLBACK (Old Logic) ---
-        // This part only runs if there is NO RTSAgent in the scene.
-
-        // Resource Check
-        foreach (var res in world.Resources.Values)
-        {
-            if (res.GridPosition == gridPos.Value)
-            {
-                if (selectedUnit.UnitType == SimUnitType.Worker)
-                    SimUnitSystem.TryAssignGatherTask(selectedUnit, res, world);
-                return;
-            }
         }
 
         // Enemy/Building Check
