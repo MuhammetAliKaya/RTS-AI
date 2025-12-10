@@ -20,6 +20,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
     public int MapSize = 32;
     public int MaxSteps = 5000;
 
+    public string AllowedAgentName = "AdversarialTrainerRunner";
+
     [Header("Zaman Ayarları")]
     [Tooltip("Eğitim için True, Demo kaydı için False yap!")]
     public bool IsTrainingMode = false;
@@ -221,6 +223,10 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // Dünya Kurulumu
         _world = new SimWorldState(MapSize, MapSize);
         GenerateMap();
+        if (gameObject.name == AllowedAgentName)
+        {
+            SimGameContext.ActiveWorld = _world;
+        }
 
         if (_world.Players.ContainsKey(1))
         {

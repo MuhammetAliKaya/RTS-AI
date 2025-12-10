@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
-using System.Linq; // Linq ekledik
+using System.Linq;
 
 public class SimGameplayUI : MonoBehaviour
 {
@@ -36,13 +36,38 @@ public class SimGameplayUI : MonoBehaviour
     }
 
     // --- İNŞAAT BUTONLARI ---
-    public void OnClickBuildHouse() { SelectBuild(SimBuildingType.House); }
+    // Agent Translator Kodları: House=1, Barracks=2, Tower=8, Wall=9
+
+    public void OnClickBuildHouse() { HandleBuildCommand(1, SimBuildingType.House); }
+    public void OnClickBuildBarracks() { HandleBuildCommand(2, SimBuildingType.Barracks); }
+    public void OnClickBuildTower() { HandleBuildCommand(8, SimBuildingType.Tower); }
+    public void OnClickBuildWall() { HandleBuildCommand(9, SimBuildingType.Wall); }
+
+    // Translator'da henüz tanımlı olmayanlar (Eski usül devam eder)
     public void OnClickBuildFarm() { SelectBuild(SimBuildingType.Farm); }
     public void OnClickBuildWoodCutter() { SelectBuild(SimBuildingType.WoodCutter); }
     public void OnClickBuildStonePit() { SelectBuild(SimBuildingType.StonePit); }
-    public void OnClickBuildBarracks() { SelectBuild(SimBuildingType.Barracks); }
-    public void OnClickBuildTower() { SelectBuild(SimBuildingType.Tower); }
-    public void OnClickBuildWall() { SelectBuild(SimBuildingType.Wall); }
+
+    private void HandleBuildCommand(int actionID, SimBuildingType type)
+    {
+        // 1. Agent varsa ve bir İŞÇİ seçiliyse -> Agent'a "İnşa Et" emri ver
+        // Not: Agent modunda "Target" 0 gönderiyoruz, Translator "Auto Build" mantığıyla en iyi yeri bulacak.
+        if (RTSAgent.Instance != null)
+        {
+            int workerSource = GetSelectedUnitSourceIndex();
+            if (workerSource != -1)
+            {
+                SendToAgent(actionID, workerSource, 0);
+                CloseAllMenus();
+                return;
+            }
+            // İşçi seçili değilse uyarı ver (Agent rastgele işçi seçmesin, oyuncu kimi seçtiyse o yapsın)
+            Debug.Log("Agent Modu: İnşaat için önce bir işçi seçmelisin!");
+        }
+
+        // 2. Agent yoksa veya işçi seçilmediyse -> Manuel Yerleştirme Modunu Aç (BuildingPlacer)
+        SelectBuild(type);
+    }
 
     private void SelectBuild(SimBuildingType type)
     {
@@ -50,56 +75,76 @@ public class SimGameplayUI : MonoBehaviour
         CloseAllMenus();
     }
 
-    // --- AKILLI ÜRETİM BUTONLARI (GÜNCELLENDİ) ---
+    // --- ÜRETİM BUTONLARI ---
+    // Agent Translator Kodları: Worker=3, Soldier=4
 
-    public void OnClickTrainWorker()
-    {
-        TryTrainUnitSmart(SimBuildingType.Base, SimUnitType.Worker);
-    }
+    public void OnClickTrainWorker() { HandleTrainCommand(SimBuildingType.Base, SimUnitType.Worker, 3); }
+    public void OnClickTrainSoldier() { HandleTrainCommand(SimBuildingType.Barracks, SimUnitType.Soldier, 4); }
 
-    public void OnClickTrainSoldier()
-    {
-        TryTrainUnitSmart(SimBuildingType.Barracks, SimUnitType.Soldier);
-    }
-
-    // --- YENİ FONKSİYON: AKILLI ÜRETİM ---
-    private void TryTrainUnitSmart(SimBuildingType buildingType, SimUnitType unitType)
+    private void HandleTrainCommand(SimBuildingType bType, SimUnitType uType, int actionID)
     {
         var world = SimGameContext.ActiveWorld;
         if (world == null) return;
 
-        // 1. ÖNCE SEÇİLİ BİNAYI KONTROL ET
-        // Eğer oyuncu özellikle bir binayı seçtiyse, öncelik ondadır.
-        int selectedID = SimInputManager.Instance.SelectedBuildingID;
-        if (selectedID != -1 && world.Buildings.TryGetValue(selectedID, out SimBuildingData selectedB))
+        // 1. Uygun binayı bul (Önce seçiliye, sonra boştakilere bak)
+        SimBuildingData targetBuilding = FindTrainingBuilding(world, bType);
+
+        if (targetBuilding != null)
         {
-            // Seçili bina doğru tipte, benim ve boşta ise -> Buradan bas
-            if (selectedB.PlayerID == 1 && selectedB.Type == buildingType && selectedB.IsConstructed && !selectedB.IsTraining)
+            // Agent Varsa -> Emri ona ilet (Source: Bina Konumu)
+            if (RTSAgent.Instance != null)
             {
-                SimBuildingSystem.StartTraining(selectedB, world, unitType);
-                Debug.Log($"🎯 Seçili binadan üretim: {unitType}");
-                return;
+                int sourceIndex = (targetBuilding.GridPosition.y * world.Map.Width) + targetBuilding.GridPosition.x;
+                SendToAgent(actionID, sourceIndex, 0); // Üretimde Target önemsiz
             }
-        }
-
-        // 2. SEÇİLİ DEĞİLSE (VEYA DOLUYSA), HARİTADAKİ DİĞER BİNALARA BAK
-        // Benim olan, bitmiş ve ŞU AN ÜRETİM YAPMAYAN ilk binayı bul.
-        var idleBuilding = world.Buildings.Values.FirstOrDefault(b =>
-            b.PlayerID == 1 &&
-            b.Type == buildingType &&
-            b.IsConstructed &&
-            !b.IsTraining // <-- Kritik nokta: Boş olanı bul
-        );
-
-        if (idleBuilding != null)
-        {
-            SimBuildingSystem.StartTraining(idleBuilding, world, unitType);
-            Debug.Log($"🤖 Otomatik binadan üretim: {unitType} (ID: {idleBuilding.ID})");
+            // Agent Yoksa -> Direkt üretimi başlat
+            else
+            {
+                SimBuildingSystem.StartTraining(targetBuilding, world, uType);
+                Debug.Log($"Manüel Üretim Başlatıldı: {uType}");
+            }
         }
         else
         {
-            // Hiç boş bina yoksa veya kaynak yetmiyorsa
-            Debug.LogWarning($"❌ Üretim yapılamadı. Ya boş {buildingType} yok ya da kaynak yetersiz.");
+            Debug.LogWarning($"Uygun {bType} bulunamadı! (Kaynak yetersiz veya bina yok)");
+        }
+        CloseAllMenus();
+    }
+
+    // --- YARDIMCI METOTLAR ---
+
+    private SimBuildingData FindTrainingBuilding(SimWorldState world, SimBuildingType type)
+    {
+        // A. Oyuncunun seçtiği binaya bak
+        int selectedID = SimInputManager.Instance.SelectedBuildingID;
+        if (selectedID != -1 && world.Buildings.TryGetValue(selectedID, out SimBuildingData b))
+        {
+            if (b.PlayerID == 1 && b.Type == type && b.IsConstructed && !b.IsTraining)
+                return b;
+        }
+
+        // B. Seçili değilse, haritadaki boşta duran ilk binayı bul (Yardımcı)
+        return world.Buildings.Values.FirstOrDefault(b =>
+            b.PlayerID == 1 && b.Type == type && b.IsConstructed && !b.IsTraining);
+    }
+
+    private int GetSelectedUnitSourceIndex()
+    {
+        var world = SimGameContext.ActiveWorld;
+        int uid = SimInputManager.Instance.SelectedUnitID;
+        if (uid != -1 && world != null && world.Units.TryGetValue(uid, out SimUnitData u))
+        {
+            if (u.PlayerID == 1) // Sadece kendi ünitelerimiz
+                return (u.GridPosition.y * world.Map.Width) + u.GridPosition.x;
+        }
+        return -1;
+    }
+
+    private void SendToAgent(int actionID, int sourceIdx, int targetIdx)
+    {
+        if (RTSAgent.Instance != null)
+        {
+            RTSAgent.Instance.RegisterExternalAction(actionID, sourceIdx, targetIdx);
         }
     }
 }
