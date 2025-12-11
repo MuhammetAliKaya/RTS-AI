@@ -2,11 +2,14 @@ using RTS.Simulation.Data;
 using RTS.Simulation.Core;
 using UnityEngine;
 using System.Linq;
+using System; // Action için gerekli
 
 namespace RTS.Simulation.Systems
 {
     public class SimBuildingSystem
     {
+        public static event Action<SimBuildingData> OnBuildingFinished;
+        public static event Action<SimUnitData> OnUnitCreated;
         private SimWorldState _world;
 
         public SimBuildingSystem(SimWorldState world = null)
@@ -111,6 +114,7 @@ namespace RTS.Simulation.Systems
                 SimResourceSystem.IncreaseMaxPopulation(world, building.PlayerID, SimConfig.POPULATION_BASE);
             else if (building.Type == SimBuildingType.House)
                 SimResourceSystem.IncreaseMaxPopulation(world, building.PlayerID, SimConfig.POPULATION_HOUSE);
+            OnBuildingFinished?.Invoke(building);
         }
 
         public static void InitializeBuildingStats(SimBuildingData b, bool isMax = false)
@@ -242,6 +246,7 @@ namespace RTS.Simulation.Systems
             world.Units.Add(newUnit.ID, newUnit);
             world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = newUnit.ID;
             SimResourceSystem.ModifyPopulation(world, playerID, 1);
+            OnUnitCreated?.Invoke(newUnit);
         }
 
         private static SimUnitData FindNearestEnemy(SimWorldState world, int2 towerPos, float range, int myPlayerID)

@@ -1496,10 +1496,10 @@ MonoBehaviour:
   useRandomSeed: 0
   IsTrainingMode: 1
   _simStepSize: 0.01
-  _simStepCountPerFrame: 10
+  _simStepCountPerFrame: 100
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
-  EnemyDifficulty: 2
+  EnemyDifficulty: 1
 --- !u!1 &803310767
 GameObject:
   m_ObjectHideFlags: 0

@@ -7,6 +7,7 @@ using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using System.Linq;
 using System;
+using System.Collections.Generic;
 
 public class RTSAgent : Agent
 {
@@ -35,6 +36,19 @@ public class RTSAgent : Agent
     private const float LOG_ANCHOR_STONE_MEAT = 20000f;
     private const float LOG_ANCHOR_POPULATION = 100f;
     private const float LOG_ANCHOR_UNIT_COUNT = 100f;
+
+
+    private const int ACT_WAIT = 0;
+    private const int ACT_BUILD_HOUSE = 1;
+    private const int ACT_BUILD_BARRACKS = 2;
+    private const int ACT_TRAIN_WORKER = 3;
+    private const int ACT_TRAIN_SOLDIER = 4;
+    private const int ACT_BUILD_WOODCUTTER = 5;
+    private const int ACT_BUILD_STONEPIT = 6;
+    private const int ACT_BUILD_FARM = 7;
+    private const int ACT_BUILD_TOWER = 8;
+    private const int ACT_BUILD_WALL = 9;
+    private const int ACT_SMART_COMMAND = 10;
 
     protected override void Awake()
     {
@@ -85,20 +99,36 @@ public class RTSAgent : Agent
 
     private void RebindEvents()
     {
+        UnbindEvents();
+        if (_unitSystem != null)
+        {
+            _unitSystem.OnUnitAttackedUnit += HandleUnitAttackedUnit;
+            _unitSystem.OnUnitAttackedBuilding += HandleUnitAttackedBuilding;
+            _unitSystem.OnUnitKilledEnemy += HandleUnitKilledEnemy;
+            _unitSystem.OnUnitDestroyedBuilding += HandleUnitDestroyedBuilding;
+
+
+        }
+        SimResourceSystem.OnResourceGathered += HandleResourceGathered;
+        SimBuildingSystem.OnBuildingFinished += HandleBuildingCompleted;
+        SimBuildingSystem.OnUnitCreated += HandleUnitCreated;
+    }
+
+    private void UnbindEvents()
+    {
         if (_unitSystem != null)
         {
             _unitSystem.OnUnitAttackedUnit -= HandleUnitAttackedUnit;
             _unitSystem.OnUnitAttackedBuilding -= HandleUnitAttackedBuilding;
             _unitSystem.OnUnitKilledEnemy -= HandleUnitKilledEnemy;
             _unitSystem.OnUnitDestroyedBuilding -= HandleUnitDestroyedBuilding;
-
-            _unitSystem.OnUnitAttackedUnit += HandleUnitAttackedUnit;
-            _unitSystem.OnUnitAttackedBuilding += HandleUnitAttackedBuilding;
-            _unitSystem.OnUnitKilledEnemy += HandleUnitKilledEnemy;
-            _unitSystem.OnUnitDestroyedBuilding += HandleUnitDestroyedBuilding;
         }
-    }
 
+        // Statik eventlerden çık
+        SimResourceSystem.OnResourceGathered -= HandleResourceGathered;
+        SimBuildingSystem.OnBuildingFinished -= HandleBuildingCompleted;
+        SimBuildingSystem.OnUnitCreated -= HandleUnitCreated;
+    }
     // --- ÖDÜL FONKSİYONLARI ---
     private void HandleUnitAttackedUnit(SimUnitData attacker, SimUnitData victim, float damage)
     {
@@ -250,7 +280,194 @@ public class RTSAgent : Agent
     // Şimdilik boş bırakıyoruz, çünkü Source seçimi dinamik olduğu için maskeleme çok karmaşıklaşır.
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        // Gelişmiş maskeleme için Source Index'e göre valid action'ları kapatmak gerekir.
-        // Şimdilik öğrenmesine izin verelim (Geçersiz hamleye ceza veriyoruz zaten).
+        // 1. Dünya ve Oyuncu Kontrolü
+        if (_world == null || !_world.Players.ContainsKey(1)) return;
+
+        var me = _world.Players[1];
+
+        // 2. Mevcut Varlık Sayılarını Hesapla (Anlık Durum)
+        // NOT: Performans için bu sayılar SimWorldState içinde tutulabilir, şimdilik LINQ ile sayıyoruz.
+        int workerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
+        int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
+
+        // Base ve Kışla için sadece inşaatı bitmiş (IsConstructed) olanları saymak daha güvenlidir
+        int baseCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base && b.IsConstructed && b.Health > 0);
+        int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed && b.Health > 0);
+
+        bool hasWorker = workerCount > 0;
+        bool hasAnyUnit = (workerCount + soldierCount) > 0;
+
+        // --- BRANCH 0: ACTION TYPE MASKELEME ---
+
+        // 0. ACT_WAIT (Her zaman mümkün)
+        // actionMask.SetActionEnabled(0, ACT_WAIT, true); 
+
+        // 1. İNŞAAT EYLEMLERİ (İşçi Gerekir + Kaynak Gerekir)
+        if (!hasWorker)
+        {
+            // İşçi yoksa hiçbir bina yapılamaz
+            actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+            actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
+            actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, false);
+            actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, false);
+            actionMask.SetActionEnabled(0, ACT_BUILD_FARM, false);
+            actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, false);
+            actionMask.SetActionEnabled(0, ACT_BUILD_WALL, false);
+        }
+        else
+        {
+            // İşçi var, maliyet kontrolü yap
+
+            // House (Ev)
+            if (me.Wood < SimConfig.HOUSE_COST_WOOD || me.Stone < SimConfig.HOUSE_COST_STONE || me.Meat < SimConfig.HOUSE_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+
+            // Barracks (Kışla)
+            if (me.Wood < SimConfig.BARRACKS_COST_WOOD || me.Stone < SimConfig.BARRACKS_COST_STONE || me.Meat < SimConfig.BARRACKS_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
+
+            // WoodCutter (Oduncu)
+            if (me.Wood < SimConfig.WOODCUTTER_COST_WOOD || me.Stone < SimConfig.WOODCUTTER_COST_STONE || me.Meat < SimConfig.WOODCUTTER_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, false);
+
+            // StonePit (Taş Ocağı)
+            if (me.Wood < SimConfig.STONEPIT_COST_WOOD || me.Stone < SimConfig.STONEPIT_COST_STONE || me.Meat < SimConfig.STONEPIT_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, false);
+
+            // Farm (Çiftlik)
+            if (me.Wood < SimConfig.FARM_COST_WOOD || me.Stone < SimConfig.FARM_COST_STONE || me.Meat < SimConfig.FARM_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_FARM, false);
+
+            // Tower (Kule)
+            if (me.Wood < SimConfig.TOWER_COST_WOOD || me.Stone < SimConfig.TOWER_COST_STONE || me.Meat < SimConfig.TOWER_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, false);
+
+            // Wall (Duvar)
+            if (me.Wood < SimConfig.WALL_COST_WOOD || me.Stone < SimConfig.WALL_COST_STONE || me.Meat < SimConfig.WALL_COST_MEAT)
+                actionMask.SetActionEnabled(0, ACT_BUILD_WALL, false);
+        }
+
+        // 2. ÜRETİM EYLEMLERİ (Bina Gerekir + Kaynak Gerekir + Bina Müsaitliği)
+        // Not: Burada "Hangi binanın boş olduğu" Source index seçiminde önemlidir. 
+        // Ancak genel Action Type maskelemesi için "En az bir müsait bina var mı?" bakabiliriz.
+        // Basitlik adına sadece bina varlığına ve kaynağa bakıyoruz.
+
+        // Train Worker (İşçi Bas) -> Base Gerekir
+        if (baseCount == 0 ||
+            me.Wood < SimConfig.WORKER_COST_WOOD ||
+            me.Stone < SimConfig.WORKER_COST_STONE ||
+            me.Meat < SimConfig.WORKER_COST_MEAT)
+        {
+            actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);
+        }
+
+        // Train Soldier (Asker Bas) -> Kışla Gerekir
+        if (barracksCount == 0 ||
+            me.Wood < SimConfig.SOLDIER_COST_WOOD ||
+            me.Stone < SimConfig.SOLDIER_COST_STONE ||
+            me.Meat < SimConfig.SOLDIER_COST_MEAT)
+        {
+            actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
+        }
+
+        // 3. KOMUT EYLEMLERİ (Birim Gerekir)
+        // Smart Command (Yürü/Saldır/Topla) -> En az 1 birimim olmalı
+        if (!hasAnyUnit)
+        {
+            actionMask.SetActionEnabled(0, ACT_SMART_COMMAND, false);
+        }
+
+        // --- BRANCH 1: SOURCE INDEX MASKING (HIZLI & DİNAMİK VERSİYON) ---
+
+        // 1. Harita bilgilerini DOĞRUDAN _world üzerinden alıyoruz (SimConfig yerine)
+        // Çünkü SimWorldState zaten Map verisini tutuyor.
+        int mapWidth = _world.Map.Width;
+        int totalCells = _world.Map.Width * _world.Map.Height;
+
+        // 2. Geçerli olan (Bana ait) indexleri bir listede topla
+        HashSet<int> validSourceIndices = new HashSet<int>();
+
+        // A) Benim Ünitelerimi (Units Dictionary'sinden) bul
+        foreach (var unit in _world.Units.Values)
+        {
+            // Sadece bana ait (PlayerID == 1) ve ölü olmayanları seç
+            if (unit.PlayerID == 1 && unit.State != SimTaskType.Dead)
+            {
+                // Koordinatı (x, y) tekil Index'e çevir: y * width + x
+                int index = unit.GridPosition.y * mapWidth + unit.GridPosition.x;
+                validSourceIndices.Add(index);
+            }
+        }
+
+        // B) Benim Binalarımı (Buildings Dictionary'sinden) bul
+        foreach (var building in _world.Buildings.Values)
+        {
+            // Sadece bana ait ve yıkılmamış binaları seç
+            if (building.PlayerID == 1 && building.Health > 0)
+            {
+                int index = building.GridPosition.y * mapWidth + building.GridPosition.x;
+                validSourceIndices.Add(index);
+            }
+        }
+
+        // 3. Tüm haritayı gez ve listemizde OLMAYAN her şeyi kapat
+        // ML-Agents "Source Index" olarak haritadaki herhangi bir kareyi seçebilir.
+        // Biz sadece bizim adamlarımızın olduğu kareleri seçmesine izin veriyoruz.
+        for (int i = 0; i < totalCells; i++)
+        {
+            // Eğer bu 'i' indexi benim geçerli listemde yoksa, o kareye tıklamayı yasakla.
+            if (!validSourceIndices.Contains(i))
+            {
+                actionMask.SetActionEnabled(1, i, false);
+            }
+        }
+    }
+
+    public void HandleResourceGathered(int playerID, int amount) // Bunu ResourceSystem'den çağırtın
+    {
+        if (playerID == 1)
+        {
+            // 10 birim odun için 0.01 ödül (Küçük ama sürekli)
+            AddReward(amount * 0.001f);
+        }
+    }
+
+    // 2. ÜRETİM ÖDÜLÜ
+    // Kaynağı harcamaya teşvik eder.
+    private void HandleUnitCreated(SimUnitData unit)
+    {
+        if (unit.PlayerID == 1)
+        {
+            if (unit.UnitType == SimUnitType.Worker)
+                AddReward(0.2f); // İşçi basmak iyidir (Ekonomiyi büyütür)
+            else if (unit.UnitType == SimUnitType.Soldier)
+                AddReward(0.5f); // Asker basmak daha iyidir (Güvenlik)
+        }
+    }
+
+    // 3. İNŞAAT ÖDÜLÜ
+    // Nüfus ve Teknoloji gelişimi için.
+    private void HandleBuildingCompleted(SimBuildingData building)
+    {
+        if (building.PlayerID == 1)
+        {
+            switch (building.Type)
+            {
+                case SimBuildingType.House:
+                    AddReward(0.2f); // Nüfus artışı
+                    break;
+                case SimBuildingType.Barracks:
+                    AddReward(1.0f); // Teknoloji (Kritik adım)
+                    break;
+                case SimBuildingType.Tower:
+                    AddReward(0.5f); // Savunma
+                    break;
+                case SimBuildingType.Farm:
+                case SimBuildingType.WoodCutter:
+                case SimBuildingType.StonePit:
+                    AddReward(0.3f); // Ekonomi
+                    break;
+            }
+        }
     }
 }

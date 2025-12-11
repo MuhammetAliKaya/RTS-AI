@@ -1,11 +1,14 @@
 using RTS.Simulation.Data;
 using RTS.Simulation.Core;
+using System; // Action için gerekli
 
 namespace RTS.Simulation.Systems
 {
     public class SimResourceSystem
     {
+        public static event Action<int, int> OnResourceGathered;
         private SimWorldState _world;
+
 
         public SimResourceSystem(SimWorldState world = null)
         {
@@ -74,6 +77,7 @@ namespace RTS.Simulation.Systems
                 case SimResourceType.Stone: data.Stone += amount; break;
                 case SimResourceType.Meat: data.Meat += amount; break;
             }
+            OnResourceGathered?.Invoke(playerID, amount);
         }
 
         public static void ModifyPopulation(SimWorldState world, int playerID, int amount)

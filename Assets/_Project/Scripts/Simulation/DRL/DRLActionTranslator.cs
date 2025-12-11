@@ -22,26 +22,19 @@ public class DRLActionTranslator
         _gridSystem = gridSys;
     }
 
-    // --- ANA ÇALIŞTIRMA FONKSİYONU (GÜNCELLENDİ: Source + Target) ---
+    // --- ANA ÇALIŞTIRMA FONKSİYONU ---
     public bool ExecuteAction(int actionType, int sourceIndex, int targetIndex)
     {
         // 1. KOORDİNAT HESAPLA
         int w = _world.Map.Width;
-
-        // Target (Hedef) Koordinatı
         int2 targetPos = new int2(targetIndex % w, targetIndex / w);
-
-        // Source (Kaynak) Koordinatı - Eylemi kim yapacak?
         int2 sourcePos = new int2(sourceIndex % w, sourceIndex / w);
 
-        // Debug.Log($"[TRANSLATOR] Act:{actionType} | Src:{sourcePos} | Tgt:{targetPos}");
-
         // 2. KAYNAK VARLIĞI BUL (Source Location Check)
-        // Bu koordinatta benim bir ünitem veya binam var mı?
         SimUnitData sourceUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == sourcePos && u.PlayerID == MY_PLAYER_ID);
         SimBuildingData sourceBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == sourcePos && b.PlayerID == MY_PLAYER_ID);
 
-        // Eğer kaynak boşsa (o karede benim adamım yoksa) ve eylem "Bekle" değilse -> HATA
+        // Eğer kaynak boşsa ve eylem "Bekle" değilse -> HATA
         if (sourceUnit == null && sourceBuilding == null && actionType != 0)
             return false;
 
@@ -51,19 +44,13 @@ public class DRLActionTranslator
             case 0: return true; // Bekle
 
             // --- İNŞAAT (Kaynak: WORKER olmalı) ---
-            // 1. Ev (House)
             case 1: return TryBuild(sourceUnit, SimBuildingType.House, targetPos);
-            // 2. Kışla (Barracks)
             case 2: return TryBuild(sourceUnit, SimBuildingType.Barracks, targetPos);
-            // 5. Oduncu (Woodcutter) - YENİ
+            // 3 ve 4 Üretim için ayrıldı (Aşağıda)
             case 5: return TryBuild(sourceUnit, SimBuildingType.WoodCutter, targetPos);
-            // 6. Taş Ocağı (StonePit) - YENİ
             case 6: return TryBuild(sourceUnit, SimBuildingType.StonePit, targetPos);
-            // 7. Çiftlik (Farm) - YENİ
             case 7: return TryBuild(sourceUnit, SimBuildingType.Farm, targetPos);
-            // 8. Kule (Tower)
             case 8: return TryBuild(sourceUnit, SimBuildingType.Tower, targetPos);
-            // 9. Duvar (Wall)
             case 9: return TryBuild(sourceUnit, SimBuildingType.Wall, targetPos);
 
             // --- ÜRETİM (Kaynak: BİNA olmalı) ---
@@ -71,14 +58,13 @@ public class DRLActionTranslator
             case 3: return TryTrain(sourceBuilding, SimUnitType.Worker);
             case 4: return TryTrain(sourceBuilding, SimUnitType.Soldier);
 
-            // --- HAREKET / SALDIRI / TOPLAMA (Kaynak: UNIT olmalı) ---
-            // Akıllı Komut (Hedefe göre Move/Attack/Gather kararı verir)
+            // --- AKILLI HAREKET / SALDIRI / TOPLAMA (Kaynak: UNIT olmalı) ---
             case 10: return CommandUnitSmart(sourceUnit, targetPos);
         }
         return false;
     }
 
-    // --- YENİ YARDIMCI METOTLAR ---
+    // --- YARDIMCI METOTLAR ---
 
     private bool TryBuild(SimUnitData worker, SimBuildingType type, int2 buildPos)
     {
@@ -88,8 +74,11 @@ public class DRLActionTranslator
         // Kaynak (Resource) kontrolü
         if (!CanAfford(type)) return false;
 
-        // Yer uygun mu? (Harita içi mi, yürünebilir mi?)
+        // Yer uygun mu? (Harita sınırları ve yürünebilirlik)
         if (!_world.Map.IsInBounds(buildPos) || !_gridSystem.IsWalkable(buildPos)) return false;
+
+        // O karede zaten bir bina var mı?
+        if (_world.Buildings.Values.Any(b => b.GridPosition == buildPos)) return false;
 
         // İnşaat işlemini başlat
         SpendResources(type);
@@ -109,8 +98,8 @@ public class DRLActionTranslator
         if (unitType == SimUnitType.Worker && building.Type != SimBuildingType.Base) return false;
         if (unitType == SimUnitType.Soldier && building.Type != SimBuildingType.Barracks) return false;
 
-        var (w, s, m) = GetCost(unitType);
-        if (!SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m)) return false;
+        var (wood, stone, meat) = GetUnitCost(unitType);
+        if (!SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, wood, stone, meat)) return false;
 
         SimBuildingSystem.StartTraining(building, _world, unitType);
         return true;
@@ -138,52 +127,67 @@ public class DRLActionTranslator
             _unitSystem.OrderAttack(unit, enemyBuilding);
             return true;
         }
-        // 3. Kaynak -> İşçiyse Topla (x konumundakini topla)
+        // 3. Kaynak -> İşçiyse Topla
         else if (resource != null && unit.UnitType == SimUnitType.Worker)
         {
             return _unitSystem.TryAssignGatherTask(unit, resource);
         }
 
-        // 4. Boş Alan -> Yürü (x konumuna yürü/saldır)
+        // 4. Boş Alan -> Yürü
         _unitSystem.OrderMove(unit, targetPos);
         return true;
     }
 
-    // --- MALİYET KONTROLLERİ ---
+    // --- MALİYET YÖNETİMİ (SimConfig ile Eşitlendi) ---
+
+    private (int wood, int stone, int meat) GetBuildingCost(SimBuildingType type)
+    {
+        switch (type)
+        {
+            case SimBuildingType.House:
+                return (SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
+
+            case SimBuildingType.Barracks:
+                return (SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
+
+            case SimBuildingType.WoodCutter:
+                return (SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
+
+            case SimBuildingType.StonePit:
+                return (SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
+
+            case SimBuildingType.Farm:
+                return (SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
+
+            case SimBuildingType.Tower:
+                return (SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT);
+
+            case SimBuildingType.Wall:
+                return (SimConfig.WALL_COST_WOOD, SimConfig.WALL_COST_STONE, SimConfig.WALL_COST_MEAT);
+
+            default:
+                return (0, 0, 0);
+        }
+    }
+
+    private (int wood, int stone, int meat) GetUnitCost(SimUnitType type)
+    {
+        if (type == SimUnitType.Worker)
+            return (SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
+
+        // Soldier
+        return (SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
+    }
 
     private bool CanAfford(SimBuildingType type)
     {
-        int w = 0, s = 0, m = 0;
-        if (type == SimBuildingType.House) { w = SimConfig.HOUSE_COST_WOOD; m = SimConfig.HOUSE_COST_MEAT; }
-        else if (type == SimBuildingType.Barracks) { w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; }
-        // YENİ BİNA MALİYETLERİ
-        else if (type == SimBuildingType.WoodCutter) { w = SimConfig.WOODCUTTER_COST_WOOD; }
-        else if (type == SimBuildingType.StonePit) { s = SimConfig.STONEPIT_COST_STONE; }
-        else if (type == SimBuildingType.Farm) { m = SimConfig.FARM_COST_MEAT; }
-        // MEVCUT DİĞER BİNALAR
-        else if (type == SimBuildingType.Tower) { w = SimConfig.TOWER_COST_WOOD; s = SimConfig.TOWER_COST_STONE; }
-        else if (type == SimBuildingType.Wall) { w = SimConfig.WALL_COST_STONE; }
+        var (w, s, m) = GetBuildingCost(type);
         return SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m);
     }
 
     private void SpendResources(SimBuildingType type)
     {
-        int w = 0, s = 0, m = 0;
-        if (type == SimBuildingType.House) { w = SimConfig.HOUSE_COST_WOOD; m = SimConfig.HOUSE_COST_MEAT; }
-        else if (type == SimBuildingType.Barracks) { w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; }
-        // YENİ BİNA MALİYETLERİ
-        else if (type == SimBuildingType.WoodCutter) { w = SimConfig.WOODCUTTER_COST_WOOD; }
-        else if (type == SimBuildingType.StonePit) { s = SimConfig.STONEPIT_COST_STONE; }
-        else if (type == SimBuildingType.Farm) { m = SimConfig.FARM_COST_MEAT; }
-        // MEVCUT DİĞER BİNALAR
-        else if (type == SimBuildingType.Tower) { w = SimConfig.TOWER_COST_WOOD; s = SimConfig.TOWER_COST_STONE; }
-        else if (type == SimBuildingType.Wall) { w = SimConfig.WALL_COST_STONE; }
+        var (w, s, m) = GetBuildingCost(type);
         SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, w, s, m);
-    }
-
-    private (int, int, int) GetCost(SimUnitType type)
-    {
-        if (type == SimUnitType.Worker) return (SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
-        return (SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
     }
 }
