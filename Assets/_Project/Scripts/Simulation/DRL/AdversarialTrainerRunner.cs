@@ -32,7 +32,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
     [Tooltip("Eğitim için True, Demo kaydı için False yap!")]
     public bool IsTrainingMode = false;
 
-    public float _simStepSize = 0.25f;
+    public float _simStepSize = 0.0025f;
     [Range(1f, 100f)]
     public float _simStepCountPerFrame = 1f;
 
@@ -71,6 +71,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private float decisionTimer = 0f;
 
     private int _agentDecisionCounter = 0;
+    private int stepCount = 0;
+
     // Kaç adımda bir karar versin? (Örn: 4 adımda bir. 4 * 0.25 = 1 saniyede bir karar)
     private const int AGENT_DECISION_INTERVAL = 4;
 
@@ -104,31 +106,35 @@ public class AdversarialTrainerRunner : MonoBehaviour
         else
         {
             // Normal oyun modunda gerçek zamanlı akış
-            SimulationStep(Time.deltaTime);
+            SimulationStep(_simStepSize);
         }
     }
 
     // Artık dt parametre olarak geliyor
     public void SimulationStep(float dt)
     {
+
         // 1. Düşman AI Hamlesi
         if (_enemyAI != null)
         {
             _enemyAI.Update(dt);
         }
 
-        // decisionTimer += dt;
-        // // 2. Agent Karar İsteği
-        // if (decisionTimer % (4 * dt) == 0)
+        // if (stepCount % 80 == 0)
         // {
-        //     if (Agent != null) Agent.RequestDecision();
+
+        if (Agent != null && Agent._overrideActionType != 0)
+        {
+            Agent.RequestDecision();
+            Debug.Log("RequestDecision");
+        }
         // }
 
         _agentDecisionCounter++;
-        if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL)
+        if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
         {
             _agentDecisionCounter = 0;
-            if (Agent != null) Agent.RequestDecision();
+            if (Agent != null && IsTrainingMode) Agent.RequestDecision();
         }
 
         // 3. Simülasyonu İlerlet
@@ -150,6 +156,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             EndGame(0);
         }
+        stepCount++;
     }
 
     private void CalculateEconomyRewards()
@@ -239,10 +246,18 @@ public class AdversarialTrainerRunner : MonoBehaviour
         float difficultyLevel = 0.0f;
         if (Academy.IsInitialized)
             difficultyLevel = Academy.Instance.EnvironmentParameters.GetWithDefault("enemy_difficulty_level", 0.0f);
-
-        if (difficultyLevel < 0.2f) EnemyDifficulty = AIDifficulty.Passive;
-        else if (difficultyLevel < 1.8f) EnemyDifficulty = AIDifficulty.Defensive;
-        else EnemyDifficulty = AIDifficulty.Aggressive;
+        if (EnemyDifficulty == AIDifficulty.Passive)
+        {
+            difficultyLevel = 0;
+        }
+        else if (EnemyDifficulty == AIDifficulty.Defensive)
+        {
+            difficultyLevel = 0.5f;
+        }
+        else
+        {
+            difficultyLevel = 2;
+        }
 
         _world = new SimWorldState(MapSize, MapSize);
 
@@ -397,7 +412,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (idleCount > 0)
         {
-            Agent.AddReward(idleCount * -0.0005f);
+            Agent.AddReward(idleCount * -0.05f);
         }
     }
 

@@ -27,7 +27,7 @@ public class RTSAgent : Agent
     public bool ShowDebugLogs = true;
 
     // --- DIŞ EMRİ TUTAN DEĞİŞKENLER (BUFFER) ---
-    private int _overrideActionType = 0;
+    public int _overrideActionType = 0;
     private int _overrideSourceIndex = 0;
     private int _overrideTargetIndex = 0;
 
@@ -140,7 +140,7 @@ public class RTSAgent : Agent
         _overrideTargetIndex = targetIndex;
 
         // İsteğe bağlı: Anlık tepki için karar isteyebilirsin
-        RequestDecision();
+        // RequestDecision();
     }
 
     public override void OnEpisodeBegin()
@@ -204,15 +204,16 @@ public class RTSAgent : Agent
         // --- DEBUG LOG ---
         if (ShowDebugLogs && actionType != 0)
         {
-            // Debug.Log($"[AGENT] Action: {actionType}, Source: {sourceIndex}, Target: {targetIndex}");
+            Debug.Log($"[AGENT] Action: {actionType}, Source: {sourceIndex}, Target: {targetIndex}");
         }
 
         // Translator'a gönder
         bool isSuccess = _translator.ExecuteAction(actionType, sourceIndex, targetIndex);
 
         // Cezalar / Ödüller
-        if (!isSuccess && actionType != 0) AddReward(-0.001f); // Geçersiz hamle
-        AddReward(-0.0001f); // Zaman cezası
+        // if (!isSuccess && actionType != 0) AddReward(-0.001f); 
+        // Geçersiz hamle
+        AddReward(-0.001f); // Zaman cezası
     }
 
     // --- HEURISTIC (ÖĞRETMEN MODU) ---

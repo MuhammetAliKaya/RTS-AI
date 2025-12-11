@@ -46,7 +46,7 @@ public class SimpleMacroAI
         // 0.5 -> 3 asker (Savunma için)
         // 2.0 -> 15 asker (Full ordu)
         if (_difficultyLevel < 0.2f) _maxSoldierCount = 0;
-        else _maxSoldierCount = (int)Mathf.Lerp(3, 15, (_difficultyLevel - 0.2f) / 1.8f);
+        else _maxSoldierCount = (int)Mathf.Lerp(3, 8, (_difficultyLevel - 0.2f) / 1.8f);
 
         // 3. Saldırganlık:
         // 0.0 - 0.8 arası -> %0 Saldırı (Sadece savunma)

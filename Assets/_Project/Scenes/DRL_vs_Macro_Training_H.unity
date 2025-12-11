@@ -1198,7 +1198,6 @@ GameObject:
   - component: {fileID: 645419870}
   - component: {fileID: 645419873}
   - component: {fileID: 645419872}
-  - component: {fileID: 645419871}
   - component: {fileID: 645419874}
   m_Layer: 0
   m_Name: agent
@@ -1222,21 +1221,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 775438144}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &645419871
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 645419869}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3a5c9d521e5ef4759a8246a07d52221e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  DecisionPeriod: 5
-  DecisionStep: 0
-  TakeActionsBetweenDecisions: 1
 --- !u!114 &645419872
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1256,6 +1240,7 @@ MonoBehaviour:
   Runner: {fileID: 0}
   CombatRunner: {fileID: 775438145}
   ShowDebugLogs: 1
+  _overrideActionType: 0
 --- !u!114 &645419873
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1300,8 +1285,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Record: 1
-  NumStepsToRecord: 5000
-  DemonstrationName: RTSDemo_Human_Opt_01
+  NumStepsToRecord: 0
+  DemonstrationName: beter_Demo_Try_v3
   DemonstrationDirectory: Assets/Demonstrations
 --- !u!1 &660227090
 GameObject:
@@ -1505,16 +1490,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Agent: {fileID: 645419872}
   MapSize: 20
-  MaxSteps: 10000
+  MaxSteps: 15000
   AllowedAgentName: AdversarialTrainerRunner
   mapSeed: 12345
   useRandomSeed: 0
   IsTrainingMode: 0
-  _simStepSize: 0.25
+  _simStepSize: 0.01
   _simStepCountPerFrame: 1
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
-  EnemyDifficulty: 0
+  EnemyDifficulty: 2
 --- !u!1 &803310767
 GameObject:
   m_ObjectHideFlags: 0

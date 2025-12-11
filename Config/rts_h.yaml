@@ -1,54 +1,47 @@
 behaviors:
   RTSBrain:
     trainer_type: ppo
+
     hyperparameters:
-      batch_size: 2048
-      buffer_size: 20480
-      learning_rate: 3.0e-4
-      beta: 1.0e-2
+      batch_size: 128
+      buffer_size: 1280
+      learning_rate: 1.0e-4
+      beta: 1.0e-3
       epsilon: 0.2
       lambd: 0.95
-      num_epoch: 3
-      learning_rate_schedule: linear
+      num_epoch: 5
 
     network_settings:
       normalize: true
-      hidden_units: 512
+      hidden_units: 256
       num_layers: 2
       vis_encode_type: simple
-      memory:
-        sequence_length: 64
-        memory_size: 256
 
-    # DÜZELTME 1: reward_signals YORUM SATIRI OLAMAZ! GAIL BUNUN ALTINDADIR.
     reward_signals:
       extrinsic:
         gamma: 0.99
-        strength: 1.0
+        strength: 0.1
 
-      # GAIL bir ödül sinyalidir, reward_signals altında olmalıdır.
       gail:
         gamma: 0.99
-        strength: 0.1
+        strength: 3.0
         network_settings:
           normalize: true
           hidden_units: 128
           num_layers: 2
-          vis_encode_type: simple
-        learning_rate: 3.0e-4
-        use_actions: false
+        learning_rate: 5.0e-5
+        use_actions: true
         use_vail: false
-        # DÜZELTME 2: Dosya ismini düzelttik (Opat0 -> 01)
-        demo_path: Assets/Demonstrations/RTSDemoHumanOpt0.demo
+        demo_path: Assets/Demonstrations/beterDemoTryv3.demo
 
-    # Behavioral Cloning (BC) ayrı bir bloktur, reward_signals ile aynı hizada olmalıdır.
     behavioral_cloning:
-      strength: 0.5
-      # DÜZELTME 3: Dosya ismini düzelttik
-      demo_path: Assets/Demonstrations/RTSDemoHumanOpt0.demo
+      strength: 10.0
+      demo_path: Assets/Demonstrations/beterDemoTryv3.demo
       steps: 500000
-      batch_size: 512
+      batch_size: 64
+      num_epoch: 20
+      samples_per_update: 256
 
     max_steps: 1000000
-    time_horizon: 1024
-    summary_freq: 2000
+    time_horizon: 64
+    summary_freq: 500
