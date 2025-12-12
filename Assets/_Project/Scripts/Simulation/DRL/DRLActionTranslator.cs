@@ -337,4 +337,9 @@ public class DRLActionTranslator
         var (w, s, m) = GetBuildingCost(type);
         SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, w, s, m);
     }
+    public SimUnitData GetUnitAtPosIndex(int index)
+    {
+        int2 pos = GetPosFromIndex(index);
+        return GetUnitAt(pos);
+    }
 }

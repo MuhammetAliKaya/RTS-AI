@@ -291,6 +291,25 @@ public class RTSAgent : Agent
             case AgentState.SelectTarget:
                 int targetIndex = decision;
 
+                // --- YENİ EKLEME: TOPLAMA CEZASI ---
+                // Seçilen üniteyi bul
+                var unit = _translator.GetUnitAtPosIndex(_selectedSourceIndex);
+
+                // Eğer ünite şu an kaynak topluyorsa (Gathering)
+                if (unit != null && unit.State == SimTaskType.Gathering)
+                {
+                    // Ve verilen emir "Bekle" değilse (veya aynı kaynağa tekrar tıklamak değilse)
+                    // Burada basitçe: Eğer yeni bir emir geldiyse ve bu emir işçiyi bozuyorsa ceza ver.
+                    // Not: ActionType 12 (Gather) olsa bile, sürekli emir verip animasyonu resetlemek kötü olabilir.
+
+                    // Ciddi bir ceza ver ki gereksiz yere işçileri dürtmesin.
+                    if (_selectedActionType != ACT_WAIT)
+                    {
+                        AddReward(-0.05f); // "Rahat bırak şu işçiyi" cezası
+                        if (ShowDebugLogs) Debug.Log("Toplayan işçi bölündü! Ceza verildi.");
+                    }
+                }
+                // -----------------------------------
                 // --- FİNAL: EMRİ UYGULA ---
                 // Artık elimizde Source, Action ve Target var.
                 bool success = _translator.ExecuteAction(_selectedActionType, _selectedSourceIndex, targetIndex);
@@ -362,8 +381,21 @@ public class RTSAgent : Agent
             case AgentState.SelectUnit:
                 for (int i = 0; i < totalMapSize; i++)
                 {
-                    // Sadece benim birimlerimi veya binalarımı seçebilirim
+                    // 1. Birim benim mi?
                     bool isMyUnitOrBuilding = _translator.IsUnitOwnedByPlayer(i, 1);
+
+                    // --- YENİ EKLEME: İNŞAAT KİLİDİ ---
+                    // Eğer birim benimse ama şu an "Building" durumundaysa seçilemesin.
+                    if (isMyUnitOrBuilding)
+                    {
+                        var unit = _translator.GetUnitAtPosIndex(i);
+                        if (unit != null && unit.State == SimTaskType.Building)
+                        {
+                            isMyUnitOrBuilding = false; // Maskele
+                        }
+                    }
+                    // ----------------------------------
+
                     actionMask.SetActionEnabled(0, i, isMyUnitOrBuilding);
                 }
                 break;
@@ -535,28 +567,60 @@ public class RTSAgent : Agent
 
     // 3. İNŞAAT ÖDÜLÜ
     // Nüfus ve Teknoloji gelişimi için.
+    // RTSAgent.cs içinde HandleBuildingCompleted fonksiyonunu bu şekilde güncelle:
+
     private void HandleBuildingCompleted(SimBuildingData building)
     {
         if (building.PlayerID == 1)
         {
-            switch (building.Type)
+            // Temel ödülü maliyete göre hesapla
+            float baseReward = GetCostBasedReward(building.Type);
+
+            if (building.Type == SimBuildingType.Barracks)
             {
-                case SimBuildingType.House:
-                    AddReward(0.2f); // Nüfus artışı
-                    break;
-                case SimBuildingType.Barracks:
-                    AddReward(1.0f); // Teknoloji (Kritik adım)
-                    break;
-                case SimBuildingType.Tower:
-                    AddReward(0.5f); // Savunma
-                    break;
-                case SimBuildingType.Farm:
-                case SimBuildingType.WoodCutter:
-                case SimBuildingType.StonePit:
-                    AddReward(0.3f); // Ekonomi
-                    break;
+                // KIŞLA ÖZEL DURUMU:
+                // İlk kışla stratejik bir eşiktir (Teknoloji açar), bu yüzden devasa ödül ver.
+                // Sonraki kışlalar sadece kaynak maliyeti kadar (düşük) ödül verir.
+                int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed);
+
+                if (barracksCount == 1)
+                {
+                    AddReward(5.0f); // Stratejik Teşvik
+                    if (ShowDebugLogs) Debug.Log(">>> İLK KIŞLA! STRATEJİK BONUS! (+5.0) <<<");
+                }
+                else
+                {
+                    AddReward(baseReward); // Sadece maliyet karşılığı (Örn: 200 kaynak -> 0.2 puan)
+                }
+            }
+            else
+            {
+                // Diğer tüm binalar için adil (cost-based) ödül
+                AddReward(baseReward);
             }
         }
+    }
+    private float GetCostBasedReward(SimBuildingType type)
+    {
+        float totalCost = 0f;
+        switch (type)
+        {
+            case SimBuildingType.House:
+                totalCost = SimConfig.HOUSE_COST_WOOD + SimConfig.HOUSE_COST_STONE + SimConfig.HOUSE_COST_MEAT; break;
+            case SimBuildingType.Farm:
+                totalCost = SimConfig.FARM_COST_WOOD + SimConfig.FARM_COST_STONE + SimConfig.FARM_COST_MEAT; break;
+            case SimBuildingType.WoodCutter:
+                totalCost = SimConfig.WOODCUTTER_COST_WOOD + SimConfig.WOODCUTTER_COST_STONE + SimConfig.WOODCUTTER_COST_MEAT; break;
+            case SimBuildingType.StonePit:
+                totalCost = SimConfig.STONEPIT_COST_WOOD + SimConfig.STONEPIT_COST_STONE + SimConfig.STONEPIT_COST_MEAT; break;
+            case SimBuildingType.Barracks:
+                totalCost = SimConfig.BARRACKS_COST_WOOD + SimConfig.BARRACKS_COST_STONE + SimConfig.BARRACKS_COST_MEAT; break;
+            case SimBuildingType.Tower:
+                totalCost = SimConfig.TOWER_COST_WOOD + SimConfig.TOWER_COST_STONE + SimConfig.TOWER_COST_MEAT; break;
+            case SimBuildingType.Wall:
+                totalCost = SimConfig.WALL_COST_WOOD + SimConfig.WALL_COST_STONE + SimConfig.WALL_COST_MEAT; break;
+        }
+        return totalCost * 0.001f;
     }
     private void OnDrawGizmos()
     {
