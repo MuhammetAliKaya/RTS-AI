@@ -243,7 +243,7 @@ public class RTSAgent : Agent
         // Cezalar / Ödüller
         // if (!isSuccess && actionType != 0) AddReward(-0.001f); 
         // Geçersiz hamle
-        AddReward(-0.001f); // Zaman cezası
+        // AddReward(-0.001f); // Zaman cezası
     }
 
     // --- HEURISTIC (ÖĞRETMEN MODU) ---
