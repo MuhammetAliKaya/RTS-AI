@@ -1254,12 +1254,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 6
+    VectorObservationSize: 10
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
-      BranchSizes: 0c0000009001000090010000
-    VectorActionSize: 0c0000009001000090010000
+      BranchSizes: 90010000
+    VectorActionSize: 90010000
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
@@ -1286,7 +1286,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Record: 1
   NumStepsToRecord: 0
-  DemonstrationName: beter_Demo_Try_v3
+  DemonstrationName: 10t2
   DemonstrationDirectory: Assets/Demonstrations
 --- !u!1 &660227090
 GameObject:
@@ -1438,9 +1438,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 61ec2a4fa0676d94e84f5eef5ee8badd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanSpeed: 20
+  PanSpeed: 2
   PanLimitMin: {x: -10, y: -10}
-  ScrollSpeed: 20
+  ScrollSpeed: 2
   MinZoom: 5
   MaxZoom: 30
 --- !u!1 &775438143

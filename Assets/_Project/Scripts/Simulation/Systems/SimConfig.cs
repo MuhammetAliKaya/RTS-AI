@@ -31,8 +31,8 @@ namespace RTS.Simulation.Systems
         public const int STONEPIT_COST_MEAT = 50; // Yeni
 
         // Kışla (Barracks)
-        public const int BARRACKS_COST_WOOD = 100;
-        public const int BARRACKS_COST_STONE = 100;
+        public const int BARRACKS_COST_WOOD = 1000;
+        public const int BARRACKS_COST_STONE = 1000;
         public const int BARRACKS_COST_MEAT = 0; // Yeni
 
         // Kule (Tower)

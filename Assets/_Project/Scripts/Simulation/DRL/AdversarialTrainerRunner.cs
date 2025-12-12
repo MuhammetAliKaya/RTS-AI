@@ -120,22 +120,34 @@ public class AdversarialTrainerRunner : MonoBehaviour
             _enemyAI.Update(dt);
         }
 
-        // if (stepCount % 80 == 0)
+        if (stepCount % 80 == 0)
+        {
+            // 1. Kullanıcıdan gelen bir emir var mı? (Tıklama önceliği)
+            bool hasUserOverride = (Agent != null && Agent._overrideActionType != 0);
+
+            // 2. Son 4 işlem boş (0) mı? (Spam kontrolü)
+            bool isSpammingWait = (Agent != null && Agent.IsIdleSpamming());
+
+            // MANTIK:
+            // Kullanıcı bir şeye bastıysa (hasUserOverride) -> İSTEK AT.
+            // VEYA
+            // Kullanıcı basmadı ama ajan spam yapmıyor (hala hareketli veya yeni durdu) -> İSTEK AT.
+            if (hasUserOverride || !isSpammingWait)
+            {
+                if (Agent != null)
+                {
+                    Agent.RequestDecision();
+                    // Debug.Log("RequestDecision: Kayıt Alınıyor...");
+                }
+            }
+        }
+
+        // _agentDecisionCounter++;
+        // if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
         // {
-
-        if (Agent != null && Agent._overrideActionType != 0)
-        {
-            Agent.RequestDecision();
-            Debug.Log("RequestDecision");
-        }
+        //     _agentDecisionCounter = 0;
+        //     if (Agent != null && IsTrainingMode) Agent.RequestDecision();
         // }
-
-        _agentDecisionCounter++;
-        if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
-        {
-            _agentDecisionCounter = 0;
-            if (Agent != null && IsTrainingMode) Agent.RequestDecision();
-        }
 
         // 3. Simülasyonu İlerlet
         if (_buildSys != null) _buildSys.UpdateAllBuildings(dt);

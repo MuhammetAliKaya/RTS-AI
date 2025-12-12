@@ -59,6 +59,8 @@ public class RTSAgent : Agent
 
     private bool _hasPendingDemoInput = false;
 
+    private Queue<int> _actionHistory = new Queue<int>();
+
 
     public enum AgentState
     {
@@ -218,7 +220,7 @@ public class RTSAgent : Agent
     {
         if (_world == null || !_world.Players.ContainsKey(1))
         {
-            for (int i = 0; i < 14; i++) sensor.AddObservation(0f); // Boyut 14'e çıkacak
+            for (int i = 0; i < 10; i++) sensor.AddObservation(0f); // Boyut 14'e çıkacak
             return;
         }
 
@@ -290,6 +292,11 @@ public class RTSAgent : Agent
 
             case AgentState.SelectTarget:
                 int targetIndex = decision;
+
+                // --- BURAYI EKLE: İşlem geçmişini kaydet ---
+                if (_actionHistory.Count >= 4) _actionHistory.Dequeue();
+                _actionHistory.Enqueue(_selectedActionType);
+                // ------------------------------------------
 
                 // --- YENİ EKLEME: TOPLAMA CEZASI ---
                 // Seçilen üniteyi bul
@@ -648,5 +655,18 @@ public class RTSAgent : Agent
         int y = index / w;
         // Senin grid sistemine göre offset eklemen gerekebilir
         return new Vector3(x, 0, y) + Vector3.one * 0.5f;
+    }
+
+    public bool IsIdleSpamming()
+    {
+        // Henüz 4 işlem birikmediyse spam sayılmaz, kayda devam.
+        if (_actionHistory.Count < 4) return false;
+
+        // Kuyruktaki tüm elemanlar 0 mı diye bak
+        foreach (int action in _actionHistory)
+        {
+            if (action != 0) return false; // Arada 0 olmayan bir işlem varsa spam değildir.
+        }
+        return true; // Hepsi 0 ise spam yapıyor demektir.
     }
 }

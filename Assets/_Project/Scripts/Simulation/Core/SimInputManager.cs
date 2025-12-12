@@ -94,10 +94,10 @@ public class SimInputManager : MonoBehaviour
 
     void HandleMovementOrder()
     {
+        // 1. DÜNYA VE SEÇİM KONTROLÜ
         var world = SimGameContext.ActiveWorld;
         if (world == null || SelectedUnitID == -1) return;
 
-        // Seçili üniteyi al
         if (!world.Units.TryGetValue(SelectedUnitID, out SimUnitData selectedUnit))
         {
             SelectedUnitID = -1;
@@ -107,88 +107,133 @@ public class SimInputManager : MonoBehaviour
         // Sadece kendi ünitelerimiz
         if (selectedUnit.PlayerID != 1) return;
 
-        int2? gridPos = GetGridPositionUnderMouse();
-        if (gridPos == null) return;
+        // 2. HEDEF TESPİTİ (RAYCAST ÖNCELİKLİ)
+        // Önce "Görsel" olarak neye tıkladığımıza bakıyoruz (Ağaç, Bina, Ünite).
+        // Bu sayede izometrik hataları (ağacın arkasına yürüme) engelliyoruz.
 
-        // --- CONTEXT (BAĞLAM) HESAPLAMA ---
-        // Sağ tıklandığında ne yapılacağına karar ver (Smart Context)
-        int actionID = 11; // Varsayılan: MOVE (11)
+        int2 targetGridPos = new int2(-1, -1);
+        bool hitEntity = false;
+        int clickedEntityID = -1; // Tıklanan objenin ID'sini tutalım
 
-        var targetNode = world.Map.Grid[gridPos.Value.x, gridPos.Value.y];
+        Vector2 mouseWorldPos = MainCamera.ScreenToWorldPoint(Input.mousePosition);
+        RaycastHit2D hit = Physics2D.Raycast(mouseWorldPos, Vector2.zero);
 
-        // 1. Hedefte bir ünite veya bina var mı?
-        if (targetNode.OccupantID != -1)
+        if (hit.collider != null)
         {
-            if (world.Units.TryGetValue(targetNode.OccupantID, out SimUnitData targetUnit))
+            SimEntityVisual visual = hit.collider.GetComponent<SimEntityVisual>();
+            if (visual != null)
+            {
+                int id = visual.ID;
+                clickedEntityID = id;
+
+                // Tıklanan şey Kaynak mı?
+                if (world.Resources.ContainsKey(id))
+                {
+                    targetGridPos = world.Resources[id].GridPosition;
+                    hitEntity = true;
+                }
+                // Tıklanan şey Bina mı?
+                else if (world.Buildings.ContainsKey(id))
+                {
+                    targetGridPos = world.Buildings[id].GridPosition;
+                    hitEntity = true;
+                }
+                // Tıklanan şey Ünite mi?
+                else if (world.Units.ContainsKey(id))
+                {
+                    targetGridPos = world.Units[id].GridPosition;
+                    hitEntity = true;
+                }
+            }
+        }
+
+        // Eğer bir objeye denk gelmediysek, zemini (matematiksel grid'i) kullan
+        if (!hitEntity)
+        {
+            int2? calculatedPos = GetGridPositionUnderMouse();
+            if (calculatedPos == null) return; // Harita dışı
+            targetGridPos = calculatedPos.Value;
+        }
+
+        // 3. AKSİYON TÜRÜNE KARAR VER (SMART CONTEXT)
+        // Varsayılan: MOVE (11)
+        int actionID = 11;
+
+        // Hedef karesinde ne var? (Raycast ile bulduysak zaten biliyoruz, yoksa Grid'den bakıyoruz)
+        var targetNode = world.Map.Grid[targetGridPos.x, targetGridPos.y];
+        int occupantID = (hitEntity) ? clickedEntityID : targetNode.OccupantID;
+
+        // A. DÜŞMAN KONTROLÜ (Ünite veya Bina)
+        if (occupantID != -1)
+        {
+            if (world.Units.TryGetValue(occupantID, out SimUnitData targetUnit))
             {
                 // Düşman mı? -> ATTACK (10)
                 if (targetUnit.PlayerID != selectedUnit.PlayerID) actionID = 10;
             }
-            else if (world.Buildings.TryGetValue(targetNode.OccupantID, out SimBuildingData targetBuilding))
+            else if (world.Buildings.TryGetValue(occupantID, out SimBuildingData targetBuilding))
             {
                 // Düşman binası mı? -> ATTACK (10)
                 if (targetBuilding.PlayerID != selectedUnit.PlayerID) actionID = 10;
             }
         }
-        // 2. Hedefte kaynak var mı? -> GATHER (12)
-        else if (world.Resources.Values.Any(r => r.GridPosition.Equals(gridPos.Value)))
+
+        // B. KAYNAK KONTROLÜ
+        // Raycast ile bir kaynağa tıkladıysak VEYA o karede kaynak varsa
+        if (world.Resources.Values.Any(r => r.GridPosition.Equals(targetGridPos)))
         {
-            actionID = 12;
+            actionID = 12; // GATHER
         }
 
-        // 3. UI'dan özel bir işlem seçildiyse (Bina kurma vb.) onu koru
+        // C. UI'DAN GELEN ÖZEL KOMUT (İnşaat vb.)
         if (_pendingActionID != 10 && _pendingActionID != 0)
         {
             actionID = _pendingActionID;
         }
 
-        // --- ML-AGENTS ENTEGRASYONU ---
-        int mapW = world.Map.Width;
-        int sourceIndex = (selectedUnit.GridPosition.y * mapW) + selectedUnit.GridPosition.x;
-        int targetIndex = (gridPos.Value.y * mapW) + gridPos.Value.x;
-
-        // Agent varsa veriyi gönder ve çık
+        // 4. ML-AGENTS KAYIT (DÜZELTİLEN KISIM)
         if (RTSAgent.Instance != null)
         {
-            // Kaydı oluştur ve ajanı DÜRT
+            int mapW = world.Map.Width;
+            int sourceIndex = (selectedUnit.GridPosition.y * mapW) + selectedUnit.GridPosition.x;
+            int targetIndex = (targetGridPos.y * mapW) + targetGridPos.x;
+
+            // Ajanı dürt (Kayıt alması için)
             RTSAgent.Instance.RegisterExternalAction(actionID, sourceIndex, targetIndex);
 
-            // İşlem sonrası varsayılan moda dön
-            _pendingActionID = 10;
-            return;
+            // DİKKAT: BURADA 'return' YOK! Kod aşağı akıp işlemi yapacak.
         }
 
-        // --- AGENT YOKSA MANUEL ÇALIŞTIRMA (FALLBACK) ---
-        // Burası test sahnelerinde ajan yoksa veya manuel kontrol isteniyorsa çalışır.
-        if (actionID == 10) // Attack
+        // 5. İŞLEMİ UYGULA (MANUEL FORCING)
+        // Bu kısım hem ajan varken (kayıt anında) hem yokken (test) çalışır.
+
+        if (actionID == 10) // ATTACK
         {
-            // Hedefin ne olduğunu (Bina mı, Ünite mi) tekrar tespit et ve saldır
-            if (targetNode.OccupantID != -1)
-            {
-                if (world.Units.TryGetValue(targetNode.OccupantID, out SimUnitData enemyUnit))
-                {
-                    SimUnitSystem.OrderAttackUnit(selectedUnit, enemyUnit, world);
-                }
-                else if (world.Buildings.TryGetValue(targetNode.OccupantID, out SimBuildingData enemyBuilding))
-                {
-                    SimUnitSystem.OrderAttack(selectedUnit, enemyBuilding, world);
-                }
-            }
+            // Hedefi tekrar bul (Unit mi Bina mı?)
+            if (world.Units.TryGetValue(occupantID, out SimUnitData enemyUnit))
+                SimUnitSystem.OrderAttackUnit(selectedUnit, enemyUnit, world);
+            else if (world.Buildings.TryGetValue(occupantID, out SimBuildingData enemyBuilding))
+                SimUnitSystem.OrderAttack(selectedUnit, enemyBuilding, world);
         }
-        else if (actionID == 12) // Gather
+        else if (actionID == 12) // GATHER
         {
-            var res = world.Resources.Values.FirstOrDefault(r => r.GridPosition.Equals(gridPos.Value));
+            var res = world.Resources.Values.FirstOrDefault(r => r.GridPosition.Equals(targetGridPos));
             if (res != null)
             {
-                SimUnitSystem.TryAssignGatherTask(selectedUnit, res, world);
+                bool assigned = SimUnitSystem.TryAssignGatherTask(selectedUnit, res, world);
+                if (!assigned)
+                {
+                    // Eğer toplama görevi verilemezse (örn: asker seçiliyse) oraya yürü
+                    SimUnitSystem.OrderMove(selectedUnit, targetGridPos, world);
+                }
             }
         }
-        else // Move (11) veya diğerleri
+        else // MOVE (11) veya diğerleri
         {
-            SimUnitSystem.OrderMove(selectedUnit, gridPos.Value, world);
+            SimUnitSystem.OrderMove(selectedUnit, targetGridPos, world);
         }
 
-        // İşlem sonrası varsayılan moda dön (Manuel mod için de geçerli)
+        // Modu sıfırla
         _pendingActionID = 10;
     }
 

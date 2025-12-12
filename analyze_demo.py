@@ -12,7 +12,7 @@ except ImportError:
 
 # --- AYARLAR ---
 # Dosya ismini buraya tam olarak yaz (Uzantısı .demo olmalı)
-DEMO_PATH = "Assets/Demonstrations/beterDemoTry_8.demo" 
+DEMO_PATH = "Assets/Demonstrations/t1_4.demo" 
 # ----------------
 
 def analyze_demo_final(path):
