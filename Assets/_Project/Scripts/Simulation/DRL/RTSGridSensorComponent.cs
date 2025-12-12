@@ -28,4 +28,12 @@ public class RTSGridSensorComponent : SensorComponent
         _sensor = new RTSGridSensor(null, null, SensorName);
         return new ISensor[] { _sensor };
     }
+
+    public void SetHighlight(int index)
+    {
+        if (_sensor != null)
+        {
+            _sensor.SetSelectedUnitIndex(index);
+        }
+    }
 }

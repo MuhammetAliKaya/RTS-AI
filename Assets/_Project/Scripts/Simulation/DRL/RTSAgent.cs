@@ -50,6 +50,17 @@ public class RTSAgent : Agent
     private const int ACT_BUILD_WALL = 9;
     private const int ACT_SMART_COMMAND = 10;
 
+    public enum AgentState
+    {
+        SelectUnit = 0,   // Adım 1: KİM?
+        SelectAction = 1, // Adım 2: NE?
+        SelectTarget = 2  // Adım 3: NEREYE?
+    }
+    private AgentState _currentState = AgentState.SelectUnit;
+
+    private int _selectedSourceIndex = -1; // 1. Adımda seçilen birim
+    private int _selectedActionType = 0;   // 2. Adımda seçilen emir
+
     protected override void Awake()
     {
         base.Awake();
@@ -190,9 +201,9 @@ public class RTSAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (_world == null)
+        if (_world == null || !_world.Players.ContainsKey(1))
         {
-            for (int i = 0; i < 6; i++) sensor.AddObservation(0f);
+            for (int i = 0; i < 14; i++) sensor.AddObservation(0f); // Boyut 14'e çıkacak
             return;
         }
 
@@ -200,79 +211,128 @@ public class RTSAgent : Agent
         {
             var me = _world.Players[1];
 
-            // KAYNAK GÖZLEMLERİ: Logaritmik Ölçekleme ile sınırlandırılmamış normalizasyon
+            // 1. KAYNAKLAR
             sensor.AddObservation(LogScale(me.Wood, LOG_ANCHOR_WOOD));
             sensor.AddObservation(LogScale(me.Stone, LOG_ANCHOR_STONE_MEAT));
             sensor.AddObservation(LogScale(me.Meat, LOG_ANCHOR_STONE_MEAT));
-
-            // Nüfus Gözlemi (Aynı logaritmik ölçekleme kullanılabilir)
             sensor.AddObservation(LogScale(me.CurrentPopulation, LOG_ANCHOR_POPULATION));
 
-            // Birim Sayısı Gözlemleri
+            // 2. STATE BİLGİSİ (One-Hot)
+            sensor.AddObservation(_currentState == AgentState.SelectUnit ? 1f : 0f);
+            sensor.AddObservation(_currentState == AgentState.SelectAction ? 1f : 0f);
+            sensor.AddObservation(_currentState == AgentState.SelectTarget ? 1f : 0f);
+
+            // 3. CONTEXT & HIGHLIGHT
+            float contextObs = 0f;
+            if (_currentState != AgentState.SelectUnit && _selectedSourceIndex != -1)
+            {
+                contextObs = _translator.GetEncodedTypeAt(_selectedSourceIndex);
+
+                // *** YENİ EKLENEN KISIM: SENSÖRÜ GÜNCELLE ***
+                if (_gridSensorComp != null)
+                    _gridSensorComp.SetHighlight(_selectedSourceIndex);
+            }
+            else
+            {
+                // Seçim yoksa highlight'ı kaldır
+                if (_gridSensorComp != null)
+                    _gridSensorComp.SetHighlight(-1);
+            }
+            sensor.AddObservation(contextObs);
+
+            // 4. BİRİM SAYILARI
             int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
             int workerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
 
             sensor.AddObservation(LogScale(soldierCount, LOG_ANCHOR_UNIT_COUNT));
             sensor.AddObservation(LogScale(workerCount, LOG_ANCHOR_UNIT_COUNT));
         }
-        else
-        {
-            for (int i = 0; i < 6; i++) sensor.AddObservation(0f);
-        }
     }
 
     // --- EYLEM UYGULAMA (Action + Source + Target) ---
     public override void OnActionReceived(ActionBuffers actions)
     {
-        if (_world == null) return;
-
-        // 3 DAL (Branch) OKUYORUZ
-        int actionType = actions.DiscreteActions[0]; // Ne yapılacak?
-        int sourceIndex = actions.DiscreteActions[1]; // Kim yapacak?
-        int targetIndex = actions.DiscreteActions[2]; // Nereye yapacak?
-
-        // --- DEBUG LOG ---
-        if (ShowDebugLogs && actionType != 0)
+        // Tek dal okuyoruz (Branch 0)
+        int decision = actions.DiscreteActions[0];
+        // --- İŞTE BU SATIR EKSİK OLABİLİR, BUNU EKLE ---
+        if (ShowDebugLogs)
         {
-            Debug.Log($"[AGENT] Action: {actionType}, Source: {sourceIndex}, Target: {targetIndex}");
+            Debug.Log($"[AGENT] STATE: {_currentState} | KARAR: {decision}");
         }
+        switch (_currentState)
+        {
+            case AgentState.SelectUnit:
+                _selectedSourceIndex = decision;
+                _currentState = AgentState.SelectAction; // Bir sonraki adıma geç
+                RequestDecision(); // Vakit kaybetmeden yeni karar iste
+                break;
 
-        // Translator'a gönder
-        bool isSuccess = _translator.ExecuteAction(actionType, sourceIndex, targetIndex);
+            case AgentState.SelectAction:
+                _selectedActionType = decision;
+                _currentState = AgentState.SelectTarget; // Bir sonraki adıma geç
+                RequestDecision(); // Vakit kaybetmeden yeni karar iste
+                break;
 
-        // Cezalar / Ödüller
-        // if (!isSuccess && actionType != 0) AddReward(-0.001f); 
-        // Geçersiz hamle
-        // AddReward(-0.001f); // Zaman cezası
+            case AgentState.SelectTarget:
+                int targetIndex = decision;
+
+                // --- FİNAL: EMRİ UYGULA ---
+                // Artık elimizde Source, Action ve Target var.
+                bool success = _translator.ExecuteAction(_selectedActionType, _selectedSourceIndex, targetIndex);
+
+                if (!success) AddReward(-0.01f); // Hata cezası (Maskelemeye rağmen olursa)
+
+                // --- RESET ---
+                // Zincir bitti, başa dön.
+                _selectedSourceIndex = -1;
+                _selectedActionType = 0;
+                _currentState = AgentState.SelectUnit;
+                break;
+        }
     }
 
     // --- HEURISTIC (ÖĞRETMEN MODU) ---
     // Artık klavye okumuyor, RegisterExternalAction ile gelen veriyi kullanıyor.
+    // RTSAgent.cs içine yapıştır (Mevcut Heuristic fonksiyonunu silip bunu koy)
+
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActions = actionsOut.DiscreteActions;
 
-        // 1. Eğer dışarıdan (UI/InputManager) bir emir geldiyse onu işle
-        if (_overrideActionType != 0)
+        // Eğer State 0 (Birim Seçimi) ise, haritada geçerli bir birim bulmaya çalış
+        if (_currentState == AgentState.SelectUnit)
         {
-            discreteActions[0] = _overrideActionType;
-            discreteActions[1] = _overrideSourceIndex;
-            discreteActions[2] = _overrideTargetIndex;
+            // Birimlerimi tara
+            foreach (var unit in _world.Units.Values)
+            {
+                if (unit.PlayerID == 1) // Benim birimim mi?
+                {
+                    // Koordinatı Index'e çevir: y * width + x
+                    int idx = unit.GridPosition.y * _world.Map.Width + unit.GridPosition.x;
+                    discreteActions[0] = idx;
+                    return; // Bulduk, çık.
+                }
+            }
+            // Birim yoksa binalara bak
+            foreach (var b in _world.Buildings.Values)
+            {
+                if (b.PlayerID == 1)
+                {
+                    int idx = b.GridPosition.y * _world.Map.Width + b.GridPosition.x;
+                    discreteActions[0] = idx;
+                    return;
+                }
+            }
 
-            if (ShowDebugLogs)
-                Debug.Log($"[HEURISTIC] External Input -> Act:{_overrideActionType} Src:{_overrideSourceIndex} Tgt:{_overrideTargetIndex}");
-
-            // Emri kullandık, sıfırla ki tekrar tekrar yapmasın
-            _overrideActionType = 0;
-            _overrideSourceIndex = 0;
-            _overrideTargetIndex = 0;
+            // Hiçbir şey yoksa mecburen 0 (Ama muhtemelen maskelenir)
+            discreteActions[0] = 0;
         }
         else
         {
-            // Emir yoksa 'Bekle'
+            // State 1 (Action) veya State 2 (Target) ise
+            // Şimdilik "Wait" (0) komutu gönderiyoruz. 
+            // Wait komutu risksizdir, logların akmasını sağlar.
             discreteActions[0] = 0;
-            discreteActions[1] = 0;
-            discreteActions[2] = 0;
         }
     }
 
@@ -280,146 +340,56 @@ public class RTSAgent : Agent
     // Şimdilik boş bırakıyoruz, çünkü Source seçimi dinamik olduğu için maskeleme çok karmaşıklaşır.
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        // 1. Dünya ve Oyuncu Kontrolü
-        if (_world == null || !_world.Players.ContainsKey(1)) return;
+        int totalMapSize = _world.Map.Width * _world.Map.Height; // Örn: 256
 
-        var me = _world.Players[1];
+        // NOT: Unity'de "Discrete Branch 0 Size" değerini harita boyutu (örn: 256) yapmalısınız.
+        // Tek bir output dalımız var artık.
 
-        // 2. Mevcut Varlık Sayılarını Hesapla (Anlık Durum)
-        // NOT: Performans için bu sayılar SimWorldState içinde tutulabilir, şimdilik LINQ ile sayıyoruz.
-        int workerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
-        int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
-
-        // Base ve Kışla için sadece inşaatı bitmiş (IsConstructed) olanları saymak daha güvenlidir
-        int baseCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base && b.IsConstructed && b.Health > 0);
-        int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed && b.Health > 0);
-
-        bool hasWorker = workerCount > 0;
-        bool hasAnyUnit = (workerCount + soldierCount) > 0;
-
-        // --- BRANCH 0: ACTION TYPE MASKELEME ---
-
-        // 0. ACT_WAIT (Her zaman mümkün)
-        // actionMask.SetActionEnabled(0, ACT_WAIT, true); 
-
-        // 1. İNŞAAT EYLEMLERİ (İşçi Gerekir + Kaynak Gerekir)
-        if (!hasWorker)
+        switch (_currentState)
         {
-            // İşçi yoksa hiçbir bina yapılamaz
-            actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
-            actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
-            actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, false);
-            actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, false);
-            actionMask.SetActionEnabled(0, ACT_BUILD_FARM, false);
-            actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, false);
-            actionMask.SetActionEnabled(0, ACT_BUILD_WALL, false);
-        }
-        else
-        {
-            // İşçi var, maliyet kontrolü yap
+            case AgentState.SelectUnit:
+                // Sadece BENİM BİRİMLERİMİN olduğu kareler seçilebilir.
+                // Diğer tüm kareleri (boş, düşman, engel) maskele.
+                for (int i = 0; i < totalMapSize; i++)
+                {
+                    bool isMyUnit = _translator.IsUnitOwnedByPlayer(i, 1); // Bu fonksiyonu Translator'da tanımlamalıyız
+                    if (!isMyUnit) actionMask.SetActionEnabled(0, i, false);
+                }
+                break;
 
-            // House (Ev)
-            if (me.Wood < SimConfig.HOUSE_COST_WOOD || me.Stone < SimConfig.HOUSE_COST_STONE || me.Meat < SimConfig.HOUSE_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+            case AgentState.SelectAction:
+                // Output [0..10] arası aksiyon tipleridir. [11..255] arasını kapatmalıyız.
+                // Ayrıca seçilen birimin yapamayacağı aksiyonları da kapatmalıyız.
 
-            // Barracks (Kışla)
-            if (me.Wood < SimConfig.BARRACKS_COST_WOOD || me.Stone < SimConfig.BARRACKS_COST_STONE || me.Meat < SimConfig.BARRACKS_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
+                // Önce tüm harita indexlerini kapat (çünkü biz action ID arıyoruz)
+                for (int i = 11; i < totalMapSize; i++) actionMask.SetActionEnabled(0, i, false);
 
-            // WoodCutter (Oduncu)
-            if (me.Wood < SimConfig.WOODCUTTER_COST_WOOD || me.Stone < SimConfig.WOODCUTTER_COST_STONE || me.Meat < SimConfig.WOODCUTTER_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, false);
+                // Seçilen birime özel kurallar
+                SimUnitType selectedUnitType = _translator.GetUnitTypeAt(_selectedSourceIndex);
 
-            // StonePit (Taş Ocağı)
-            if (me.Wood < SimConfig.STONEPIT_COST_WOOD || me.Stone < SimConfig.STONEPIT_COST_STONE || me.Meat < SimConfig.STONEPIT_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, false);
+                if (selectedUnitType == SimUnitType.Worker)
+                {
+                    // İşçi: Saldırı yapamaz (örneğin), ama bina yapar.
+                    // actionMask.SetActionEnabled(0, ACT_ATTACK, false);
+                }
+                else if (selectedUnitType == SimUnitType.Soldier)
+                {
+                    // Asker: Bina yapamaz.
+                    actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+                    actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
+                    // ...
+                }
+                break;
 
-            // Farm (Çiftlik)
-            if (me.Wood < SimConfig.FARM_COST_WOOD || me.Stone < SimConfig.FARM_COST_STONE || me.Meat < SimConfig.FARM_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_FARM, false);
-
-            // Tower (Kule)
-            if (me.Wood < SimConfig.TOWER_COST_WOOD || me.Stone < SimConfig.TOWER_COST_STONE || me.Meat < SimConfig.TOWER_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, false);
-
-            // Wall (Duvar)
-            if (me.Wood < SimConfig.WALL_COST_WOOD || me.Stone < SimConfig.WALL_COST_STONE || me.Meat < SimConfig.WALL_COST_MEAT)
-                actionMask.SetActionEnabled(0, ACT_BUILD_WALL, false);
-        }
-
-        // 2. ÜRETİM EYLEMLERİ (Bina Gerekir + Kaynak Gerekir + Bina Müsaitliği)
-        // Not: Burada "Hangi binanın boş olduğu" Source index seçiminde önemlidir. 
-        // Ancak genel Action Type maskelemesi için "En az bir müsait bina var mı?" bakabiliriz.
-        // Basitlik adına sadece bina varlığına ve kaynağa bakıyoruz.
-
-        // Train Worker (İşçi Bas) -> Base Gerekir
-        if (baseCount == 0 ||
-            me.Wood < SimConfig.WORKER_COST_WOOD ||
-            me.Stone < SimConfig.WORKER_COST_STONE ||
-            me.Meat < SimConfig.WORKER_COST_MEAT)
-        {
-            actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);
-        }
-
-        // Train Soldier (Asker Bas) -> Kışla Gerekir
-        if (barracksCount == 0 ||
-            me.Wood < SimConfig.SOLDIER_COST_WOOD ||
-            me.Stone < SimConfig.SOLDIER_COST_STONE ||
-            me.Meat < SimConfig.SOLDIER_COST_MEAT)
-        {
-            actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
-        }
-
-        // 3. KOMUT EYLEMLERİ (Birim Gerekir)
-        // Smart Command (Yürü/Saldır/Topla) -> En az 1 birimim olmalı
-        if (!hasAnyUnit)
-        {
-            actionMask.SetActionEnabled(0, ACT_SMART_COMMAND, false);
-        }
-
-        // --- BRANCH 1: SOURCE INDEX MASKING (HIZLI & DİNAMİK VERSİYON) ---
-
-        // 1. Harita bilgilerini DOĞRUDAN _world üzerinden alıyoruz (SimConfig yerine)
-        // Çünkü SimWorldState zaten Map verisini tutuyor.
-        int mapWidth = _world.Map.Width;
-        int totalCells = _world.Map.Width * _world.Map.Height;
-
-        // 2. Geçerli olan (Bana ait) indexleri bir listede topla
-        HashSet<int> validSourceIndices = new HashSet<int>();
-
-        // A) Benim Ünitelerimi (Units Dictionary'sinden) bul
-        foreach (var unit in _world.Units.Values)
-        {
-            // Sadece bana ait (PlayerID == 1) ve ölü olmayanları seç
-            if (unit.PlayerID == 1 && unit.State != SimTaskType.Dead)
-            {
-                // Koordinatı (x, y) tekil Index'e çevir: y * width + x
-                int index = unit.GridPosition.y * mapWidth + unit.GridPosition.x;
-                validSourceIndices.Add(index);
-            }
-        }
-
-        // B) Benim Binalarımı (Buildings Dictionary'sinden) bul
-        foreach (var building in _world.Buildings.Values)
-        {
-            // Sadece bana ait ve yıkılmamış binaları seç
-            if (building.PlayerID == 1 && building.Health > 0)
-            {
-                int index = building.GridPosition.y * mapWidth + building.GridPosition.x;
-                validSourceIndices.Add(index);
-            }
-        }
-
-        // 3. Tüm haritayı gez ve listemizde OLMAYAN her şeyi kapat
-        // ML-Agents "Source Index" olarak haritadaki herhangi bir kareyi seçebilir.
-        // Biz sadece bizim adamlarımızın olduğu kareleri seçmesine izin veriyoruz.
-        for (int i = 0; i < totalCells; i++)
-        {
-            // Eğer bu 'i' indexi benim geçerli listemde yoksa, o kareye tıklamayı yasakla.
-            if (!validSourceIndices.Contains(i))
-            {
-                actionMask.SetActionEnabled(1, i, false);
-            }
+            case AgentState.SelectTarget:
+                // Seçilen Action'a göre haritadaki uygunsuz yerleri kapat.
+                // Örn: ACT_BUILD_HOUSE seçildiyse, DOLU kareleri kapat.
+                for (int i = 0; i < totalMapSize; i++)
+                {
+                    bool isValidTarget = _translator.IsTargetValidForAction(_selectedActionType, i);
+                    if (!isValidTarget) actionMask.SetActionEnabled(0, i, false);
+                }
+                break;
         }
     }
 

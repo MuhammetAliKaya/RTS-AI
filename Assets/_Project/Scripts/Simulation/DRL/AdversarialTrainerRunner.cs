@@ -33,7 +33,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
     public bool IsTrainingMode = false;
 
     public float _simStepSize = 0.0025f;
-    [Range(1f, 100f)]
+    [Range(1f, 10000f)]
     public float _simStepCountPerFrame = 1f;
 
     private float _timer = 0f;

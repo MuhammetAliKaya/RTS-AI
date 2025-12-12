@@ -42,7 +42,11 @@ public class RTSGridSensor : ISensor
 
     private const int CH_FOG_OF_WAR = 24;
 
-    private const int TOTAL_CHANNELS = 25;
+    private const int CH_SELECTION = 25;
+
+    private const int TOTAL_CHANNELS = 26; // 25 -> 26 Oldu
+
+    private int _highlightedUnitIndex = -1;
 
     public RTSGridSensor(SimWorldState world, SimGridSystem gridSystem, string name = "RTSGridSensor")
     {
@@ -61,6 +65,12 @@ public class RTSGridSensor : ISensor
     {
         _world = world;
         _gridSystem = grid;
+    }
+
+    // YENİ: Ajanın seçtiği birimi sensöre bildiren metot
+    public void SetSelectedUnitIndex(int index)
+    {
+        _highlightedUnitIndex = index;
     }
 
     public string GetName() { return _name; }

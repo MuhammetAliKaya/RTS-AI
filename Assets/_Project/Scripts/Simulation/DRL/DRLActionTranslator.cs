@@ -1,5 +1,5 @@
 using UnityEngine;
-using RTS.Simulation.Data;
+using RTS.Simulation.Data; // int2 ve Enumlar buradan geliyor
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using System.Linq;
@@ -22,17 +22,140 @@ public class DRLActionTranslator
         _gridSystem = gridSys;
     }
 
+    public bool IsUnitOwnedByPlayer(int gridIndex, int playerID)
+    {
+        // Vector2Int yerine int2 kullanıyoruz
+        int2 pos = GetPosFromIndex(gridIndex);
+
+        // 1. Önce Birim Var mı?
+        var unit = GetUnitAt(pos);
+        if (unit != null && unit.PlayerID == playerID) return true;
+
+        // 2. Yoksa Bina Var mı?
+        var building = GetBuildingAt(pos);
+        if (building != null && building.PlayerID == playerID) return true;
+
+        return false;
+    }
+
+    public SimUnitType GetUnitTypeAt(int gridIndex)
+    {
+        var unit = GetUnitAt(GetPosFromIndex(gridIndex));
+        // HATA DÜZELTME: SimUnitType.None tanımlı değil.
+        // Eğer birim yoksa -1 döndürerek (Undefined) olduğunu belirtiyoruz.
+        return unit != null ? unit.UnitType : (SimUnitType)(-1);
+    }
+
+    public SimBuildingType GetBuildingTypeAt(int gridIndex)
+    {
+        var building = GetBuildingAt(GetPosFromIndex(gridIndex));
+        return building != null ? building.Type : SimBuildingType.None;
+    }
+
+    public float GetEncodedTypeAt(int gridIndex)
+    {
+        int2 pos = GetPosFromIndex(gridIndex);
+
+        var unit = GetUnitAt(pos);
+        if (unit != null)
+        {
+            // Örnek Kodlama: 0.1 = Worker, 0.2 = Soldier
+            if (unit.UnitType == SimUnitType.Worker) return 0.1f;
+            if (unit.UnitType == SimUnitType.Soldier) return 0.2f;
+        }
+
+        var building = GetBuildingAt(pos);
+        if (building != null)
+        {
+            // Örnek Kodlama: 0.5 = Base, 0.6 = Barracks
+            if (building.Type == SimBuildingType.Base) return 0.5f;
+            if (building.Type == SimBuildingType.Barracks) return 0.6f;
+            // Diğer binalar...
+            return 0.7f;
+        }
+
+        return 0f; // Boş veya tanımsız
+    }
+
+    public bool IsTargetValidForAction(int actionType, int targetIndex)
+    {
+        int2 targetPos = GetPosFromIndex(targetIndex);
+
+        // HATA DÜZELTME: SimGridSystem.IsWalkable int2 bekler
+        bool isWalkable = SimGridSystem.IsWalkable(_world, targetPos);
+
+        bool hasUnit = GetUnitAt(targetPos) != null;
+        bool hasBuilding = GetBuildingAt(targetPos) != null;
+
+        // Basit kurallar (Detaylandırılabilir)
+        switch (actionType)
+        {
+            case 0: // Wait
+                return true; // Her yer geçerli kabul edilebilir
+
+            case 1: // Build House
+            case 2: // Build Barracks
+            case 5: // Build Woodcutter
+            case 6: // Build Stonepit
+            case 7: // Build Farm
+            case 8: // Build Tower
+            case 9: // Build Wall
+                // İnşaat için: Zemin yürünebilir olmalı, birim/bina olmamalı
+                return isWalkable && !hasUnit && !hasBuilding;
+
+            case 3: // Train Worker
+            case 4: // Train Soldier
+                // Üretim için "Target" genellikle Rally Point (toplanma noktası) olur.
+                // Boş bir yer olmalı.
+                return isWalkable && !hasBuilding;
+
+            case 10: // Smart Command (Saldır / Yürü / Topla)
+                // Yürümek için boş yer, Saldırmak için düşman, Toplamak için kaynak...
+                // Maskeleme için "harita içinde olması" yeterli diyebiliriz.
+                return _world.Map.IsInBounds(targetPos);
+
+            default:
+                return false;
+        }
+    }
+
+    // HATA DÜZELTME: Dönüş tipi Vector2Int yerine int2 yapıldı
+    private int2 GetPosFromIndex(int index)
+    {
+        int x = index % _world.Map.Width;
+        int y = index / _world.Map.Width;
+        return new int2(x, y);
+    }
+
+    // HATA DÜZELTME: Parametre int2 yapıldı
+    private SimUnitData GetUnitAt(int2 pos)
+    {
+        // int2 struct olduğu için LINQ sorgusunda == operatörü düzgün çalışır
+        return _world.Units.Values.FirstOrDefault(u => u.GridPosition == pos && u.State != SimTaskType.Dead);
+    }
+
+    // HATA DÜZELTME: Parametre int2 yapıldı
+    private SimBuildingData GetBuildingAt(int2 pos)
+    {
+        return _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == pos && b.Health > 0);
+    }
+
     // --- ANA ÇALIŞTIRMA FONKSİYONU ---
     public bool ExecuteAction(int actionType, int sourceIndex, int targetIndex)
     {
-        // 1. KOORDİNAT HESAPLA
+        // 1. KOORDİNAT HESAPLA (int2 kullanarak)
         int w = _world.Map.Width;
         int2 targetPos = new int2(targetIndex % w, targetIndex / w);
         int2 sourcePos = new int2(sourceIndex % w, sourceIndex / w);
 
         // 2. KAYNAK VARLIĞI BUL (Source Location Check)
-        SimUnitData sourceUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == sourcePos && u.PlayerID == MY_PLAYER_ID);
-        SimBuildingData sourceBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == sourcePos && b.PlayerID == MY_PLAYER_ID);
+        SimUnitData sourceUnit = GetUnitAt(sourcePos);
+        // Unit kontrolü: Sadece benim olmalı
+        if (sourceUnit != null && sourceUnit.PlayerID != MY_PLAYER_ID) sourceUnit = null;
+
+        SimBuildingData sourceBuilding = GetBuildingAt(sourcePos);
+        // Bina kontrolü: Sadece benim olmalı
+        if (sourceBuilding != null && sourceBuilding.PlayerID != MY_PLAYER_ID) sourceBuilding = null;
 
         // Eğer kaynak boşsa ve eylem "Bekle" değilse -> HATA
         if (sourceUnit == null && sourceBuilding == null && actionType != 0)
@@ -46,7 +169,7 @@ public class DRLActionTranslator
             // --- İNŞAAT (Kaynak: WORKER olmalı) ---
             case 1: return TryBuild(sourceUnit, SimBuildingType.House, targetPos);
             case 2: return TryBuild(sourceUnit, SimBuildingType.Barracks, targetPos);
-            // 3 ve 4 Üretim için ayrıldı (Aşağıda)
+            // 3 ve 4 Üretim için ayrıldı
             case 5: return TryBuild(sourceUnit, SimBuildingType.WoodCutter, targetPos);
             case 6: return TryBuild(sourceUnit, SimBuildingType.StonePit, targetPos);
             case 7: return TryBuild(sourceUnit, SimBuildingType.Farm, targetPos);
@@ -54,7 +177,7 @@ public class DRLActionTranslator
             case 9: return TryBuild(sourceUnit, SimBuildingType.Wall, targetPos);
 
             // --- ÜRETİM (Kaynak: BİNA olmalı) ---
-            // Target Index üretimde önemsizdir, bina kendi içinde üretir.
+            // Target Index üretimde önemsizdir ama validasyon için kullanılabilir.
             case 3: return TryTrain(sourceBuilding, SimUnitType.Worker);
             case 4: return TryTrain(sourceBuilding, SimUnitType.Soldier);
 
@@ -65,7 +188,6 @@ public class DRLActionTranslator
     }
 
     // --- YARDIMCI METOTLAR ---
-
     private bool TryBuild(SimUnitData worker, SimBuildingType type, int2 buildPos)
     {
         // Kaynak bir işçi mi?
@@ -75,14 +197,16 @@ public class DRLActionTranslator
         if (!CanAfford(type)) return false;
 
         // Yer uygun mu? (Harita sınırları ve yürünebilirlik)
-        if (!_world.Map.IsInBounds(buildPos) || !_gridSystem.IsWalkable(buildPos)) return false;
+        // SimGridSystem.IsWalkable statik çağrısı int2 alır
+        if (!SimGridSystem.IsWalkable(_world, buildPos)) return false;
 
-        // O karede zaten bir bina var mı?
+        // O karede zaten bir bina var mı? (Ekstra güvenlik)
         if (_world.Buildings.Values.Any(b => b.GridPosition == buildPos)) return false;
 
         // İnşaat işlemini başlat
         SpendResources(type);
-        SimBuildingData newBuilding = _buildingSystem.CreateBuilding(MY_PLAYER_ID, type, buildPos);
+        // SimBuildingSystem.CreateBuilding factory methodunu kullanıyoruz
+        SimBuildingData newBuilding = SimBuildingSystem.CreateBuilding(_world, MY_PLAYER_ID, type, buildPos);
 
         // İşçiye emri ver
         _unitSystem.OrderBuild(worker, newBuilding);
@@ -138,35 +262,20 @@ public class DRLActionTranslator
         return true;
     }
 
-    // --- MALİYET YÖNETİMİ (SimConfig ile Eşitlendi) ---
+    // --- MALİYET YÖNETİMİ ---
 
     private (int wood, int stone, int meat) GetBuildingCost(SimBuildingType type)
     {
         switch (type)
         {
-            case SimBuildingType.House:
-                return (SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
-
-            case SimBuildingType.Barracks:
-                return (SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
-
-            case SimBuildingType.WoodCutter:
-                return (SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
-
-            case SimBuildingType.StonePit:
-                return (SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
-
-            case SimBuildingType.Farm:
-                return (SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
-
-            case SimBuildingType.Tower:
-                return (SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT);
-
-            case SimBuildingType.Wall:
-                return (SimConfig.WALL_COST_WOOD, SimConfig.WALL_COST_STONE, SimConfig.WALL_COST_MEAT);
-
-            default:
-                return (0, 0, 0);
+            case SimBuildingType.House: return (SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
+            case SimBuildingType.Barracks: return (SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
+            case SimBuildingType.WoodCutter: return (SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
+            case SimBuildingType.StonePit: return (SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
+            case SimBuildingType.Farm: return (SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
+            case SimBuildingType.Tower: return (SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT);
+            case SimBuildingType.Wall: return (SimConfig.WALL_COST_WOOD, SimConfig.WALL_COST_STONE, SimConfig.WALL_COST_MEAT);
+            default: return (0, 0, 0);
         }
     }
 
@@ -174,7 +283,6 @@ public class DRLActionTranslator
     {
         if (type == SimUnitType.Worker)
             return (SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
-
         // Soldier
         return (SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
     }
