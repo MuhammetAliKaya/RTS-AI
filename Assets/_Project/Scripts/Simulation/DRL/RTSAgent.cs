@@ -57,6 +57,8 @@ public class RTSAgent : Agent
     private float _collectedMeatReward = 0f;
     private const float MAX_RESOURCE_REWARD = 2.0f;
 
+    private bool _hasPendingDemoInput = false;
+
 
     public enum AgentState
     {
@@ -188,8 +190,10 @@ public class RTSAgent : Agent
         _overrideSourceIndex = sourceIndex;
         _overrideTargetIndex = targetIndex;
 
-        // İsteğe bağlı: Anlık tepki için karar isteyebilirsin
-        // RequestDecision();
+        _hasPendingDemoInput = true; // Yeni demo girdisi var!
+
+        // Ajanı uyandırıp karar vermesini (Heuristic'i tetiklemesini) sağlıyoruz.
+        RequestDecision();
     }
 
     public override void OnEpisodeBegin()
@@ -314,45 +318,34 @@ public class RTSAgent : Agent
     {
         var discreteActions = actionsOut.DiscreteActions;
 
-        // Eğer State 0 (Birim Seçimi) ise, haritada geçerli bir birim bulmaya çalış
-        if (_currentState == AgentState.SelectUnit)
+        // Eğer bekleyen bir demo girdisi yoksa "Bekle" (0) gönderip çıkıyoruz.
+        if (!_hasPendingDemoInput)
         {
-            // Birimlerimi tara
-            foreach (var unit in _world.Units.Values)
-            {
-                if (unit.PlayerID == 1) // Benim birimim mi?
-                {
-                    // Koordinatı Index'e çevir: y * width + x
-                    int idx = unit.GridPosition.y * _world.Map.Width + unit.GridPosition.x;
-                    discreteActions[0] = idx;
-                    return; // Bulduk, çık.
-                }
-            }
-            // Birim yoksa binalara bak
-            foreach (var b in _world.Buildings.Values)
-            {
-                if (b.PlayerID == 1)
-                {
-                    int idx = b.GridPosition.y * _world.Map.Width + b.GridPosition.x;
-                    discreteActions[0] = idx;
-                    return;
-                }
-            }
-
-            // Hiçbir şey yoksa mecburen 0 (Ama muhtemelen maskelenir)
             discreteActions[0] = 0;
+            return;
         }
-        else
+
+        // Mevcut durumumuza (State) göre, sakladığımız inputun hangi parçasını vereceğimizi seçiyoruz.
+        switch (_currentState)
         {
-            // State 1 (Action) veya State 2 (Target) ise
-            // Şimdilik "Wait" (0) komutu gönderiyoruz. 
-            // Wait komutu risksizdir, logların akmasını sağlar.
-            discreteActions[0] = 0;
+            case AgentState.SelectUnit: // Adım 1: Kaynak (Source) Seçimi
+                discreteActions[0] = _overrideSourceIndex;
+                break;
+
+            case AgentState.SelectAction: // Adım 2: Eylem (Action) Seçimi
+                discreteActions[0] = _overrideActionType;
+                break;
+
+            case AgentState.SelectTarget: // Adım 3: Hedef (Target) Seçimi
+                discreteActions[0] = _overrideTargetIndex;
+
+                // Zincir tamamlanacağı için bayrağı indiriyoruz. 
+                // (Not: OnActionReceived çalıştıktan sonra state başa dönecek)
+                _hasPendingDemoInput = false;
+                break;
         }
     }
 
-    // Maskeleme şimdilik kapalı kalabilir veya 3 kanallı yapıya göre güncellenmelidir.
-    // Şimdilik boş bırakıyoruz, çünkü Source seçimi dinamik olduğu için maskeleme çok karmaşıklaşır.
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
         // Dünya veya Harita yoksa işlem yapma

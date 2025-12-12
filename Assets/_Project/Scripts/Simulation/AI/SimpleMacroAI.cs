@@ -245,7 +245,8 @@ public class SimpleMacroAI
             ConstructionProgress = 0f,
             Health = 100 // Varsayılan can
         };
-        // SimBuildingSystem.InitializeBuildingStats(b); // Eğer statik bir metodun varsa kullan
+        SimBuildingSystem.InitializeBuildingStats(b);
+        // // Eğer statik bir metodun varsa kullan
         _world.Buildings.Add(b.ID, b);
         _world.Map.Grid[pos.x, pos.y].OccupantID = b.ID;
         _world.Map.Grid[pos.x, pos.y].IsWalkable = false;
