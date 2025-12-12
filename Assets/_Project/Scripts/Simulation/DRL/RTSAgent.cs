@@ -291,7 +291,11 @@ public class RTSAgent : Agent
                 // Artık elimizde Source, Action ve Target var.
                 bool success = _translator.ExecuteAction(_selectedActionType, _selectedSourceIndex, targetIndex);
 
-                if (!success) AddReward(-0.01f); // Hata cezası (Maskelemeye rağmen olursa)
+                if (!success)
+                {
+                    if (ShowDebugLogs) Debug.Log("maskelemeye rağmen hatalı işlem");
+                    AddReward(-0.01f); // Hata cezası (Maskelemeye rağmen olursa)
+                }
 
                 // --- RESET ---
                 // Zincir bitti, başa dön.

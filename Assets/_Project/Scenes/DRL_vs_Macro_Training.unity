@@ -1490,13 +1490,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Agent: {fileID: 645419872}
   MapSize: 20
-  MaxSteps: 25000
+  MaxSteps: 20000
   AllowedAgentName: AdversarialTrainerRunner
   mapSeed: 12345
   useRandomSeed: 0
   IsTrainingMode: 1
   _simStepSize: 0.01
-  _simStepCountPerFrame: 100
+  _simStepCountPerFrame: 10000
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
   EnemyDifficulty: 1

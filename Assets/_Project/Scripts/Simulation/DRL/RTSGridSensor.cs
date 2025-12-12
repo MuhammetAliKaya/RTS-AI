@@ -44,7 +44,9 @@ public class RTSGridSensor : ISensor
 
     private const int CH_SELECTION = 25;
 
-    private const int TOTAL_CHANNELS = 26; // 25 -> 26 Oldu
+    private const int CH_MY_IDLE_WORKER = 26; // Yeni kanal ID'si
+
+    private const int TOTAL_CHANNELS = 27;
 
     private int _highlightedUnitIndex = -1;
 
@@ -186,12 +188,32 @@ public class RTSGridSensor : ISensor
             if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
             bool isMe = (u.PlayerID == 1);
-            int channel = -1;
 
-            if (isMe) channel = (u.UnitType == SimUnitType.Soldier) ? CH_MY_SOLDIER : CH_MY_WORKER;
-            else channel = (u.UnitType == SimUnitType.Soldier) ? CH_ENEMY_SOLDIER : CH_ENEMY_WORKER;
+            if (isMe)
+            {
+                if (u.UnitType == SimUnitType.Soldier)
+                {
+                    // Asker Kanalı
+                    writer[y, x, CH_MY_SOLDIER] = 1.0f;
+                }
+                else if (u.UnitType == SimUnitType.Worker)
+                {
+                    // Genel İşçi Kanalı (Her zaman görünür)
+                    writer[y, x, CH_MY_WORKER] = 1.0f;
 
-            if (channel != -1) writer[y, x, channel] = 1.0f;
+                    // EKSTRA: Eğer işçi boşta ise (Idle) parlak göster
+                    if (u.State == SimTaskType.Idle)
+                    {
+                        writer[y, x, CH_MY_IDLE_WORKER] = 1.0f;
+                    }
+                }
+            }
+            else
+            {
+                // Düşman birimleri için standart mantık
+                int channel = (u.UnitType == SimUnitType.Soldier) ? CH_ENEMY_SOLDIER : CH_ENEMY_WORKER;
+                writer[y, x, channel] = 1.0f;
+            }
         }
 
         // 4. SEÇİM VURGUSU (HIGHLIGHT)

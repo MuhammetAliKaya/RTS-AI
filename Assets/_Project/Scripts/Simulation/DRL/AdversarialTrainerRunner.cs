@@ -168,12 +168,16 @@ public class AdversarialTrainerRunner : MonoBehaviour
         int meatDelta = myPlayer.Meat - _lastMeat;
         int stoneDelta = myPlayer.Stone - _lastStone;
 
-        if (woodDelta > 0) Agent.AddReward(woodDelta * 0.01f);
-        if (meatDelta > 0) Agent.AddReward(meatDelta * 0.01f);
-        if (stoneDelta > 0) Agent.AddReward(stoneDelta * 0.01f);
+        // if (woodDelta > 0) Agent.AddReward(woodDelta * 0.01f);
+        // if (meatDelta > 0) Agent.AddReward(meatDelta * 0.01f);
+        // if (stoneDelta > 0) Agent.AddReward(stoneDelta * 0.01f);
 
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
-        if (currentWorkers > _lastWorkerCount) Agent.AddReward(0.25f);
+        if (currentWorkers > _lastWorkerCount)
+        {
+            // Agent.AddReward(0.25f);
+            Debug.Log("New worker " + currentWorkers);
+        }
 
 
         _lastWood = myPlayer.Wood;
@@ -210,25 +214,25 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (currentSoldiers > _lastSoldiers)
         {
-            Agent.AddReward(0.5f);
+            // Agent.AddReward(0.5f);
         }
 
         if (currentEnemyUnits < _lastEnemyUnitCount)
         {
             int killCount = _lastEnemyUnitCount - currentEnemyUnits;
-            Agent.AddReward(0.5f * killCount);
+            // Agent.AddReward(0.5f * killCount);
         }
 
         if (currentEnemyBuildings < _lastEnemyBuildingCount)
         {
             int destroyCount = _lastEnemyBuildingCount - currentEnemyBuildings;
-            Agent.AddReward(2.0f * destroyCount);
+            // Agent.AddReward(2.0f * destroyCount);
         }
 
         if (currentEnemyBaseHealth < _lastEnemyBaseHealth)
         {
             float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
-            Agent.AddReward(damage * 0.001f);
+            // Agent.AddReward(damage * 0.001f);
         }
         _lastSoldiers = currentSoldiers;
 
@@ -412,7 +416,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (idleCount > 0)
         {
-            Agent.AddReward(idleCount * -0.05f);
+            Agent.AddReward(idleCount * -0.00005f);
         }
     }
 
@@ -444,7 +448,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
 
-            Agent.AddReward(reward);
+            // Agent.AddReward(reward);
             Agent.EndEpisode();
         }
     }
