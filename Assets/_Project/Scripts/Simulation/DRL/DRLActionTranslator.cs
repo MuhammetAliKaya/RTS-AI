@@ -80,42 +80,54 @@ public class DRLActionTranslator
     public bool IsTargetValidForAction(int actionType, int targetIndex)
     {
         int2 targetPos = GetPosFromIndex(targetIndex);
+        if (!_world.Map.IsInBounds(targetPos)) return false;
 
-        // HATA DÜZELTME: SimGridSystem.IsWalkable int2 bekler
+        // Hedef karesinde ne var?
+        var unitAtTarget = GetUnitAt(targetPos);
+        var buildingAtTarget = GetBuildingAt(targetPos);
         bool isWalkable = SimGridSystem.IsWalkable(_world, targetPos);
+        bool hasResource = _world.Resources.Values.Any(r => r.GridPosition == targetPos);
 
-        bool hasUnit = GetUnitAt(targetPos) != null;
-        bool hasBuilding = GetBuildingAt(targetPos) != null;
+        // Kendi birimim/binam mı? (Saldırı için önemli)
+        bool isMyUnit = (unitAtTarget != null && unitAtTarget.PlayerID == MY_PLAYER_ID);
+        bool isMyBuilding = (buildingAtTarget != null && buildingAtTarget.PlayerID == MY_PLAYER_ID);
 
-        // Basit kurallar (Detaylandırılabilir)
+        // Düşman mı?
+        bool isEnemyUnit = (unitAtTarget != null && unitAtTarget.PlayerID != MY_PLAYER_ID);
+        bool isEnemyBuilding = (buildingAtTarget != null && buildingAtTarget.PlayerID != MY_PLAYER_ID);
+
         switch (actionType)
         {
-            case 0: // Wait
-                return true; // Her yer geçerli kabul edilebilir
+            case 0: return true; // Wait
 
-            case 1: // Build House
-            case 2: // Build Barracks
-            case 5: // Build Woodcutter
-            case 6: // Build Stonepit
-            case 7: // Build Farm
-            case 8: // Build Tower
-            case 9: // Build Wall
-                // İnşaat için: Zemin yürünebilir olmalı, birim/bina olmamalı
-                return isWalkable && !hasUnit && !hasBuilding;
+            // İNŞAATLAR (1-9) - (Aynı Kalıyor)
+            case 1:
+            case 2:
+            case 5:
+            case 6:
+            case 7:
+            case 8:
+            case 9:
+                return isWalkable && unitAtTarget == null && buildingAtTarget == null && !hasResource;
 
-            case 3: // Train Worker
-            case 4: // Train Soldier
-                // Üretim için "Target" genellikle Rally Point (toplanma noktası) olur.
-                // Boş bir yer olmalı.
-                return isWalkable && !hasBuilding;
+            // ÜRETİM (3-4) - (Aynı Kalıyor)
+            case 3:
+            case 4:
+                return isWalkable && buildingAtTarget == null; // Rally point
 
-            case 10: // Smart Command (Saldır / Yürü / Topla)
-                // Yürümek için boş yer, Saldırmak için düşman, Toplamak için kaynak...
-                // Maskeleme için "harita içinde olması" yeterli diyebiliriz.
-                return _world.Map.IsInBounds(targetPos);
+            // --- YENİ AYRIŞTIRILMIŞ EYLEMLER ---
 
-            default:
-                return false;
+            case 10: // ATTACK (Sadece Düşman Varsa Geçerli)
+                return isEnemyUnit || isEnemyBuilding;
+
+            case 11: // MOVE (Sadece Boş ve Yürünebilir ise Geçerli)
+                     // Birim, Bina veya Kaynak varsa oraya "Yürü" emri verilemez (Oraya saldırılır veya toplanır)
+                return isWalkable && unitAtTarget == null && buildingAtTarget == null && !hasResource;
+
+            case 12: // GATHER (Sadece Kaynak Varsa Geçerli)
+                return hasResource;
+
+            default: return false;
         }
     }
 
@@ -181,8 +193,35 @@ public class DRLActionTranslator
             case 3: return TryTrain(sourceBuilding, SimUnitType.Worker);
             case 4: return TryTrain(sourceBuilding, SimUnitType.Soldier);
 
-            // --- AKILLI HAREKET / SALDIRI / TOPLAMA (Kaynak: UNIT olmalı) ---
-            case 10: return CommandUnitSmart(sourceUnit, targetPos);
+            case 10: // SALDIR
+                if (sourceUnit == null) return false;
+                // Hedefte ne var?
+                var enemyUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == targetPos && u.PlayerID != MY_PLAYER_ID);
+                var enemyBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == targetPos && b.PlayerID != MY_PLAYER_ID);
+
+                if (enemyUnit != null) { _unitSystem.OrderAttackUnit(sourceUnit, enemyUnit); return true; }
+                if (enemyBuilding != null) { _unitSystem.OrderAttack(sourceUnit, enemyBuilding); return true; }
+                return false;
+
+            case 11: // YÜRÜ
+                if (sourceUnit == null) return false;
+                // Zaten Validasyon yapıldığı için buranın boş olduğunu varsayıyoruz ama yine de check atılabilir.
+                if (SimGridSystem.IsWalkable(_world, targetPos))
+                {
+                    _unitSystem.OrderMove(sourceUnit, targetPos);
+                    return true;
+                }
+                return false;
+
+            case 12: // TOPLA
+                if (sourceUnit == null || sourceUnit.UnitType != SimUnitType.Worker) return false; // Sadece işçi toplar
+                var resource = _world.Resources.Values.FirstOrDefault(r => r.GridPosition == targetPos);
+
+                if (resource != null)
+                {
+                    return _unitSystem.TryAssignGatherTask(sourceUnit, resource);
+                }
+                return false;
         }
         return false;
     }

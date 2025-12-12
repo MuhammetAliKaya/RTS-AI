@@ -194,6 +194,20 @@ public class RTSGridSensor : ISensor
             if (channel != -1) writer[y, x, channel] = 1.0f;
         }
 
+        // 4. SEÇİM VURGUSU (HIGHLIGHT)
+        if (_highlightedUnitIndex != -1)
+        {
+            // Index'i koordinata çevir
+            int hX = _highlightedUnitIndex % width;
+            int hY = _highlightedUnitIndex / width;
+
+            if (hX >= 0 && hX < width && hY >= 0 && hY < height)
+            {
+                // Kanal 25'i boya
+                writer[hY, hX, CH_SELECTION] = 1.0f;
+            }
+        }
+
         return _shape[0] * _shape[1] * _shape[2];
     }
 }

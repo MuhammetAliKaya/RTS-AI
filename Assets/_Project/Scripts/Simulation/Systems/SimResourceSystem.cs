@@ -6,7 +6,7 @@ namespace RTS.Simulation.Systems
 {
     public class SimResourceSystem
     {
-        public static event Action<int, int> OnResourceGathered;
+        public static event Action<int, int, SimResourceType> OnResourceGathered;
         private SimWorldState _world;
 
 
@@ -71,13 +71,16 @@ namespace RTS.Simulation.Systems
         {
             SimPlayerData data = GetPlayer(world, playerID);
             if (data == null || amount <= 0) return;
+
             switch (type)
             {
                 case SimResourceType.Wood: data.Wood += amount; break;
                 case SimResourceType.Stone: data.Stone += amount; break;
                 case SimResourceType.Meat: data.Meat += amount; break;
             }
-            OnResourceGathered?.Invoke(playerID, amount);
+
+            // ARTIK TÜR BİLGİSİNİ DE GÖNDERİYORUZ
+            OnResourceGathered?.Invoke(playerID, amount, type);
         }
 
         public static void ModifyPopulation(SimWorldState world, int playerID, int amount)

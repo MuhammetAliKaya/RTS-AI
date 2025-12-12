@@ -48,7 +48,15 @@ public class RTSAgent : Agent
     private const int ACT_BUILD_FARM = 7;
     private const int ACT_BUILD_TOWER = 8;
     private const int ACT_BUILD_WALL = 9;
-    private const int ACT_SMART_COMMAND = 10;
+    // YENİ AYRIŞTIRILMIŞ KOMUTLAR
+    private const int ACT_ATTACK_ENEMY = 10; // Sadece Düşmana Tıklar
+    private const int ACT_MOVE_TO = 11;      // Sadece Boş Yere Tıklar
+    private const int ACT_GATHER_RES = 12;   // Sadece Kaynağa Tıklar
+    private float _collectedWoodReward = 0f;
+    private float _collectedStoneReward = 0f;
+    private float _collectedMeatReward = 0f;
+    private const float MAX_RESOURCE_REWARD = 2.0f;
+
 
     public enum AgentState
     {
@@ -193,6 +201,9 @@ public class RTSAgent : Agent
         _overrideActionType = 0;
         _overrideSourceIndex = 0;
         _overrideTargetIndex = 0;
+        _collectedWoodReward = 0f;
+        _collectedStoneReward = 0f;
+        _collectedMeatReward = 0f;
     }
     private float LogScale(int value, float anchor)
     {
@@ -340,68 +351,178 @@ public class RTSAgent : Agent
     // Şimdilik boş bırakıyoruz, çünkü Source seçimi dinamik olduğu için maskeleme çok karmaşıklaşır.
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        int totalMapSize = _world.Map.Width * _world.Map.Height; // Örn: 256
+        // Dünya veya Harita yoksa işlem yapma
+        if (_world == null || _world.Map == null || !_world.Players.ContainsKey(1)) return;
 
-        // NOT: Unity'de "Discrete Branch 0 Size" değerini harita boyutu (örn: 256) yapmalısınız.
-        // Tek bir output dalımız var artık.
+        int totalMapSize = _world.Map.Width * _world.Map.Height;
+        var me = _world.Players[1]; // Kendi kaynaklarımız
 
         switch (_currentState)
         {
+            // ----------------------------------------------------------------
+            // ADIM 1: BİRİM SEÇİMİ (WHO?)
+            // ----------------------------------------------------------------
             case AgentState.SelectUnit:
-                // Sadece BENİM BİRİMLERİMİN olduğu kareler seçilebilir.
-                // Diğer tüm kareleri (boş, düşman, engel) maskele.
                 for (int i = 0; i < totalMapSize; i++)
                 {
-                    bool isMyUnit = _translator.IsUnitOwnedByPlayer(i, 1); // Bu fonksiyonu Translator'da tanımlamalıyız
-                    if (!isMyUnit) actionMask.SetActionEnabled(0, i, false);
+                    // Sadece benim birimlerimi veya binalarımı seçebilirim
+                    bool isMyUnitOrBuilding = _translator.IsUnitOwnedByPlayer(i, 1);
+                    actionMask.SetActionEnabled(0, i, isMyUnitOrBuilding);
                 }
                 break;
 
+            // ----------------------------------------------------------------
+            // ADIM 2: EYLEM SEÇİMİ (WHAT?) - (3 KANALLI AYRIŞTIRMA + KAYNAK KONTROLÜ)
+            // ----------------------------------------------------------------
             case AgentState.SelectAction:
-                // Output [0..10] arası aksiyon tipleridir. [11..255] arasını kapatmalıyız.
-                // Ayrıca seçilen birimin yapamayacağı aksiyonları da kapatmalıyız.
 
-                // Önce tüm harita indexlerini kapat (çünkü biz action ID arıyoruz)
-                for (int i = 11; i < totalMapSize; i++) actionMask.SetActionEnabled(0, i, false);
+                // 1. Önce eylem ID'si olmayan tüm harita indekslerini kapat (13'ten sonrasını)
+                // (Wait=0 ... Gather=12 => Toplam 13 eylem)
+                for (int i = 13; i < totalMapSize; i++) actionMask.SetActionEnabled(0, i, false);
 
-                // Seçilen birime özel kurallar
-                SimUnitType selectedUnitType = _translator.GetUnitTypeAt(_selectedSourceIndex);
+                SimUnitType unitType = _translator.GetUnitTypeAt(_selectedSourceIndex);
+                SimBuildingType buildingType = _translator.GetBuildingTypeAt(_selectedSourceIndex);
 
-                if (selectedUnitType == SimUnitType.Worker)
+                // Yardımcı Fonksiyon: Kaynak Yetiyor mu?
+                bool CanAfford(int w, int s, int m) => me.Wood >= w && me.Stone >= s && me.Meat >= m;
+
+                // --- İŞÇİ (WORKER) ---
+                if (unitType == SimUnitType.Worker)
                 {
-                    // İşçi: Saldırı yapamaz (örneğin), ama bina yapar.
-                    // actionMask.SetActionEnabled(0, ACT_ATTACK, false);
+                    // Üretim yapamaz (Bina işidir)
+                    actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);
+                    actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
+
+                    // Temel Aksiyonlar: HEPSİ AÇIK
+                    actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, false); // 10: Saldır
+                    actionMask.SetActionEnabled(0, ACT_MOVE_TO, true);      // 11: Yürü
+                    actionMask.SetActionEnabled(0, ACT_GATHER_RES, true);   // 12: Topla
+
+                    // İnşaat: KAYNAK VARSA AÇIK
+                    actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, CanAfford(SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT));
+                    actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, CanAfford(SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT));
+                    actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, CanAfford(SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT));
+                    actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, CanAfford(SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT));
+                    actionMask.SetActionEnabled(0, ACT_BUILD_FARM, CanAfford(SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT));
+                    actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, CanAfford(SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT));
+                    actionMask.SetActionEnabled(0, ACT_BUILD_WALL, CanAfford(SimConfig.WALL_COST_WOOD, SimConfig.WALL_COST_STONE, SimConfig.WALL_COST_MEAT));
                 }
-                else if (selectedUnitType == SimUnitType.Soldier)
+                // --- ASKER (SOLDIER) ---
+                else if (unitType == SimUnitType.Soldier)
                 {
-                    // Asker: Bina yapamaz.
-                    actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
-                    actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
-                    // ...
+                    // İnşaat Yapamaz (1-9 Kapat)
+                    for (int k = 1; k <= 9; k++) actionMask.SetActionEnabled(0, k, false);
+
+                    // Üretim Yapamaz
+                    actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);
+                    actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
+
+                    // Kaynak Toplayamaz (ÖNEMLİ)
+                    actionMask.SetActionEnabled(0, ACT_GATHER_RES, false); // 12 Kapalı
+
+                    // Sadece Saldır ve Yürü
+                    actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, true); // 10
+                    actionMask.SetActionEnabled(0, ACT_MOVE_TO, true);      // 11
+                }
+                // --- BİNA (BUILDING) ---
+                else if (buildingType != SimBuildingType.None)
+                {
+                    // Hareket, Saldırı, Toplama, İnşaat -> HEPSİ KAPALI
+                    actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, false);
+                    actionMask.SetActionEnabled(0, ACT_MOVE_TO, false);
+                    actionMask.SetActionEnabled(0, ACT_GATHER_RES, false);
+                    for (int k = 1; k <= 9; k++) actionMask.SetActionEnabled(0, k, false);
+
+                    // Üretim: TÜRÜNE GÖRE ve KAYNAK VARSA AÇIK
+                    if (buildingType == SimBuildingType.Base)
+                    {
+                        bool canTrain = CanAfford(SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT);
+                        actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, canTrain);
+                        actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
+                    }
+                    else if (buildingType == SimBuildingType.Barracks)
+                    {
+                        bool canTrain = CanAfford(SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT);
+                        actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, canTrain);
+                        actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);
+                    }
+                    else
+                    {
+                        // Diğer binalar üretim yapamaz (Ev, Kule vb.)
+                        actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);
+                        actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
+                    }
+                }
+                else
+                {
+                    // Seçim hatalıysa veya boşsa her şeyi kapat (Sadece Bekle açık kalabilir)
+                    for (int i = 1; i <= 12; i++) actionMask.SetActionEnabled(0, i, false);
                 }
                 break;
 
+            // ----------------------------------------------------------------
+            // ADIM 3: HEDEF SEÇİMİ (WHERE?)
+            // ----------------------------------------------------------------
             case AgentState.SelectTarget:
-                // Seçilen Action'a göre haritadaki uygunsuz yerleri kapat.
-                // Örn: ACT_BUILD_HOUSE seçildiyse, DOLU kareleri kapat.
                 for (int i = 0; i < totalMapSize; i++)
                 {
-                    bool isValidTarget = _translator.IsTargetValidForAction(_selectedActionType, i);
-                    if (!isValidTarget) actionMask.SetActionEnabled(0, i, false);
+                    // Translator'daki yeni 3 kanallı validasyon mantığını kullanır
+                    bool isValid = _translator.IsTargetValidForAction(_selectedActionType, i);
+                    actionMask.SetActionEnabled(0, i, isValid);
                 }
                 break;
         }
     }
-
-    public void HandleResourceGathered(int playerID, int amount) // Bunu ResourceSystem'den çağırtın
+    public void HandleResourceGathered(int playerID, int amount, SimResourceType type)
     {
-        if (playerID == 1)
-        {
-            // 10 birim odun için 0.01 ödül (Küçük ama sürekli)
-            AddReward(amount * 0.001f);
-        }
-    }
+        if (playerID != 1) return;
 
+        float reward = 0f;
+        float baseRewardFactor = 0.001f; // 1 birim = 0.001 puan
+
+        switch (type)
+        {
+            case SimResourceType.Wood:
+                if (_collectedWoodReward < MAX_RESOURCE_REWARD)
+                {
+                    reward = amount * baseRewardFactor;
+                    // Kota aşımı kontrolü
+                    if (_collectedWoodReward + reward > MAX_RESOURCE_REWARD)
+                        reward = MAX_RESOURCE_REWARD - _collectedWoodReward;
+
+                    _collectedWoodReward += reward;
+                }
+                break;
+
+            case SimResourceType.Stone:
+                if (_collectedStoneReward < MAX_RESOURCE_REWARD)
+                {
+                    // Taş daha değerli/nadir olduğu için çarpanı artırıyoruz (x1.5)
+                    reward = amount * (baseRewardFactor * 1.5f);
+
+                    if (_collectedStoneReward + reward > MAX_RESOURCE_REWARD)
+                        reward = MAX_RESOURCE_REWARD - _collectedStoneReward;
+
+                    _collectedStoneReward += reward;
+                }
+                break;
+
+            case SimResourceType.Meat:
+                if (_collectedMeatReward < MAX_RESOURCE_REWARD)
+                {
+                    // Et de değerli (x1.2)
+                    reward = amount * (baseRewardFactor * 1.2f);
+
+                    if (_collectedMeatReward + reward > MAX_RESOURCE_REWARD)
+                        reward = MAX_RESOURCE_REWARD - _collectedMeatReward;
+
+                    _collectedMeatReward += reward;
+                }
+                break;
+        }
+
+        if (reward > 0) AddReward(reward);
+    }
     // 2. ÜRETİM ÖDÜLÜ
     // Kaynağı harcamaya teşvik eder.
     private void HandleUnitCreated(SimUnitData unit)
@@ -439,5 +560,32 @@ public class RTSAgent : Agent
                     break;
             }
         }
+    }
+    private void OnDrawGizmos()
+    {
+        // Ajanın seçtiği kaynak (Source) ve hedef (Target) belli mi?
+        if (_world != null && _currentState == AgentState.SelectUnit) return; // Henüz seçim yok
+
+        // Seçilen Kaynak Pozisyonu
+        if (_selectedSourceIndex != -1)
+        {
+            Vector3 sourcePos = GetWorldPos(_selectedSourceIndex);
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(sourcePos, 0.5f); // Seçilen birimin etrafına yeşil halka
+
+            // Eğer hedef de seçildiyse (Action aşamasından sonra)
+            // Not: State machine hızlı aktığı için bunu yakalamak zor olabilir ama
+            // RegisterExternalAction veya son kararı bir değişkende tutarsan çizebilirsin.
+        }
+    }
+
+    // Yardımcı: Grid Index -> World Position
+    private Vector3 GetWorldPos(int index)
+    {
+        int w = _world.Map.Width;
+        int x = index % w;
+        int y = index / w;
+        // Senin grid sistemine göre offset eklemen gerekebilir
+        return new Vector3(x, 0, y) + Vector3.one * 0.5f;
     }
 }
