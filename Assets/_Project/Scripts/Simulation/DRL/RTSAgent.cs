@@ -61,6 +61,8 @@ public class RTSAgent : Agent
 
     private Queue<int> _actionHistory = new Queue<int>();
 
+    public int MyPlayerID = 1;
+
 
     public enum AgentState
     {
@@ -160,12 +162,12 @@ public class RTSAgent : Agent
     // --- ÖDÜL FONKSİYONLARI ---
     private void HandleUnitAttackedUnit(SimUnitData attacker, SimUnitData victim, float damage)
     {
-        if (attacker.PlayerID == 1) AddReward(damage * 0.002f);
+        if (attacker.PlayerID == MyPlayerID) AddReward(damage * 0.002f);
     }
 
     private void HandleUnitAttackedBuilding(SimUnitData attacker, SimBuildingData building, float damage)
     {
-        if (attacker.PlayerID == 1)
+        if (attacker.PlayerID == MyPlayerID)
         {
             float multiplier = (building.Type == SimBuildingType.Base) ? 0.005f : 0.002f;
             AddReward(damage * multiplier);
@@ -179,7 +181,7 @@ public class RTSAgent : Agent
 
     private void HandleUnitDestroyedBuilding(SimUnitData attacker, SimBuildingData building)
     {
-        if (attacker.PlayerID == 1)
+        if (attacker.PlayerID == MyPlayerID)
         {
             if (building.Type == SimBuildingType.Base)
             {
@@ -223,15 +225,15 @@ public class RTSAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        if (_world == null || !_world.Players.ContainsKey(1))
+        if (_world == null || !_world.Players.ContainsKey(MyPlayerID))
         {
             for (int i = 0; i < 10; i++) sensor.AddObservation(0f); // Boyut 14'e çıkacak
             return;
         }
 
-        if (_world.Players.ContainsKey(1))
+        if (_world.Players.ContainsKey(MyPlayerID))
         {
-            var me = _world.Players[1];
+            var me = _world.Players[MyPlayerID];
 
             // 1. KAYNAKLAR
             sensor.AddObservation(LogScale(me.Wood, LOG_ANCHOR_WOOD));
@@ -262,9 +264,9 @@ public class RTSAgent : Agent
             }
             sensor.AddObservation(contextObs);
 
-            // 4. BİRİM SAYILARI
-            int soldierCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
-            int workerCount = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
+            // 4. BİRİM SAYILARI (DÜZELTİLDİ)
+            int soldierCount = _world.Units.Values.Count(u => u.PlayerID == MyPlayerID && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
+            int workerCount = _world.Units.Values.Count(u => u.PlayerID == MyPlayerID && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
 
             sensor.AddObservation(LogScale(soldierCount, LOG_ANCHOR_UNIT_COUNT));
             sensor.AddObservation(LogScale(workerCount, LOG_ANCHOR_UNIT_COUNT));
@@ -380,34 +382,27 @@ public class RTSAgent : Agent
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
         // Dünya veya Harita yoksa işlem yapma
-        if (_world == null || _world.Map == null || !_world.Players.ContainsKey(1)) return;
+        if (_world == null || _world.Map == null || !_world.Players.ContainsKey(MyPlayerID)) return;
 
         int totalMapSize = _world.Map.Width * _world.Map.Height;
-        var me = _world.Players[1]; // Kendi kaynaklarımız
+        var me = _world.Players[MyPlayerID]; // DÜZELTİLDİ: Kendi kaynaklarımız
 
         switch (_currentState)
         {
-            // ----------------------------------------------------------------
-            // ADIM 1: BİRİM SEÇİMİ (WHO?)
-            // ----------------------------------------------------------------
             case AgentState.SelectUnit:
                 for (int i = 0; i < totalMapSize; i++)
                 {
-                    // 1. Birim benim mi?
-                    bool isMyUnitOrBuilding = _translator.IsUnitOwnedByPlayer(i, 1);
+                    // DÜZELTİLDİ: Sadece kendi birimlerini seçebilsin (1 yerine MyPlayerID)
+                    bool isMyUnitOrBuilding = _translator.IsUnitOwnedByPlayer(i, MyPlayerID);
 
-                    // --- YENİ EKLEME: İNŞAAT KİLİDİ ---
-                    // Eğer birim benimse ama şu an "Building" durumundaysa seçilemesin.
                     if (isMyUnitOrBuilding)
                     {
                         var unit = _translator.GetUnitAtPosIndex(i);
                         if (unit != null && unit.State == SimTaskType.Building)
                         {
-                            isMyUnitOrBuilding = false; // Maskele
+                            isMyUnitOrBuilding = false;
                         }
                     }
-                    // ----------------------------------
-
                     actionMask.SetActionEnabled(0, i, isMyUnitOrBuilding);
                 }
                 break;
@@ -525,8 +520,7 @@ public class RTSAgent : Agent
     }
     public void HandleResourceGathered(int playerID, int amount, SimResourceType type)
     {
-        if (playerID != 1) return;
-
+        if (playerID != MyPlayerID) return; // DÜZELTİLDİ
         float reward = 0f;
         float baseRewardFactor = 0.001f; // 1 birim = 0.001 puan
 
@@ -577,7 +571,7 @@ public class RTSAgent : Agent
     // Kaynağı harcamaya teşvik eder.
     private void HandleUnitCreated(SimUnitData unit)
     {
-        if (unit.PlayerID == 1)
+        if (unit.PlayerID == MyPlayerID) // DÜZELTİLDİ
         {
             if (unit.UnitType == SimUnitType.Worker)
                 AddReward(0.2f); // İşçi basmak iyidir (Ekonomiyi büyütür)
@@ -592,7 +586,7 @@ public class RTSAgent : Agent
 
     private void HandleBuildingCompleted(SimBuildingData building)
     {
-        if (building.PlayerID == 1)
+        if (building.PlayerID == MyPlayerID) // DÜZELTİLDİ
         {
             // Temel ödülü maliyete göre hesapla
             float baseReward = GetCostBasedReward(building.Type);
@@ -602,7 +596,8 @@ public class RTSAgent : Agent
                 // KIŞLA ÖZEL DURUMU:
                 // İlk kışla stratejik bir eşiktir (Teknoloji açar), bu yüzden devasa ödül ver.
                 // Sonraki kışlalar sadece kaynak maliyeti kadar (düşük) ödül verir.
-                int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed);
+                int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == MyPlayerID && b.Type == SimBuildingType.Barracks && b.IsConstructed);
+                // ... (Ödül mantığı aynı)
 
                 if (barracksCount == 1)
                 {
