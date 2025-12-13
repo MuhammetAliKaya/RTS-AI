@@ -81,6 +81,10 @@ public class RTSAgent : Agent
 
     public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys)
     {
+        // 1. ÖNCE: Eski sistemlere olan aboneliği kaldır (Hala eski referans varken)
+        UnbindEvents();
+
+        // 2. SONRA: Referansları güncelle
         _world = world;
         _gridSystem = gridSys;
         _unitSystem = unitSys;
@@ -95,9 +99,10 @@ public class RTSAgent : Agent
             _gridSensorComp.InitializeSensor(_world, _gridSystem);
         }
 
-        // Translator Kurulumu
+        // Translator Kurulumu (Yeni dünya ile yeniden oluşturuluyor, bu doğru)
         _translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem);
 
+        // 3. EN SON: Yeni sistemlere abone ol
         RebindEvents();
     }
 
@@ -178,7 +183,7 @@ public class RTSAgent : Agent
         {
             if (building.Type == SimBuildingType.Base)
             {
-                AddReward(10.0f);
+                AddReward(100.0f);
                 EndEpisode();
             }
             else AddReward(2.0f);
@@ -500,12 +505,21 @@ public class RTSAgent : Agent
             // ADIM 3: HEDEF SEÇİMİ (WHERE?)
             // ----------------------------------------------------------------
             case AgentState.SelectTarget:
+                bool anyTargetAvailable = false; // EMNİYET KONTROLÜ
+
                 for (int i = 0; i < totalMapSize; i++)
                 {
-                    // Translator'daki yeni 3 kanallı validasyon mantığını kullanır
                     bool isValid = _translator.IsTargetValidForAction(_selectedActionType, i);
+                    if (isValid) anyTargetAvailable = true;
                     actionMask.SetActionEnabled(0, i, isValid);
                 }
+
+                // --- HATA DÜZELTME ---
+                if (!anyTargetAvailable)
+                {
+                    actionMask.SetActionEnabled(0, 0, true);
+                }
+                // ---------------------
                 break;
         }
     }
@@ -568,7 +582,7 @@ public class RTSAgent : Agent
             if (unit.UnitType == SimUnitType.Worker)
                 AddReward(0.2f); // İşçi basmak iyidir (Ekonomiyi büyütür)
             else if (unit.UnitType == SimUnitType.Soldier)
-                AddReward(0.5f); // Asker basmak daha iyidir (Güvenlik)
+                AddReward(1f); // Asker basmak daha iyidir (Güvenlik)
         }
     }
 
@@ -597,7 +611,7 @@ public class RTSAgent : Agent
                 }
                 else
                 {
-                    AddReward(baseReward); // Sadece maliyet karşılığı (Örn: 200 kaynak -> 0.2 puan)
+                    AddReward(baseReward / 2); // Sadece maliyet karşılığı (Örn: 200 kaynak -> 0.2 puan)
                 }
             }
             else

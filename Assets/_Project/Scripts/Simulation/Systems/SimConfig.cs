@@ -16,23 +16,23 @@ namespace RTS.Simulation.Systems
         public const int HOUSE_COST_MEAT = 50; // Yeni
 
         // Çiftlik (Farm)
-        public const int FARM_COST_WOOD = 250;
+        public const int FARM_COST_WOOD = 0;
         public const int FARM_COST_STONE = 0;
-        public const int FARM_COST_MEAT = 50; // Yeni
+        public const int FARM_COST_MEAT = 250; // Yeni
 
         // Oduncu (WoodCutter)
         public const int WOODCUTTER_COST_WOOD = 250;
         public const int WOODCUTTER_COST_STONE = 0;
-        public const int WOODCUTTER_COST_MEAT = 50; // Örn: İşçiye yemek verip oduncu yapıyoruz
+        public const int WOODCUTTER_COST_MEAT = 0; // Örn: İşçiye yemek verip oduncu yapıyoruz
 
         // Taş Ocağı (StonePit)
-        public const int STONEPIT_COST_WOOD = 250;
-        public const int STONEPIT_COST_STONE = 0;
-        public const int STONEPIT_COST_MEAT = 50; // Yeni
+        public const int STONEPIT_COST_WOOD = 0;
+        public const int STONEPIT_COST_STONE = 250;
+        public const int STONEPIT_COST_MEAT = 0; // Yeni
 
         // Kışla (Barracks)
-        public const int BARRACKS_COST_WOOD = 1000;
-        public const int BARRACKS_COST_STONE = 1000;
+        public const int BARRACKS_COST_WOOD = 250;
+        public const int BARRACKS_COST_STONE = 250;
         public const int BARRACKS_COST_MEAT = 0; // Yeni
 
         // Kule (Tower)
@@ -50,8 +50,8 @@ namespace RTS.Simulation.Systems
         public const int WORKER_COST_WOOD = 0;
         public const int WORKER_COST_STONE = 0;
 
-        public const int SOLDIER_COST_MEAT = 200;
-        public const int SOLDIER_COST_WOOD = 200;
+        public const int SOLDIER_COST_MEAT = 100;
+        public const int SOLDIER_COST_WOOD = 100;
         public const int SOLDIER_COST_STONE = 0;
 
         // --- İNŞAAT VE ZAMANLAMA ---
@@ -60,13 +60,13 @@ namespace RTS.Simulation.Systems
         public const float BUILD_INTERVAL = 0.1f;
 
         public const float WORKER_TRAIN_TIME = 3.0f;
-        public const float SOLDIER_TRAIN_TIME = 5.0f;
+        public const float SOLDIER_TRAIN_TIME = 3.0f;
 
         // --- CAN VE SALDIRI ---
         public const int WORKER_MAX_HEALTH = 50;
         public const int SOLDIER_MAX_HEALTH = 120;
-        public const int BASE_MAX_HEALTH = 5000;
-        public const int BUILDING_DEFAULT_HEALTH = 1000;
+        public const int BASE_MAX_HEALTH = 250;
+        public const int BUILDING_DEFAULT_HEALTH = 100;
         public const int WALL_MAX_HEALTH = 10000;
 
 

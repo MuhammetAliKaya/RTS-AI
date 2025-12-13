@@ -26,7 +26,7 @@ behaviors:
         strength: 1
       gail:
         gamma: 0.99
-        strength: 0.5
+        strength: 0.7
         network_settings:
           normalize: false
           hidden_units: 128
@@ -40,5 +40,5 @@ behaviors:
     #   demo_path: Assets/Demonstrations/10t2.demo
     #   steps: 150000
 
-    max_steps: 10000000
+    max_steps: 100000000
     summary_freq: 2000

@@ -120,7 +120,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             _enemyAI.Update(dt);
         }
 
-        if (stepCount % 80 == 0)
+        if (stepCount % 1 == 0)
         {
             // 1. Kullanıcıdan gelen bir emir var mı? (Tıklama önceliği)
             bool hasUserOverride = (Agent != null && Agent._overrideActionType != 0);
@@ -142,12 +142,12 @@ public class AdversarialTrainerRunner : MonoBehaviour
             }
         }
 
-        // _agentDecisionCounter++;
-        // if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
-        // {
-        //     _agentDecisionCounter = 0;
-        //     if (Agent != null && IsTrainingMode) Agent.RequestDecision();
-        // }
+        _agentDecisionCounter++;
+        if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
+        {
+            _agentDecisionCounter = 0;
+            if (Agent != null && IsTrainingMode) Agent.RequestDecision();
+        }
 
         // 3. Simülasyonu İlerlet
         if (_buildSys != null) _buildSys.UpdateAllBuildings(dt);
@@ -447,6 +447,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
             float speedBonus = timeFactor * 4.0f;
+            Debug.Log("speedBonus" + (speedBonus + 2f));
             EndGame(2.0f + speedBonus);
         }
     }
