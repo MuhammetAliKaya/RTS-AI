@@ -54,7 +54,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     // TAKİP DEĞİŞKENLERİ
     private int _lastSoldiers = 0;
-
+    private float _lastMyBaseHealth = 1000f;
 
     private int _lastEnemyUnitCount = 0;
     private int _lastEnemyBuildingCount = 0;
@@ -97,7 +97,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         if (IsTrainingMode)
         {
             // Bir karede 10 simülasyon adımı birden at
-            for (int i = 0; i < _simStepCountPerFrame; i++)
+            for (int i = 0; i < 1; i++)
             {
                 // dt her zaman sabit olmalı(örn: 0.1f veya 0.02f)
                 SimulationStep(_simStepSize);
@@ -120,27 +120,28 @@ public class AdversarialTrainerRunner : MonoBehaviour
             _enemyAI.Update(dt);
         }
 
-        if (stepCount % 1 == 0)
-        {
-            // 1. Kullanıcıdan gelen bir emir var mı? (Tıklama önceliği)
-            bool hasUserOverride = (Agent != null && Agent._overrideActionType != 0);
+        // if (stepCount % 80 == 0)
+        // {
+        //     Debug.Log("rec step");
+        //     // 1. Kullanıcıdan gelen bir emir var mı? (Tıklama önceliği)
+        //     bool hasUserOverride = (Agent != null && Agent._overrideActionType != 0);
 
-            // 2. Son 4 işlem boş (0) mı? (Spam kontrolü)
-            bool isSpammingWait = (Agent != null && Agent.IsIdleSpamming());
+        //     // 2. Son 4 işlem boş (0) mı? (Spam kontrolü)
+        //     bool isSpammingWait = (Agent != null && Agent.IsIdleSpamming());
 
-            // MANTIK:
-            // Kullanıcı bir şeye bastıysa (hasUserOverride) -> İSTEK AT.
-            // VEYA
-            // Kullanıcı basmadı ama ajan spam yapmıyor (hala hareketli veya yeni durdu) -> İSTEK AT.
-            if (hasUserOverride || !isSpammingWait)
-            {
-                if (Agent != null)
-                {
-                    Agent.RequestDecision();
-                    // Debug.Log("RequestDecision: Kayıt Alınıyor...");
-                }
-            }
-        }
+        //     // MANTIK:
+        //     // Kullanıcı bir şeye bastıysa (hasUserOverride) -> İSTEK AT.
+        //     // VEYA
+        //     // Kullanıcı basmadı ama ajan spam yapmıyor (hala hareketli veya yeni durdu) -> İSTEK AT.
+        //     if (hasUserOverride || !isSpammingWait)
+        //     {
+        //         if (Agent != null)
+        //         {
+        //             Agent.RequestDecision();
+        //             Debug.Log("RequestDecision: Kayıt Alınıyor...");
+        //         }
+        //     }
+        // }
 
         _agentDecisionCounter++;
         if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
@@ -232,7 +233,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         if (currentEnemyUnits < _lastEnemyUnitCount)
         {
             int killCount = _lastEnemyUnitCount - currentEnemyUnits;
-            // Agent.AddReward(0.5f * killCount);
+            Agent.AddReward(0.5f * killCount);
         }
 
         if (currentEnemyBuildings < _lastEnemyBuildingCount)
@@ -245,6 +246,28 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
             // Agent.AddReward(damage * 0.001f);
+        }
+
+        var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
+
+        if (myBase != null)
+        {
+            // Eğer şu anki can, son bildiğimiz candan az ise hasar yemişizdir
+            if (myBase.Health < _lastMyBaseHealth)
+            {
+                // Ne kadar hasar yediğimizi hesapla
+                float damageTaken = _lastMyBaseHealth - myBase.Health;
+
+                // CEZA VER: Hasar miktarı * Katsayı
+                // Örnek: 10 hasar yedi * 0.001 = -0.01 puan ceza.
+                // Katsayıyı (0.001f) ne kadar sert cezalandırmak istediğine göre artırabilirsin.
+                Agent.AddReward(-damageTaken * 5f);
+
+                // Debug.Log($"Hasar Alındı! Miktar: {damageTaken} | Ceza Verildi.");
+            }
+
+            // Son can değerini güncelle
+            _lastMyBaseHealth = myBase.Health;
         }
         _lastSoldiers = currentSoldiers;
 
@@ -322,6 +345,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         _lastEnemyUnitCount = 0;
         _lastEnemyBuildingCount = 1;
         _lastEnemyBaseHealth = 1000f;
+        _lastMyBaseHealth = 1000f;
     }
 
     private void GenerateMap(int seed) // Metot artık bir seed parametresi alıyor
@@ -441,14 +465,19 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (myBase == null) // Kaybettik
         {
-            EndGame(-2.0f);
+            float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
+            float speedBonus = timeFactor * 15.0f;
+            Debug.Log("speedBonus" + (speedBonus));
+            EndGame(-250.0f - speedBonus);
+            Debug.Log("lose gamde");
         }
         else if (enemyBase == null) // Kazandık
         {
             float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
-            float speedBonus = timeFactor * 4.0f;
-            Debug.Log("speedBonus" + (speedBonus + 2f));
-            EndGame(2.0f + speedBonus);
+            float speedBonus = timeFactor * 15.0f;
+            Debug.Log("speedBonus" + (speedBonus));
+            Debug.Log("win gamde");
+            EndGame(250.0f + speedBonus);
         }
     }
 
@@ -461,7 +490,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
 
-            // Agent.AddReward(reward);
+            Agent.AddReward(reward);
             Agent.EndEpisode();
         }
     }

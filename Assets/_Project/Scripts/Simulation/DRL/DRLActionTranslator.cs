@@ -12,14 +12,14 @@ public class DRLActionTranslator
     private SimBuildingSystem _buildingSystem;
     private SimGridSystem _gridSystem;
 
-    private const int MY_PLAYER_ID = 1;
-
-    public DRLActionTranslator(SimWorldState world, SimUnitSystem unitSys, SimBuildingSystem buildSys, SimGridSystem gridSys)
+    private int _myPlayerID;
+    public DRLActionTranslator(SimWorldState world, SimUnitSystem unitSys, SimBuildingSystem buildSys, SimGridSystem gridSys, int playerID)
     {
         _world = world;
         _unitSystem = unitSys;
         _buildingSystem = buildSys;
         _gridSystem = gridSys;
+        _myPlayerID = playerID; // Oyuncu kimliğini kaydet
     }
 
     public bool IsUnitOwnedByPlayer(int gridIndex, int playerID)
@@ -89,12 +89,12 @@ public class DRLActionTranslator
         bool hasResource = _world.Resources.Values.Any(r => r.GridPosition == targetPos);
 
         // Kendi birimim/binam mı? (Saldırı için önemli)
-        bool isMyUnit = (unitAtTarget != null && unitAtTarget.PlayerID == MY_PLAYER_ID);
-        bool isMyBuilding = (buildingAtTarget != null && buildingAtTarget.PlayerID == MY_PLAYER_ID);
+        bool isMyUnit = (unitAtTarget != null && unitAtTarget.PlayerID == _myPlayerID);
+        bool isMyBuilding = (buildingAtTarget != null && buildingAtTarget.PlayerID == _myPlayerID);
 
         // Düşman mı?
-        bool isEnemyUnit = (unitAtTarget != null && unitAtTarget.PlayerID != MY_PLAYER_ID);
-        bool isEnemyBuilding = (buildingAtTarget != null && buildingAtTarget.PlayerID != MY_PLAYER_ID);
+        bool isEnemyUnit = (unitAtTarget != null && unitAtTarget.PlayerID != _myPlayerID);
+        bool isEnemyBuilding = (buildingAtTarget != null && buildingAtTarget.PlayerID != _myPlayerID);
 
         switch (actionType)
         {
@@ -163,11 +163,11 @@ public class DRLActionTranslator
         // 2. KAYNAK VARLIĞI BUL (Source Location Check)
         SimUnitData sourceUnit = GetUnitAt(sourcePos);
         // Unit kontrolü: Sadece benim olmalı
-        if (sourceUnit != null && sourceUnit.PlayerID != MY_PLAYER_ID) sourceUnit = null;
+        if (sourceUnit != null && sourceUnit.PlayerID != _myPlayerID) sourceUnit = null;
 
         SimBuildingData sourceBuilding = GetBuildingAt(sourcePos);
         // Bina kontrolü: Sadece benim olmalı
-        if (sourceBuilding != null && sourceBuilding.PlayerID != MY_PLAYER_ID) sourceBuilding = null;
+        if (sourceBuilding != null && sourceBuilding.PlayerID != _myPlayerID) sourceBuilding = null;
 
         // Eğer kaynak boşsa ve eylem "Bekle" değilse -> HATA
         if (sourceUnit == null && sourceBuilding == null && actionType != 0)
@@ -196,8 +196,8 @@ public class DRLActionTranslator
             case 10: // SALDIR
                 if (sourceUnit == null) return false;
                 // Hedefte ne var?
-                var enemyUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == targetPos && u.PlayerID != MY_PLAYER_ID);
-                var enemyBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == targetPos && b.PlayerID != MY_PLAYER_ID);
+                var enemyUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == targetPos && u.PlayerID != _myPlayerID);
+                var enemyBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == targetPos && b.PlayerID != _myPlayerID);
 
                 if (enemyUnit != null) { _unitSystem.OrderAttackUnit(sourceUnit, enemyUnit); return true; }
                 if (enemyBuilding != null) { _unitSystem.OrderAttack(sourceUnit, enemyBuilding); return true; }
@@ -245,7 +245,7 @@ public class DRLActionTranslator
         // İnşaat işlemini başlat
         SpendResources(type);
         // SimBuildingSystem.CreateBuilding factory methodunu kullanıyoruz
-        SimBuildingData newBuilding = SimBuildingSystem.CreateBuilding(_world, MY_PLAYER_ID, type, buildPos);
+        SimBuildingData newBuilding = SimBuildingSystem.CreateBuilding(_world, _myPlayerID, type, buildPos);
 
         // İşçiye emri ver
         _unitSystem.OrderBuild(worker, newBuilding);
@@ -262,7 +262,7 @@ public class DRLActionTranslator
         if (unitType == SimUnitType.Soldier && building.Type != SimBuildingType.Barracks) return false;
 
         var (wood, stone, meat) = GetUnitCost(unitType);
-        if (!SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, wood, stone, meat)) return false;
+        if (!SimResourceSystem.CanAfford(_world, _myPlayerID, wood, stone, meat)) return false;
 
         SimBuildingSystem.StartTraining(building, _world, unitType);
         return true;
@@ -274,8 +274,8 @@ public class DRLActionTranslator
         if (!_world.Map.IsInBounds(targetPos)) return false;
 
         // Hedef karesinde ne var?
-        var enemyUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == targetPos && u.PlayerID != MY_PLAYER_ID);
-        var enemyBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == targetPos && b.PlayerID != MY_PLAYER_ID);
+        var enemyUnit = _world.Units.Values.FirstOrDefault(u => u.GridPosition == targetPos && u.PlayerID != _myPlayerID);
+        var enemyBuilding = _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == targetPos && b.PlayerID != _myPlayerID);
         var resource = _world.Resources.Values.FirstOrDefault(r => r.GridPosition == targetPos);
 
         // 1. Düşman Ünitesi -> Saldır
@@ -329,13 +329,13 @@ public class DRLActionTranslator
     private bool CanAfford(SimBuildingType type)
     {
         var (w, s, m) = GetBuildingCost(type);
-        return SimResourceSystem.CanAfford(_world, MY_PLAYER_ID, w, s, m);
+        return SimResourceSystem.CanAfford(_world, _myPlayerID, w, s, m);
     }
 
     private void SpendResources(SimBuildingType type)
     {
         var (w, s, m) = GetBuildingCost(type);
-        SimResourceSystem.SpendResources(_world, MY_PLAYER_ID, w, s, m);
+        SimResourceSystem.SpendResources(_world, _myPlayerID, w, s, m);
     }
     public SimUnitData GetUnitAtPosIndex(int index)
     {

@@ -9,7 +9,7 @@ except ImportError:
     exit()
 
 # --- AYARLAR ---
-DEMO_PATH = "Assets/Demonstrations/10t2.demo"  # Dosya yolunu buraya yazın
+DEMO_PATH = "Assets/Demonstrations/tr3.demo"  # Dosya yolunu buraya yazın
 # ----------------
 
 def analyze_rts_demo(path):

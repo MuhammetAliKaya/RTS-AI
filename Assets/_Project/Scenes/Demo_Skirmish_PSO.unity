@@ -2042,9 +2042,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 61ec2a4fa0676d94e84f5eef5ee8badd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanSpeed: 20
-  PanLimitMin: {x: -10, y: -10}
-  ScrollSpeed: 20
+  PanSpeed: 2
+  PanLimitMin: {x: -20, y: -20}
+  ScrollSpeed: 2
   MinZoom: 5
   MaxZoom: 30
 --- !u!1 &682332566

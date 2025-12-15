@@ -25,6 +25,8 @@ public class RTSAgent : Agent
     public DRLSimRunner Runner;
     public AdversarialTrainerRunner CombatRunner; // İsteğe bağlı, varsa kalsın
 
+    public SelfPlayTrainerRunner SelfPlayRunner;
+
     public bool ShowDebugLogs = true;
 
     // --- DIŞ EMRİ TUTAN DEĞİŞKENLER (BUFFER) ---
@@ -63,7 +65,13 @@ public class RTSAgent : Agent
 
     public int MyPlayerID = 1;
 
+    // --- KAYNAK LİMİT DEĞİŞKENLERİ ---
+    private int _gatheredWood = 0;
+    private int _gatheredStone = 0;
+    private int _gatheredMeat = 0;
 
+    // Her kaynak türünden en fazla kaç tane toplanırsa ödül verilsin?
+    private const int MAX_RESOURCE_GATHER_LIMIT = 1000;
     public enum AgentState
     {
         SelectUnit = 0,   // Adım 1: KİM?
@@ -83,16 +91,13 @@ public class RTSAgent : Agent
 
     public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys)
     {
-        // 1. ÖNCE: Eski sistemlere olan aboneliği kaldır (Hala eski referans varken)
         UnbindEvents();
 
-        // 2. SONRA: Referansları güncelle
         _world = world;
         _gridSystem = gridSys;
         _unitSystem = unitSys;
         _buildingSystem = buildSys;
 
-        // Grid Sensor Bağlantısı
         if (_gridSensorComp == null)
             _gridSensorComp = GetComponent<RTSGridSensorComponent>();
 
@@ -101,13 +106,12 @@ public class RTSAgent : Agent
             _gridSensorComp.InitializeSensor(_world, _gridSystem);
         }
 
-        // Translator Kurulumu (Yeni dünya ile yeniden oluşturuluyor, bu doğru)
-        _translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem);
+        // --- HATA DÜZELTME: MyPlayerID EKLENDİ ---
+        _translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem, MyPlayerID);
+        // ------------------------------------------
 
-        // 3. EN SON: Yeni sistemlere abone ol
         RebindEvents();
     }
-
     // --- EVENT YÖNETİMİ ---
     protected override void OnEnable()
     {
@@ -169,7 +173,7 @@ public class RTSAgent : Agent
     {
         if (attacker.PlayerID == MyPlayerID)
         {
-            float multiplier = (building.Type == SimBuildingType.Base) ? 0.005f : 0.002f;
+            float multiplier = (building.Type == SimBuildingType.Base) ? 0.05f : 0.002f;
             AddReward(damage * multiplier);
         }
     }
@@ -207,8 +211,19 @@ public class RTSAgent : Agent
 
     public override void OnEpisodeBegin()
     {
-        if (Runner != null) Runner.ResetSimulation();
-        else if (CombatRunner != null) CombatRunner.ResetSimulation();
+        // --- GÜNCELLENMİŞ HALİ (SelfPlay Desteği) ---
+        if (SelfPlayRunner != null)
+        {
+            SelfPlayRunner.ResetSimulation();
+        }
+        else if (Runner != null)
+        {
+            Runner.ResetSimulation();
+        }
+        else if (CombatRunner != null)
+        {
+            CombatRunner.ResetSimulation();
+        }
 
         // Buffer'ı temizle
         _overrideActionType = 0;
@@ -217,6 +232,9 @@ public class RTSAgent : Agent
         _collectedWoodReward = 0f;
         _collectedStoneReward = 0f;
         _collectedMeatReward = 0f;
+        _gatheredWood = 0;
+        _gatheredStone = 0;
+        _gatheredMeat = 0;
     }
     private float LogScale(int value, float anchor)
     {
@@ -319,7 +337,7 @@ public class RTSAgent : Agent
                     // Ciddi bir ceza ver ki gereksiz yere işçileri dürtmesin.
                     if (_selectedActionType != ACT_WAIT)
                     {
-                        AddReward(-0.05f); // "Rahat bırak şu işçiyi" cezası
+                        AddReward(-0.5f); // "Rahat bırak şu işçiyi" cezası
                         if (ShowDebugLogs) Debug.Log("Toplayan işçi bölündü! Ceza verildi.");
                     }
                 }
@@ -381,29 +399,45 @@ public class RTSAgent : Agent
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        // Dünya veya Harita yoksa işlem yapma
         if (_world == null || _world.Map == null || !_world.Players.ContainsKey(MyPlayerID)) return;
 
         int totalMapSize = _world.Map.Width * _world.Map.Height;
-        var me = _world.Players[MyPlayerID]; // DÜZELTİLDİ: Kendi kaynaklarımız
+        var me = _world.Players[MyPlayerID];
 
         switch (_currentState)
         {
             case AgentState.SelectUnit:
                 for (int i = 0; i < totalMapSize; i++)
                 {
-                    // DÜZELTİLDİ: Sadece kendi birimlerini seçebilsin (1 yerine MyPlayerID)
-                    bool isMyUnitOrBuilding = _translator.IsUnitOwnedByPlayer(i, MyPlayerID);
+                    bool canSelect = false;
 
-                    if (isMyUnitOrBuilding)
+                    // 1. Birim benim mi?
+                    if (_translator.IsUnitOwnedByPlayer(i, MyPlayerID))
                     {
                         var unit = _translator.GetUnitAtPosIndex(i);
-                        if (unit != null && unit.State == SimTaskType.Building)
+
+                        // --- KRİTİK DÜZELTME: MEŞGUL İŞÇİYİ SEÇME ---
+                        // Eğer birim inşaat yapıyorsa (Building), onu seçime kapat (Maskele).
+                        // Böylece ajan "Build" emrini yarıda kesemez.
+                        if (unit != null)
                         {
-                            isMyUnitOrBuilding = false;
+                            if (unit.State != SimTaskType.Idle)
+                            {
+                                canSelect = false;
+                            }
+                            else
+                            {
+                                canSelect = true;
+                            }
+                        }
+                        else
+                        {
+                            // Bina seçimi (Kışla vb. üretim için her zaman seçilebilir)
+                            canSelect = true;
                         }
                     }
-                    actionMask.SetActionEnabled(0, i, isMyUnitOrBuilding);
+
+                    actionMask.SetActionEnabled(0, i, canSelect);
                 }
                 break;
 
@@ -520,55 +554,28 @@ public class RTSAgent : Agent
     }
     public void HandleResourceGathered(int playerID, int amount, SimResourceType type)
     {
-        if (playerID != MyPlayerID) return; // DÜZELTİLDİ
+        if (playerID != MyPlayerID) return;
+
+        float baseRewardFactor = 0.001f; // Çarpanı biraz düşürebilirsin (0.0005f gibi) eğer çok şişerse.
         float reward = 0f;
-        float baseRewardFactor = 0.001f; // 1 birim = 0.001 puan
 
         switch (type)
         {
             case SimResourceType.Wood:
-                if (_collectedWoodReward < MAX_RESOURCE_REWARD)
-                {
-                    reward = amount * baseRewardFactor;
-                    // Kota aşımı kontrolü
-                    if (_collectedWoodReward + reward > MAX_RESOURCE_REWARD)
-                        reward = MAX_RESOURCE_REWARD - _collectedWoodReward;
-
-                    _collectedWoodReward += reward;
-                }
+                reward = amount * baseRewardFactor;
                 break;
-
             case SimResourceType.Stone:
-                if (_collectedStoneReward < MAX_RESOURCE_REWARD)
-                {
-                    // Taş daha değerli/nadir olduğu için çarpanı artırıyoruz (x1.5)
-                    reward = amount * (baseRewardFactor * 1.5f);
-
-                    if (_collectedStoneReward + reward > MAX_RESOURCE_REWARD)
-                        reward = MAX_RESOURCE_REWARD - _collectedStoneReward;
-
-                    _collectedStoneReward += reward;
-                }
+                reward = amount * baseRewardFactor;
                 break;
-
             case SimResourceType.Meat:
-                if (_collectedMeatReward < MAX_RESOURCE_REWARD)
-                {
-                    // Et de değerli (x1.2)
-                    reward = amount * (baseRewardFactor * 1.2f);
-
-                    if (_collectedMeatReward + reward > MAX_RESOURCE_REWARD)
-                        reward = MAX_RESOURCE_REWARD - _collectedMeatReward;
-
-                    _collectedMeatReward += reward;
-                }
+                reward = amount * (baseRewardFactor * 1.2f);
                 break;
         }
 
         if (reward > 0) AddReward(reward);
     }
-    // 2. ÜRETİM ÖDÜLÜ
-    // Kaynağı harcamaya teşvik eder.
+
+
     private void HandleUnitCreated(SimUnitData unit)
     {
         if (unit.PlayerID == MyPlayerID) // DÜZELTİLDİ
@@ -586,34 +593,45 @@ public class RTSAgent : Agent
 
     private void HandleBuildingCompleted(SimBuildingData building)
     {
-        if (building.PlayerID == MyPlayerID) // DÜZELTİLDİ
+        if (building.PlayerID != MyPlayerID) return;
+
+        // Count EXISTING constructed buildings of this type
+        int buildingCount = _world.Buildings.Values.Count(b =>
+            b.PlayerID == MyPlayerID &&
+            b.Type == building.Type &&
+            b.IsConstructed
+        );
+
+        // SAFETY FIX: If the current building hasn't been flagged as Constructed yet 
+        // in the list or is the first one, buildingCount might be 0.
+        // We want the divisor to be at least 1.
+        int divisor = Mathf.Max(1, buildingCount);
+
+        float reward = GetCostBasedReward(building.Type);
+
+        if (building.Type == SimBuildingType.Barracks && divisor == 1)
         {
-            // Temel ödülü maliyete göre hesapla
-            float baseReward = GetCostBasedReward(building.Type);
+            reward = 5.0f;
+            if (ShowDebugLogs) Debug.Log(">>> FIRST BARRACKS! STRATEGIC BONUS! (+5.0) <<<");
+        }
+        else
+        {
+            // Diminishing Returns: Reward / Count
+            reward = reward / (float)divisor;
+        }
 
-            if (building.Type == SimBuildingType.Barracks)
+        if (reward > 0)
+        {
+            // Double check for safety before adding
+            if (float.IsInfinity(reward) || float.IsNaN(reward))
             {
-                // KIŞLA ÖZEL DURUMU:
-                // İlk kışla stratejik bir eşiktir (Teknoloji açar), bu yüzden devasa ödül ver.
-                // Sonraki kışlalar sadece kaynak maliyeti kadar (düşük) ödül verir.
-                int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == MyPlayerID && b.Type == SimBuildingType.Barracks && b.IsConstructed);
-                // ... (Ödül mantığı aynı)
+                Debug.LogError($"[RTSAgent] Invalid Reward Detected! Divisor: {divisor}, BaseReward: {GetCostBasedReward(building.Type)}");
+                return;
+            }
 
-                if (barracksCount == 1)
-                {
-                    AddReward(5.0f); // Stratejik Teşvik
-                    if (ShowDebugLogs) Debug.Log(">>> İLK KIŞLA! STRATEJİK BONUS! (+5.0) <<<");
-                }
-                else
-                {
-                    AddReward(baseReward / 2); // Sadece maliyet karşılığı (Örn: 200 kaynak -> 0.2 puan)
-                }
-            }
-            else
-            {
-                // Diğer tüm binalar için adil (cost-based) ödül
-                AddReward(baseReward);
-            }
+            AddReward(reward);
+            if (ShowDebugLogs)
+                Debug.Log($"[Reward] Building: {building.Type} | Count: {divisor} | Awarded: {reward:F4}");
         }
     }
     private float GetCostBasedReward(SimBuildingType type)

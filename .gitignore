@@ -10,6 +10,8 @@
 /[Ww]hatever/
 /[Rr]esults/
 /[Bb]uilds/
+/[Aa]ssets/Demonstrations/
+
 
 
 # Asset meta data should only be ignored when the corresponding asset is also ignored
@@ -36,6 +38,7 @@
 *.opentides
 *.opendb
 *.vc.db
+*.demo
 
 # -----------------------------------------------------------
 # PYTHON EKLENTİLERİ (Aşağıdaki kısım eklendi)

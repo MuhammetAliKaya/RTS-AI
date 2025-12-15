@@ -60,7 +60,7 @@ public class PSOVsAI_Runner : MonoBehaviour
     {
         if (!_gameStarted) return;
 
-        float dt = Time.deltaTime;
+        float dt = 0.005f;
         _world.TickCount++;
 
         // --- SİMÜLASYON DÖNGÜSÜ ---
@@ -99,21 +99,29 @@ public class PSOVsAI_Runner : MonoBehaviour
             PlayerID = id,
             Type = SimBuildingType.Base,
             GridPosition = pos,
-            IsConstructed = true,
-            Health = SimConfig.BASE_MAX_HEALTH,
-            MaxHealth = SimConfig.BASE_MAX_HEALTH
+            // IsConstructed ve Health atamalarını burada yapmaya gerek yok, 
+            // aşağıda InitializeBuildingStats halledecek.
         };
-        SimBuildingSystem.InitializeBuildingStats(baseB);
+
+        // KRİTİK DÜZELTME: İkinci parametreye 'true' veriyoruz.
+        // Bu, binanın IsConstructed=true, Health=MaxHealth ve Progress=%100 olarak gelmesini sağlar.
+        SimBuildingSystem.InitializeBuildingStats(baseB, true);
+
+        // InitializeBuildingStats varsayılan MaxHealth (1000) atıyor olabilir.
+        // Config'deki özel Base canını (Örn: 5000) kullanmak için override ediyoruz:
+        baseB.MaxHealth = SimConfig.BASE_MAX_HEALTH;
+        baseB.Health = baseB.MaxHealth; // Canı tekrar fulle
+
+        // Dünyaya ekleme işlemleri
         _world.Buildings.Add(baseB.ID, baseB);
         _world.Map.Grid[pos.x, pos.y].IsWalkable = false;
         _world.Map.Grid[pos.x, pos.y].OccupantID = baseB.ID;
 
-        // Başlangıç Kaynakları (Config'den)
+        // --- Geri kalan kaynak ve işçi kodları aynı kalabilir ---
         SimResourceSystem.AddResource(_world, id, SimResourceType.Wood, SimConfig.START_WOOD);
         SimResourceSystem.AddResource(_world, id, SimResourceType.Meat, SimConfig.START_MEAT);
         SimResourceSystem.AddResource(_world, id, SimResourceType.Stone, SimConfig.START_STONE);
 
-        // Başlangıç Nüfus ve İşçi
         SimResourceSystem.IncreaseMaxPopulation(_world, id, SimConfig.POPULATION_BASE);
         for (int i = 0; i < SimConfig.START_WORKER_COUNT; i++)
             SimBuildingSystem.SpawnUnit(_world, new int2(pos.x + 1 + i, pos.y), SimUnitType.Worker, id);

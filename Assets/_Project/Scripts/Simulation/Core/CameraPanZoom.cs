@@ -5,13 +5,13 @@ using System;
 public class CameraPanZoom : MonoBehaviour
 {
     [Header("Pan Settings")]
-    public float PanSpeed = 20f;
+    public float PanSpeed = 2f;
 
     // Sınırlandırma için (Harita dışına çıkmasın)
     public Vector2 PanLimitMin = new Vector2(-10, -10);
 
     [Header("Zoom Settings")]
-    public float ScrollSpeed = 20f;
+    public float ScrollSpeed = 2f;
     public float MinZoom = 5f;
     public float MaxZoom = 20f;
 

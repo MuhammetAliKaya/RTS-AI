@@ -91,6 +91,8 @@ public class SelfPlayTrainerRunner : MonoBehaviour
 
     public void SimulationStep(float dt)
     {
+        // ... (Kodun üst kısımları aynı) ...
+
         // 1. Ajanlar Karar Versin
         _agentDecisionCounter++;
         if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL)
@@ -111,15 +113,28 @@ public class SelfPlayTrainerRunner : MonoBehaviour
         ApplyIdlePenalty(1, AgentA);
         ApplyIdlePenalty(2, AgentB);
 
-        // 4. Bitiş Kontrolü
+        // 4. Bitiş Kontrolü (Yıkım var mı?)
         CheckGameResult();
 
         _currentStep++;
+
+        // --- ZAMAN AŞIMI KONTROLÜ (DÜZENLENDİ) ---
         if (_currentStep >= MaxSteps && !_gameEnded)
         {
-            EndGame(0); // Beraberlik
+            // BERABERLİK CEZASI:
+            // Kimse birbirini yenemeden süre bittiyse her ikisine de ceza ver.
+            // Böylece oyunu "kilitlemek" yerine risk alıp saldırmayı tercih ederler.
+
+            if (AgentA != null) AgentA.AddReward(-100.0f); // Kaybetmiş kadar olmasa da ciddi bir ceza
+            if (AgentB != null) AgentB.AddReward(-100.0f);
+
+            // Debug.Log("Süre doldu! Beraberlik cezası uygulandı.");
+
+            EndGame(0);
         }
     }
+
+    // SelfPlayTrainerRunner.cs içine bu fonksiyonları ekle veya güncelle:
 
     private void CalculateRewards(int myPlayerID, RTSAgent myAgent, ref AgentProgress prog, int enemyPlayerID)
     {
@@ -128,10 +143,23 @@ public class SelfPlayTrainerRunner : MonoBehaviour
 
         var myPlayer = _world.Players[myPlayerID];
 
-        // Mevcut durumu analiz et
+        // --- 1. EKONOMİ ÖDÜLLERİ ---
+        // İşçi sayısı arttıysa ödül ver (Ekonomiyi büyütmeye teşvik)
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == myPlayerID && u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Dead);
-        int currentSoldiers = _world.Units.Values.Count(u => u.PlayerID == myPlayerID && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
+        if (currentWorkers > prog.lastWorkers)
+        {
+            myAgent.AddReward(0.5f); // Yeni işçi ödülü
+        }
 
+        // --- 2. ORDU ÖDÜLLERİ ---
+        // Asker sayısı arttıysa ödül ver
+        int currentSoldiers = _world.Units.Values.Count(u => u.PlayerID == myPlayerID && u.UnitType == SimUnitType.Soldier && u.State != SimTaskType.Dead);
+        if (currentSoldiers > prog.lastSoldiers)
+        {
+            myAgent.AddReward(1.0f); // Yeni asker ödülü
+        }
+
+        // --- 3. İNŞAAT/YIKIM ÖDÜLLERİ ---
         int currentEnemyUnits = 0;
         int currentEnemyBuildings = 0;
         float currentEnemyBaseHealth = 0;
@@ -148,18 +176,28 @@ public class SelfPlayTrainerRunner : MonoBehaviour
             }
         }
 
-        // BASE HASAR ÖDÜLÜ (Global olarak buradan yönetilmesi daha kolay)
-        // Not: Diğer ödüller (üretim, toplama vb.) RTSAgent içindeki eventlerde veriliyor.
+        // Düşman birimi öldürme
+        if (currentEnemyUnits < prog.lastEnemyUnitCount)
+        {
+            int killCount = prog.lastEnemyUnitCount - currentEnemyUnits;
+            myAgent.AddReward(0.5f * killCount);
+        }
+
+        // Düşman binası yıkma
+        if (currentEnemyBuildings < prog.lastEnemyBuildingCount)
+        {
+            int destroyCount = prog.lastEnemyBuildingCount - currentEnemyBuildings;
+            myAgent.AddReward(2.0f * destroyCount);
+        }
+
+        // Ana üsse hasar
         if (currentEnemyBaseHealth < prog.lastEnemyBaseHealth)
         {
             float damage = prog.lastEnemyBaseHealth - currentEnemyBaseHealth;
-            myAgent.AddReward(damage * 0.001f);
+            myAgent.AddReward(damage * 0.1f);
         }
 
-        // Durumu Güncelle (Bir sonraki frame kıyaslaması için)
-        prog.lastWood = myPlayer.Wood;
-        prog.lastMeat = myPlayer.Meat;
-        prog.lastStone = myPlayer.Stone;
+        // İlerleme durumunu kaydet
         prog.lastWorkers = currentWorkers;
         prog.lastSoldiers = currentSoldiers;
         prog.lastEnemyUnitCount = currentEnemyUnits;
@@ -198,8 +236,33 @@ public class SelfPlayTrainerRunner : MonoBehaviour
 
         SimGameContext.ActiveWorld = _world;
 
-        _world.Players.Add(1, new SimPlayerData { PlayerID = 1, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
-        _world.Players.Add(2, new SimPlayerData { PlayerID = 2, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
+        // HATA DÜZELTME: Player 1 zaten constructor'da eklendiği için kontrol edip güncelliyoruz.
+        if (_world.Players.ContainsKey(1))
+        {
+            var p1 = _world.Players[1];
+            p1.Wood = 500;
+            p1.Stone = 500;
+            p1.Meat = 500;
+            p1.MaxPopulation = 20;
+        }
+        else
+        {
+            _world.Players.Add(1, new SimPlayerData { PlayerID = 1, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
+        }
+
+        // Player 2 için de aynı güvenli kontrolü yapıyoruz (SimWorldState ilerde değişirse patlamasın diye)
+        if (_world.Players.ContainsKey(2))
+        {
+            var p2 = _world.Players[2];
+            p2.Wood = 500;
+            p2.Stone = 500;
+            p2.Meat = 500;
+            p2.MaxPopulation = 20;
+        }
+        else
+        {
+            _world.Players.Add(2, new SimPlayerData { PlayerID = 2, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
+        }
 
         SetupBase(1, new int2(2, 2));
         SetupBase(2, new int2(MapSize - 3, MapSize - 3));
@@ -284,6 +347,7 @@ public class SelfPlayTrainerRunner : MonoBehaviour
 
     private void SetupBase(int pid, int2 pos)
     {
+        // 1. Ana Üssü (Base) Oluştur
         var building = new SimBuildingData
         {
             ID = _world.NextID(),
@@ -294,28 +358,42 @@ public class SelfPlayTrainerRunner : MonoBehaviour
             MaxHealth = 1000,
             IsConstructed = true
         };
+
+        // Bina istatistiklerini başlat
         SimBuildingSystem.InitializeBuildingStats(building, true);
+
+        // Dünyaya ve haritaya ekle
         _world.Buildings.Add(building.ID, building);
         _world.Map.Grid[pos.x, pos.y].IsWalkable = false;
         _world.Map.Grid[pos.x, pos.y].OccupantID = building.ID;
 
-        int2? spawnPos = SimGridSystem.FindWalkableNeighbor(_world, pos);
-        if (spawnPos.HasValue)
+        // 2. Başlangıç İşçilerini Oluştur (AdversarialTrainerRunner'daki döngü yapısı)
+        int start_workercount = 1; // İleride bu sayıyı artırmak isterseniz buradan değiştirebilirsiniz.
+        for (int i = 0; i < start_workercount; i++)
         {
-            var unit = new SimUnitData
+            // Üssün etrafında yürünebilir boş bir komşu bul
+            int2? spawnPos = SimGridSystem.FindWalkableNeighbor(_world, pos);
+            if (spawnPos.HasValue)
             {
-                ID = _world.NextID(),
-                PlayerID = pid,
-                UnitType = SimUnitType.Worker,
-                GridPosition = spawnPos.Value,
-                Health = 50,
-                MaxHealth = 50,
-                State = SimTaskType.Idle,
-                MoveSpeed = 5.0f
-            };
-            _world.Units.Add(unit.ID, unit);
-            _world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = unit.ID;
-            SimResourceSystem.ModifyPopulation(_world, pid, 1);
+                var unit = new SimUnitData
+                {
+                    ID = _world.NextID(),
+                    PlayerID = pid,
+                    UnitType = SimUnitType.Worker,
+                    GridPosition = spawnPos.Value,
+                    Health = 50,
+                    MaxHealth = 50,
+                    State = SimTaskType.Idle,
+                    MoveSpeed = 5.0f
+                };
+
+                // Birimi dünyaya ve haritaya ekle
+                _world.Units.Add(unit.ID, unit);
+                _world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = unit.ID;
+
+                // Nüfusu güncelle
+                SimResourceSystem.ModifyPopulation(_world, pid, 1);
+            }
         }
     }
 
@@ -326,28 +404,79 @@ public class SelfPlayTrainerRunner : MonoBehaviour
         var p1Base = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
         var p2Base = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
 
+        // --- HIZ BONUSU HESAPLAMA ---
+        // Ne kadar erken biterse o kadar yüksek puan (Max 4.0 puan)
+        float timeFactor = (float)(MaxSteps - _currentStep) / (float)MaxSteps;
+        float speedBonus = timeFactor * 500.0f;
+
         if (p1Base == null && p2Base == null)
         {
+            // Beraberlik (İkisi de aynı anda yıkıldı - çok nadir)
             AgentA?.AddReward(-1f); AgentA?.EndEpisode();
             AgentB?.AddReward(-1f); AgentB?.EndEpisode();
             EndGame(0);
         }
         else if (p1Base == null) // P1 Kaybetti, P2 Kazandı
         {
-            AgentA?.AddReward(-2.0f); AgentA?.EndEpisode();
-            AgentB?.AddReward(2.0f); AgentB?.EndEpisode();
+            // KAYBEDEN (P1)
+            AgentA?.AddReward(-20.0f);
+            AgentA?.EndEpisode();
+
+            // KAZANAN (P2) -> 2.0 Puan + Hız Bonusu
+            float totalReward = 200.0f + speedBonus;
+            AgentB?.AddReward(totalReward);
+            AgentB?.EndEpisode();
+
+            // Debug.Log($"P2 KAZANDI! Hız Bonusu: {speedBonus:F2} | Toplam: {totalReward:F2}");
             EndGame(2);
         }
         else if (p2Base == null) // P2 Kaybetti, P1 Kazandı
         {
-            AgentA?.AddReward(2.0f); AgentA?.EndEpisode();
-            AgentB?.AddReward(-2.0f); AgentB?.EndEpisode();
+            // KAZANAN (P1) -> 2.0 Puan + Hız Bonusu
+            float totalReward = 200.0f + speedBonus;
+            AgentA?.AddReward(totalReward);
+            AgentA?.EndEpisode();
+
+            // KAYBEDEN (P2)
+            AgentB?.AddReward(-20.0f);
+            AgentB?.EndEpisode();
+
+            // Debug.Log($"P1 KAZANDI! Hız Bonusu: {speedBonus:F2} | Toplam: {totalReward:F2}");
             EndGame(1);
         }
+        // else
+        // {
+
+        //     AgentA?.AddReward(-100f);
+        //     AgentA?.EndEpisode();
+
+        //     AgentB?.AddReward(-100f);
+        //     AgentB?.EndEpisode();
+        // }
     }
 
     private void EndGame(int winnerID)
     {
+        // Eğer zaten oyun bittiyse tekrar işlem yapma (Çifte reset olmaması için)
+        if (_gameEnded) return;
+
         _gameEnded = true;
+
+        // --- EKSİK OLAN KISIM BURASI ---
+        // Oyun süre/beraberlik veya başka bir sebeple burada bittiyse,
+        // ajanlara bölümü bitirmelerini söylemeliyiz ki 'OnEpisodeBegin' tetiklensin ve 'ResetSimulation' çalışsın.
+
+        if (AgentA != null)
+        {
+            // Eğer ödül vermediyseniz (Beraberlik durumunda) ufak bir teselli veya ceza verebilirsiniz.
+            // AgentA.AddReward(0f); 
+            AgentA.EndEpisode();
+        }
+
+        if (AgentB != null)
+        {
+            // AgentB.AddReward(0f);
+            AgentB.EndEpisode();
+        }
     }
 }
