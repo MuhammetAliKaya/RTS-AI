@@ -10,7 +10,7 @@ public class RTSGridSensor : ISensor
     private string _name;
     private int[] _shape;
 
-    // --- KANAL TANIMLARI (TOPLAM 25 KANAL) ---
+    // --- KANAL TANIMLARI (TOPLAM 27 KANAL) ---
     private const int CH_OBSTACLE = 0;
     private const int CH_RES_WOOD = 1;
     private const int CH_RES_STONE = 2;
@@ -41,10 +41,8 @@ public class RTSGridSensor : ISensor
     private const int CH_ENEMY_SOLDIER = 23;
 
     private const int CH_FOG_OF_WAR = 24;
-
     private const int CH_SELECTION = 25;
-
-    private const int CH_MY_IDLE_WORKER = 26; // Yeni kanal ID'si
+    private const int CH_MY_IDLE_WORKER = 26;
 
     private const int TOTAL_CHANNELS = 27;
 
@@ -59,7 +57,6 @@ public class RTSGridSensor : ISensor
         int w = (_world != null) ? _world.Map.Width : 32;
         int h = (_world != null) ? _world.Map.Height : 32;
 
-        // Shape: [Height, Width, Channels]
         _shape = new int[] { h, w, TOTAL_CHANNELS };
     }
 
@@ -69,7 +66,6 @@ public class RTSGridSensor : ISensor
         _gridSystem = grid;
     }
 
-    // YENİ: Ajanın seçtiği birimi sensöre bildiren metot
     public void SetSelectedUnitIndex(int index)
     {
         _highlightedUnitIndex = index;
@@ -77,31 +73,34 @@ public class RTSGridSensor : ISensor
 
     public string GetName() { return _name; }
 
+    // --- KRİTİK NOKTA 1: Visual Spec ---
     public ObservationSpec GetObservationSpec()
     {
         return ObservationSpec.Visual(_shape[0], _shape[1], _shape[2]);
     }
 
+    // --- KRİTİK NOKTA 2: SIKIŞTIRMAYI KAPATMA ---
     public CompressionSpec GetCompressionSpec()
     {
+        // Debug.Log uyarısı ekledim. Unity Console'da bunu görmüyorsanız kod güncellenmemiştir.
+        // Debug.Log($"[RTSGridSensor] CompressionSpec called for {_name}. Setting to NONE.");
 
+        // Default() PNG yapar, bu yüzden explicit olarak None (Hiçbiri) seçiyoruz.
         return new CompressionSpec(SensorCompressionType.None);
     }
 
     public byte[] GetCompressedObservation()
     {
+        // Sıkıştırma kapalı olduğu için burası asla çağrılmamalı, null dönüyoruz.
         return null;
     }
 
     public void Update() { }
     public void Reset() { }
 
-    // --- GÖZLEM YAZMA ---
+    // --- GÖZLEM YAZMA (RAW DATA) ---
     public int Write(ObservationWriter writer)
     {
-        // ZeroBuffer yerine manuel temizleme yapıyoruz
-        // Aynı döngüde zemin verisini de işleyerek performansı koruyoruz.
-
         if (_world == null || _world.Map == null) return 0;
 
         int width = _world.Map.Width;
@@ -112,13 +111,8 @@ public class RTSGridSensor : ISensor
         {
             for (int y = 0; y < height; y++)
             {
-                // Önce o pikseldeki tüm kanalları sıfırla (Clean Slate)
-                for (int c = 0; c < TOTAL_CHANNELS; c++)
-                {
-                    writer[y, x, c] = 0.0f;
-                }
+                for (int c = 0; c < TOTAL_CHANNELS; c++) writer[y, x, c] = 0.0f;
 
-                // Sonra Zemin Verisini Yaz
                 var node = _world.Map.Grid[x, y];
                 if (!node.IsWalkable && node.Type != SimTileType.Water) writer[y, x, CH_OBSTACLE] = 1.0f;
 
@@ -138,8 +132,6 @@ public class RTSGridSensor : ISensor
 
             int x = b.GridPosition.x;
             int y = b.GridPosition.y;
-
-            // Sınır kontrolü
             if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
             bool isMe = (b.PlayerID == 1);
@@ -173,7 +165,6 @@ public class RTSGridSensor : ISensor
                     case SimBuildingType.StonePit: channel = CH_ENEMY_STONE_BUILDING; break;
                 }
             }
-
             if (channel != -1) writer[y, x, channel] = 1.0f;
         }
 
@@ -185,48 +176,32 @@ public class RTSGridSensor : ISensor
 
             int x = u.GridPosition.x;
             int y = u.GridPosition.y;
-
             if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
             bool isMe = (u.PlayerID == 1);
-
             if (isMe)
             {
-                if (u.UnitType == SimUnitType.Soldier)
-                {
-                    // Asker Kanalı
-                    writer[y, x, CH_MY_SOLDIER] = 1.0f;
-                }
+                if (u.UnitType == SimUnitType.Soldier) writer[y, x, CH_MY_SOLDIER] = 1.0f;
                 else if (u.UnitType == SimUnitType.Worker)
                 {
-                    // Genel İşçi Kanalı (Her zaman görünür)
                     writer[y, x, CH_MY_WORKER] = 1.0f;
-
-                    // EKSTRA: Eğer işçi boşta ise (Idle) parlak göster
-                    if (u.State == SimTaskType.Idle)
-                    {
-                        writer[y, x, CH_MY_IDLE_WORKER] = 1.0f;
-                    }
+                    if (u.State == SimTaskType.Idle) writer[y, x, CH_MY_IDLE_WORKER] = 1.0f;
                 }
             }
             else
             {
-                // Düşman birimleri için standart mantık
                 int channel = (u.UnitType == SimUnitType.Soldier) ? CH_ENEMY_SOLDIER : CH_ENEMY_WORKER;
                 writer[y, x, channel] = 1.0f;
             }
         }
 
-        // 4. SEÇİM VURGUSU (HIGHLIGHT)
+        // 4. SEÇİM
         if (_highlightedUnitIndex != -1)
         {
-            // Index'i koordinata çevir
             int hX = _highlightedUnitIndex % width;
             int hY = _highlightedUnitIndex / width;
-
             if (hX >= 0 && hX < width && hY >= 0 && hY < height)
             {
-                // Kanal 25'i boya
                 writer[hY, hX, CH_SELECTION] = 1.0f;
             }
         }

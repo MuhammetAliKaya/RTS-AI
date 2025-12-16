@@ -14,13 +14,15 @@ public class TargetSelectionAgent : Agent
 
     // Haritayı görebilmesi için GridSensor referansı şart
     private RTSGridSensorComponent _gridSensorComp;
+    private AdversarialTrainerRunner _runner;
 
     // Setup metodunu güncelledik: SimGridSystem'i de paramatre olarak alıyoruz (Sensör için)
-    public void Setup(RTSOrchestrator orchestrator, SimWorldState world, DRLActionTranslator translator, SimGridSystem gridSystem)
+    public void Setup(RTSOrchestrator orchestrator, SimWorldState world, DRLActionTranslator translator, SimGridSystem gridSystem, AdversarialTrainerRunner runner)
     {
         _orchestrator = orchestrator;
         _world = world;
         _translator = translator;
+        _runner = runner; // Runner'ı kaydet!
 
         // GridSensorComponent'i bu GameObject üzerinden alıyoruz.
         // (Unity Editor'de TargetSelectionAgent objesine RTSGridSensorComponent eklemeyi unutmayın!)
@@ -97,5 +99,21 @@ public class TargetSelectionAgent : Agent
         // Seçilen hedefi yöneticiye (Orchestrator) bildir.
         // Bu noktada zincir tamamlanır ve eylem simülasyona uygulanır.
         _orchestrator.OnTargetSelected(targetIndex);
+    }
+
+    // Agent'ın OnEpisodeBegin metodunu override et
+    public override void OnEpisodeBegin()
+    {
+        if (_runner != null)
+        {
+            // Ortamın sıfırlanmasını Runner'a devret.
+            _runner.ResetSimulation();
+        }
+
+        // Highlight'ı sıfırla
+        if (_gridSensorComp != null)
+        {
+            _gridSensorComp.SetHighlight(-1);
+        }
     }
 }

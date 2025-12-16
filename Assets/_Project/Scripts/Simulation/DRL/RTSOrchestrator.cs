@@ -31,17 +31,20 @@ public class RTSOrchestrator : MonoBehaviour
     public enum OrchestratorState { Idle, WaitingUnit, WaitingAction, WaitingTarget }
     private OrchestratorState _state = OrchestratorState.Idle;
 
+    private AdversarialTrainerRunner _runner;
+
     private void Awake()
     {
         Instance = this;
     }
 
-    public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys)
+    public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys, AdversarialTrainerRunner runner)
     {
         _world = world;
         _gridSystem = gridSys;
         _unitSystem = unitSys;
         _buildingSystem = buildSys;
+        _runner = runner; // Runner'ı kaydet!
 
         // Translator'ı oluştur
         Translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem, MyPlayerID);
@@ -56,9 +59,50 @@ public class RTSOrchestrator : MonoBehaviour
 
         // 3. TargetAgent: HARİTAYI GÖRMELİ! Bu yüzden gridSys'i buraya paslıyoruz.
         // (TargetSelectionAgent.cs içindeki Setup fonksiyonunu buna göre güncellemiştik)
-        TargetAgent.Setup(this, _world, Translator, _gridSystem);
+        TargetAgent.Setup(this, _world, Translator, _gridSystem, _runner);
     }
 
+
+    private void SubscribeToEvents()
+    {
+        SimResourceSystem.OnResourceGathered += HandleResourceGathered;
+        SimBuildingSystem.OnBuildingFinished += HandleBuildingCompleted;
+    }
+
+    private void OnDestroy()
+    {
+        SimResourceSystem.OnResourceGathered -= HandleResourceGathered;
+        SimBuildingSystem.OnBuildingFinished -= HandleBuildingCompleted;
+    }
+
+    private void HandleResourceGathered(int playerID, int amount, SimResourceType type)
+    {
+        if (playerID != MyPlayerID) return;
+
+        // Kaynak toplama başarısı kime yazar?
+        // - TargetAgent: Doğru kaynağa tıkladığı için.
+        // - UnitAgent: Doğru işçiyi seçtiği için.
+        // ActionAgent: Zaten "Gather" dediği için.
+
+        // Bu yüzden Küçük bir grup ödülü en iyisidir.
+        AddGroupReward(amount * 0.001f);
+    }
+
+    private void HandleBuildingCompleted(SimBuildingData building)
+    {
+        if (building.PlayerID != MyPlayerID) return;
+
+        // Bina tamamlandı! Bu büyük bir stratejik başarı.
+        // ActionAgent (İnşa emri veren) ve TargetAgent (Yeri seçen) ödül almalı.
+        float reward = 0.5f;
+        if (building.Type == SimBuildingType.Barracks) reward = 2.0f; // Kışla çok önemli
+
+        AddActionRewardOnly(reward);
+        AddTargetRewardOnly(reward);
+
+        // UnitAgent'a da ufak bir pay
+        AddUnitRewardOnly(reward * 0.2f);
+    }
     public void RequestFullDecision()
     {
         // Zinciri Başlat: Adım 1 - Kim?
@@ -119,4 +163,25 @@ public class RTSOrchestrator : MonoBehaviour
         if (ActionAgent != null) ActionAgent.EndEpisode();
         if (TargetAgent != null) TargetAgent.EndEpisode();
     }
+    public void AddTargetRewardOnly(float reward)
+    {
+        if (TargetAgent != null) TargetAgent.AddReward(reward);
+    }
+    public void AddActionRewardOnly(float reward)
+    {
+        if (ActionAgent != null) ActionAgent.AddReward(reward);
+    }
+    public void AddUnitRewardOnly(float reward)
+    {
+        if (UnitAgent != null) UnitAgent.AddReward(reward);
+    }
+
+    public void OnActionFailed(string reason)
+    {
+        AddActionRewardOnly(-0.01f);
+        AddTargetRewardOnly(-0.02f);
+    }
+
+
+
 }

@@ -140,16 +140,43 @@ public class DRLActionTranslator
     }
 
     // HATA DÜZELTME: Parametre int2 yapıldı
+    // Parametre int2 yapıldı ve OccupantID kullanıldı (HIZLANDIRILDI)
     private SimUnitData GetUnitAt(int2 pos)
     {
-        // int2 struct olduğu için LINQ sorgusunda == operatörü düzgün çalışır
-        return _world.Units.Values.FirstOrDefault(u => u.GridPosition == pos && u.State != SimTaskType.Dead);
+        // 1. Harita sınır kontrolü
+        if (!_world.Map.IsInBounds(pos)) return null;
+
+        // 2. Grid hücresine bak: Kim var orada?
+        var node = _world.Map.Grid[pos.x, pos.y];
+
+        // Eğer kimse yoksa direkt dön (Liste aramaya gerek yok!)
+        if (node.OccupantID == -1) return null;
+
+        // 3. ID bir üniteye mi ait? Dictionary'den O(1) ile çek.
+        if (_world.Units.TryGetValue(node.OccupantID, out SimUnitData unit))
+        {
+            // Ölüler grid üzerinde kalmış olabilir, kontrol et.
+            if (unit.State != SimTaskType.Dead) return unit;
+        }
+
+        return null;
     }
 
-    // HATA DÜZELTME: Parametre int2 yapıldı
+    // Parametre int2 yapıldı ve OccupantID kullanıldı (HIZLANDIRILDI)
     private SimBuildingData GetBuildingAt(int2 pos)
     {
-        return _world.Buildings.Values.FirstOrDefault(b => b.GridPosition == pos && b.Health > 0);
+        if (!_world.Map.IsInBounds(pos)) return null;
+
+        var node = _world.Map.Grid[pos.x, pos.y];
+        if (node.OccupantID == -1) return null;
+
+        // ID bir binaya mı ait?
+        if (_world.Buildings.TryGetValue(node.OccupantID, out SimBuildingData building))
+        {
+            if (building.Health > 0) return building;
+        }
+
+        return null;
     }
 
     // --- ANA ÇALIŞTIRMA FONKSİYONU ---

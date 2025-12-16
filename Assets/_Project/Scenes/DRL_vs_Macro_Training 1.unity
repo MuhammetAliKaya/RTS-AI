@@ -4149,7 +4149,6 @@ GameObject:
   - component: {fileID: 1621443009}
   - component: {fileID: 1621443008}
   - component: {fileID: 1621443007}
-  - component: {fileID: 1621443010}
   m_Layer: 0
   m_Name: Target_Selector
   m_TagString: Untagged
@@ -4232,34 +4231,6 @@ MonoBehaviour:
   m_UseChildActuators: 1
   m_DeterministicInference: 0
   m_ObservableAttributeHandling: 0
---- !u!114 &1621443010
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1621443005}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2a501962d056745d1a30e99146ee39fe, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_SensorName: GridSensor
-  m_CellScale: {x: 1, y: 0.01, z: 1}
-  m_GridSize: {x: 16, y: 1, z: 16}
-  m_RotateWithAgent: 1
-  m_AgentGameObject: {fileID: 0}
-  m_DetectableTags: []
-  m_ColliderMask:
-    serializedVersion: 2
-    m_Bits: 0
-  m_MaxColliderBufferSize: 500
-  m_InitialColliderBufferSize: 4
-  m_DebugColors: []
-  m_GizmoYOffset: 0
-  m_ShowGizmos: 0
-  m_CompressionType: 1
-  m_ObservationStacks: 1
 --- !u!1 &1640438976
 GameObject:
   m_ObjectHideFlags: 0

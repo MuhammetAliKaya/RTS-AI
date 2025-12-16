@@ -69,22 +69,23 @@ public class UnitSelectionAgent : Agent
         int totalMapSize = _world.Map.Width * _world.Map.Height;
         int myID = _orchestrator.MyPlayerID;
 
+        // GÜVENLİK KİLİDİ: Hiçbir şey seçemezsek devreye girecek bayrak
+        bool hasAnySelection = false;
+
         for (int i = 0; i < totalMapSize; i++)
         {
             bool canSelect = false;
 
-            // 1. Bu karede bana ait bir şey (Birim veya Bina) var mı?
+            // 1. Bu karede bana ait bir şey var mı?
+            // (Translator artık çok hızlı olduğu için burası performansı düşürmez)
             if (_translator.IsUnitOwnedByPlayer(i, myID))
             {
-                // Birim mi Bina mı ayırt etmemiz lazım.
                 var unit = _translator.GetUnitAtPosIndex(i);
 
                 if (unit != null)
                 {
-                    // --- BİRİM KONTROLÜ ---
-                    // Sadece "Boşta" (Idle) olan birimler seçilebilir.
-                    // Eğer kaynak topluyorsa veya inşa ediyorsa, onları rahatsız etme.
-                    // (Ancak stratejine göre toplama yapanları da seçmek isteyebilirsin, şimdilik kapatıyoruz)
+                    // Sadece BOŞTA (Idle) olan işçiler seçilebilir
+                    // (Stratejine göre burayı değiştirebilirsin ama Idle en güvenlisidir)
                     if (unit.State == SimTaskType.Idle)
                     {
                         canSelect = true;
@@ -92,12 +93,8 @@ public class UnitSelectionAgent : Agent
                 }
                 else
                 {
-                    // --- BİNA KONTROLÜ ---
-                    // Translator "IsUnitOwned" true döndürdü ama "GetUnit" null döndürdüyse
-                    // bu kesinlikle bir binadır.
-                    // Binalar (Base, Barracks) her zaman üretim için seçilebilir.
-                    // İsterseniz sadece inşaatı bitmiş (IsConstructed) binaları kontrol edebilirsiniz.
-                    // (Translator içinde bu kontrol kısmen var ama burada garantiye alalım)
+                    // Bina Kontrolü: Binalar her zaman seçilebilir (Üretim için)
+                    // (Translator IsUnitOwned true dediyse ve Unit değilse binadır)
                     SimBuildingType bType = _translator.GetBuildingTypeAt(i);
                     if (bType != SimBuildingType.None)
                     {
@@ -106,15 +103,21 @@ public class UnitSelectionAgent : Agent
                 }
             }
 
+            // Eğer bu kare seçilebiliyorsa bayrağı kaldır
+            if (canSelect) hasAnySelection = true;
+
             // Maskeyi uygula
             actionMask.SetActionEnabled(0, i, canSelect);
         }
 
-        // ÖNEMLİ: Eğer haritada seçecek HİÇBİR ŞEY yoksa (tüm işçiler meşgul, bina yok vb.)
-        // Ajanın hata vermemesi için "hiçbir şey yapma" seçeneği olmadığı için (seçim zorunlu),
-        // Geçici olarak 0. indeksi açabiliriz veya Orchestrator bu durumu handle etmeli.
-        // Şimdilik ML-Agents çökmesin diye en az 1 tane true olduğundan emin olmak iyi bir pratiktir 
-        // ama maskeleme mantığı doğruysa gerek kalmaz.
+        // --- KRİTİK GÜVENLİK ---
+        // Eğer haritada tıklanacak tek bir geçerli kare bile kalmadıysa
+        // ML-Agents'ın çökmemesi için 0. indeksi (veya herhangi birini) zorla açıyoruz.
+        // Orchestrator bu durumu "Wait" olarak algılamalı veya pas geçmeli.
+        if (!hasAnySelection)
+        {
+            actionMask.SetActionEnabled(0, 0, true);
+        }
     }
 
     public override void OnActionReceived(ActionBuffers actions)

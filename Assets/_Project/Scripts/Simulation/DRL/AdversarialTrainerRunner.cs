@@ -75,9 +75,14 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // DEĞİŞİKLİK 2: Orchestrator bileşenini child objeden buluyoruz.
         if (Orchestrator == null) Orchestrator = GetComponentInChildren<RTSOrchestrator>();
 
-        if (IsTrainingMode) Application.targetFrameRate = 60;
-        else Application.targetFrameRate = 60;
+        // Start'ta reset çağırmak yerine sadece Orchestrator'ı kuruyoruz
+        if (Orchestrator != null)
+        {
+            // Setup'a kendini (this) gönder
+            Orchestrator.Setup(_world, _gridSys, _unitSys, _buildSys, this); // <--- DEĞİŞİKLİK
+        }
 
+        // İlk reset'i el ile çağırıyoruz. Sonrakiler Agent.OnEpisodeBegin'den gelecek.
         ResetSimulation();
     }
 
@@ -131,23 +136,20 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     private void CalculateEconomyRewards()
     {
-        // DEĞİŞİKLİK 4: Referans kontrolü
-        if (Orchestrator == null || EnemyDifficulty != AIDifficulty.Passive) return;
+        if (Orchestrator == null) return;
 
+        // Kaynak toplama event tabanlı olduğu için buradaki check'i kaldırabiliriz
+        // veya sadece "Toplam Kaynak Miktarı" artışına genel bir strateji ödülü verebiliriz.
+
+        // İşçi Üretimi (Action Agent sorumluluğunda)
         var myPlayer = _world.Players[1];
         int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
 
         if (currentWorkers > _lastWorkerCount)
         {
-            // Yeni işçi üretilince küçük bir teşvik ödülü
-            // DEĞİŞİKLİK 5: AddGroupReward kullanıyoruz
-            Orchestrator.AddGroupReward(0.1f);
-            // Debug.Log("New worker " + currentWorkers);
+            // İşçi üretmek ActionAgent'ın kararıdır.
+            Orchestrator.AddActionRewardOnly(0.1f);
         }
-
-        _lastWood = myPlayer.Wood;
-        _lastMeat = myPlayer.Meat;
-        _lastStone = myPlayer.Stone;
         _lastWorkerCount = currentWorkers;
     }
 
@@ -175,41 +177,37 @@ public class AdversarialTrainerRunner : MonoBehaviour
             }
         }
 
-        // Asker sayısı artarsa ödül (Ordu kurmaya teşvik)
+        // 1. Asker Sayısı Artışı (Ordu Kurma Teşviği)
         if (currentSoldiers > _lastSoldiers)
         {
-            Orchestrator.AddGroupReward(0.05f);
+            // Ordu kurmak stratejik bir karardır, Unit ve Action agentlar sorumludur.
+            Orchestrator.AddUnitRewardOnly(0.02f);
+            Orchestrator.AddActionRewardOnly(0.02f);
         }
 
-        // Düşman öldürme ödülü
+        // 2. Düşman Öldürme (BÜYÜK ORTAK ÖDÜL)
         if (currentEnemyUnits < _lastEnemyUnitCount)
         {
             int killCount = _lastEnemyUnitCount - currentEnemyUnits;
+            // Tüm ekip başardı!
             Orchestrator.AddGroupReward(0.5f * killCount);
         }
 
-        // Düşman binası yıkma ödülü
+        // 3. Bina Yıkma (ÇOK BÜYÜK ORTAK ÖDÜL)
         if (currentEnemyBuildings < _lastEnemyBuildingCount)
         {
             int destroyCount = _lastEnemyBuildingCount - currentEnemyBuildings;
             Orchestrator.AddGroupReward(2.0f * destroyCount);
         }
 
-        // Düşman üssüne hasar verme ödülü
-        if (currentEnemyBaseHealth < _lastEnemyBaseHealth)
-        {
-            float damage = _lastEnemyBaseHealth - currentEnemyBaseHealth;
-            Orchestrator.AddGroupReward(damage * 0.001f);
-        }
-
-        // Kendi üssümüz hasar alırsa ceza
+        // 4. Kendi Üssümüz Hasar Alırsa (ORTAK CEZA)
         var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
         if (myBase != null)
         {
             if (myBase.Health < _lastMyBaseHealth)
             {
                 float damageTaken = _lastMyBaseHealth - myBase.Health;
-                Orchestrator.AddGroupReward(-damageTaken * 0.01f); // Ceza katsayısı
+                Orchestrator.AddGroupReward(-damageTaken * 0.005f);
             }
             _lastMyBaseHealth = myBase.Health;
         }
@@ -224,7 +222,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
     {
         if (Orchestrator == null) return;
 
-        // Boş duran işçilere ufak bir ceza (Ekonomiyi canlı tutmak için)
+        // Boşta duran işçiler UnitAgent'ın sorunudur. Onları seçip iş vermesi gerekir.
         int idleCount = _world.Units.Values.Count(u =>
             u.PlayerID == 1 &&
             u.UnitType == SimUnitType.Worker &&
@@ -233,7 +231,8 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         if (idleCount > 0)
         {
-            Orchestrator.AddGroupReward(idleCount * -0.0001f);
+            // Sadece UnitAgent'a ceza veriyoruz.
+            Orchestrator.AddUnitRewardOnly(idleCount * -0.001f);
         }
     }
 
@@ -269,7 +268,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
 
-            // DEĞİŞİKLİK 6: Grup ödülü ve grup bitişi
+            // Ödülü ver ve bölümü bitir.
             Orchestrator.AddGroupReward(reward);
             Orchestrator.EndGroupEpisode();
         }
@@ -304,24 +303,50 @@ public class AdversarialTrainerRunner : MonoBehaviour
             SimGameContext.ActiveWorld = _world;
         }
 
-        // Oyuncu başlangıç kaynakları
-        if (!_world.Players.ContainsKey(1)) _world.Players.Add(1, new SimPlayerData { PlayerID = 1, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
-        if (!_world.Players.ContainsKey(2)) _world.Players.Add(2, new SimPlayerData { PlayerID = 2, Wood = 500, Stone = 500, Meat = 500, MaxPopulation = 20 });
-
-        _lastWood = 500; _lastStone = 500; _lastMeat = 500; _lastWorkerCount = 0;
-
-        SetupBase(1, new int2(2, 2));
-        SetupBase(2, new int2(MapSize - 3, MapSize - 3));
-
+        // 1. ÖNCE SİSTEMLERİ BAŞLAT
         _gridSys = new SimGridSystem(_world);
         _unitSys = new SimUnitSystem(_world);
         _buildSys = new SimBuildingSystem(_world);
         _resSys = new SimResourceSystem(_world);
 
+        // 2. SONRA OYUNCU KAYNAKLARINI ATAN
+        _world.Players.Clear();  // TAMAMEN TEMİZLE
+        _world.Players.Add(1, new SimPlayerData
+        {
+            PlayerID = 1,
+            Wood = 5000,
+            Stone = 5000,
+            Meat = 5000,
+            MaxPopulation = 20,
+            CurrentPopulation = 0  // EKSTRA: Population'ı sıfırla
+        });
+        _world.Players.Add(2, new SimPlayerData
+        {
+            PlayerID = 2,
+            Wood = 500,
+            Stone = 500,
+            Meat = 500,
+            MaxPopulation = 20,
+            CurrentPopulation = 0
+        });
+
+        // Debug için ekstra kontrol
+        Debug.Log("Player 1 Resources - Wood: " + _world.Players[1].Wood + " Stone: " + _world.Players[1].Stone + " Meat: " + _world.Players[1].Meat);
+        Debug.Log("Player 2 Resources - Wood: " + _world.Players[2].Wood + " Stone: " + _world.Players[2].Stone + " Meat: " + _world.Players[2].Meat);
+
+        _lastWood = 500;
+        _lastStone = 500;
+        _lastMeat = 500;
+        _lastWorkerCount = 0;
+
+        // 3. EN SON BASE'LERİ KUR
+        SetupBase(1, new int2(2, 2));
+        SetupBase(2, new int2(MapSize - 3, MapSize - 3));
+
         // DEĞİŞİKLİK 7: Agent.Setup yerine Orchestrator.Setup
         if (Orchestrator != null)
         {
-            Orchestrator.Setup(_world, _gridSys, _unitSys, _buildSys);
+            Orchestrator.Setup(_world, _gridSys, _unitSys, _buildSys, this);
         }
 
         if (UseMacroAI) _enemyAI = new SimpleMacroAI(_world, 2, difficultyLevel);
