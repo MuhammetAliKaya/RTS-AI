@@ -84,7 +84,8 @@ public class RTSGridSensor : ISensor
 
     public CompressionSpec GetCompressionSpec()
     {
-        return CompressionSpec.Default();
+
+        return new CompressionSpec(SensorCompressionType.None);
     }
 
     public byte[] GetCompressedObservation()

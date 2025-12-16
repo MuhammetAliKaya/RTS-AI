@@ -1,85 +1,84 @@
-# behaviors:
-#   RTSBrain:
-#     trainer_type: ppo
-#     hyperparameters:
-#       batch_size: 1024
-#       buffer_size: 10240
-#       learning_rate: 3.0e-4
-#       beta: 1.0e-2
-#       epsilon: 0.1
-#       lambd: 0.95
-#       num_epoch: 3
-#       learning_rate_schedule: linear
-#     network_settings:
-#       normalize: true
-#       hidden_units: 512
-#       num_layers: 3
-#       vis_encode_type: resnet
-#       memory:
-#         sequence_length: 64
-#         memory_size: 256
-
-#     reward_signals:
-#       extrinsic:
-#         gamma: 0.999
-#         strength: 1.0
-
-#       gail:
-#         strength: 0.5
-#         gamma: 0.999
-#         demo_path: Assets/Demonstrations/tr3.demo
-
-#     behavioral_cloning:
-#       strength: 0.5
-#       gamma: 0.995
-#       demo_path: Assets/Demonstrations/tr3.demo
-#       steps: 150000
-
-#     # self_play:
-#     #   save_steps: 20000
-#     #   team_change: 100000
-#     #   swap_steps: 10000
-#     #   window: 10
-#     #   play_against_latest_model_ratio: 0.5
-#     #   initial_elo: 1200.0
-
-#     max_steps: 500000000
-#     time_horizon: 1024
-#     summary_freq: 10000
-
 behaviors:
   RTSBrain:
     trainer_type: ppo
     hyperparameters:
-      batch_size: 2048
-      buffer_size: 20480
-      learning_rate: 3.0e-3
-      beta: 5.0e-3
-      epsilon: 0.2
+      batch_size: 1024
+      buffer_size: 10240
+      learning_rate: 3.0e-4
+      beta: 1.0e-2
+      epsilon: 0.1
       lambd: 0.95
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
       normalize: true
-      hidden_units: 256
-      num_layers: 2
+      hidden_units: 512
+      num_layers: 3
       vis_encode_type: resnet
       memory:
-        sequence_length: 32
-        memory_size: 128
+        sequence_length: 64
+        memory_size: 256
+
     reward_signals:
       extrinsic:
-        gamma: 0.99
+        gamma: 0.999
         strength: 1.0
+
       gail:
         strength: 0.5
-        gamma: 0.99
+        gamma: 0.999
         demo_path: Assets/Demonstrations/tr3.demo
-    # behavioral_cloning:
-    #   strength: 0.5
-    #   gamma: 0.99
-    #   demo_path: Assets/Demonstrations/tr3.demo
-    #   steps: 150000
-    max_steps: 50000000
-    time_horizon: 128
+
+    behavioral_cloning:
+      strength: 0.5
+      gamma: 0.995
+      demo_path: Assets/Demonstrations/tr3.demo
+      steps: 150000
+
+    # self_play:
+    #   save_steps: 20000
+    #   team_change: 100000
+    #   swap_steps: 10000
+    #   window: 10
+    #   play_against_latest_model_ratio: 0.5
+    #   initial_elo: 1200.0
+
+    max_steps: 500000000
+    time_horizon: 1024
     summary_freq: 10000
+# behaviors:
+#   RTSBrain:
+#     trainer_type: ppo
+#     hyperparameters:
+#       batch_size: 2048
+#       buffer_size: 20480
+#       learning_rate: 3.0e-3
+#       beta: 5.0e-3
+#       epsilon: 0.2
+#       lambd: 0.95
+#       num_epoch: 3
+#       learning_rate_schedule: linear
+#     network_settings:
+#       normalize: true
+#       hidden_units: 256
+#       num_layers: 2
+#       vis_encode_type: simple
+#       memory:
+#         sequence_length: 32
+#         memory_size: 128
+#     reward_signals:
+#       extrinsic:
+#         gamma: 0.99
+#         strength: 1.0
+#       gail:
+#         strength: 0.95
+#         gamma: 0.99
+#         demo_path: Assets/Demonstrations/tr3.demo
+#     behavioral_cloning:
+#       strength: 0.5
+#       gamma: 0.99
+#       demo_path: Assets/Demonstrations/tr3.demo
+#       steps: 150000
+#     max_steps: 50000000
+#     time_horizon: 128
+#     summary_freq: 10000
