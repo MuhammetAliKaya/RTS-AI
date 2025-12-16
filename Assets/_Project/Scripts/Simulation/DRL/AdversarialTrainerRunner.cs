@@ -103,28 +103,38 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     public void SimulationStep(float dt)
     {
+        // --- KİLİT MEKANİZMASI (LOCK) ---
+        // Eğer Orchestrator şu an karar verme zincirindeyse (Idle değilse),
+        // simülasyonu (hareketleri, inşaatları vb.) DURDUR ve bu frame'i pas geç.
+        if (Orchestrator != null && Orchestrator.CurrentState != RTSOrchestrator.OrchestratorState.Idle)
+        {
+            return; // Dünyayı dondur, ajanın kararını bekle.
+        }
+        // --------------------------------
+
         // 1. Düşman AI Hamlesi
         if (_enemyAI != null) _enemyAI.Update(dt);
 
-        // 2. Karar Mekanizması (Orchestrator üzerinden)
+        // 2. Karar Mekanizması Tetikleyici
         _agentDecisionCounter++;
         if (_agentDecisionCounter >= AGENT_DECISION_INTERVAL && IsTrainingMode)
         {
             _agentDecisionCounter = 0;
-            // DEĞİŞİKLİK 3: FullDecision çağrısı yapıyoruz (Zinciri başlatır)
+
+            // Karar isteği gönderilir.
+            // Bu çağrı Orchestrator'ın state'ini 'WaitingUnit' yapar.
+            // Bir sonraki frame'de yukarıdaki "if" bloğuna takılacağı için simülasyon donacaktır.
             if (Orchestrator != null) Orchestrator.RequestFullDecision();
         }
 
-        // 3. Simülasyonu İlerlet
+        // 3. Simülasyonu İlerlet (Sadece IDLE iken buraya ulaşılır)
         if (_buildSys != null) _buildSys.UpdateAllBuildings(dt);
         if (_unitSys != null) _unitSys.UpdateAllUnits(dt);
 
-        // 4. Ödüller ve Cezalar
+        // 4. Ödüller ve Bitiş Kontrolleri...
         CalculateCombatRewards();
         CalculateEconomyRewards();
         ApplyIdlePenalty();
-
-        // 5. Bitiş Kontrolü
         CheckGameResult();
 
         _currentStep++;
@@ -298,10 +308,10 @@ public class AdversarialTrainerRunner : MonoBehaviour
         }
         GenerateMap(finalSeed);
 
-        if (gameObject.name == AllowedAgentName)
-        {
-            SimGameContext.ActiveWorld = _world;
-        }
+        // if (gameObject.name == AllowedAgentName)
+        // {
+        //     SimGameContext.ActiveWorld = _world;
+        // }
 
         // 1. ÖNCE SİSTEMLERİ BAŞLAT
         _gridSys = new SimGridSystem(_world);
@@ -314,9 +324,9 @@ public class AdversarialTrainerRunner : MonoBehaviour
         _world.Players.Add(1, new SimPlayerData
         {
             PlayerID = 1,
-            Wood = 5000,
-            Stone = 5000,
-            Meat = 5000,
+            Wood = 1000,
+            Stone = 1000,
+            Meat = 1000,
             MaxPopulation = 20,
             CurrentPopulation = 0  // EKSTRA: Population'ı sıfırla
         });

@@ -30,6 +30,7 @@ public class RTSOrchestrator : MonoBehaviour
     // Durum Makinesi
     public enum OrchestratorState { Idle, WaitingUnit, WaitingAction, WaitingTarget }
     private OrchestratorState _state = OrchestratorState.Idle;
+    public OrchestratorState CurrentState => _state;
 
     private AdversarialTrainerRunner _runner;
 
@@ -40,6 +41,8 @@ public class RTSOrchestrator : MonoBehaviour
 
     public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys, AdversarialTrainerRunner runner)
     {
+        _state = OrchestratorState.Idle;
+
         _world = world;
         _gridSystem = gridSys;
         _unitSystem = unitSys;
