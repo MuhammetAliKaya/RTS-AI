@@ -22,7 +22,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
     public int MapSize = 32;
     public int MaxSteps = 5000;
 
-    public string AllowedAgentName = "AdversarialTrainerRunner";
+    public string AllowedAgentName = "AdvTrainerRunner";
 
     [Tooltip("Harita rastgeleliğini kontrol etmek için kullanılır.")]
     public int mapSeed = 12345;
@@ -308,10 +308,10 @@ public class AdversarialTrainerRunner : MonoBehaviour
         }
         GenerateMap(finalSeed);
 
-        // if (gameObject.name == AllowedAgentName)
-        // {
-        //     SimGameContext.ActiveWorld = _world;
-        // }
+        if (gameObject.name == AllowedAgentName)
+        {
+            SimGameContext.ActiveWorld = _world;
+        }
 
         // 1. ÖNCE SİSTEMLERİ BAŞLAT
         _gridSys = new SimGridSystem(_world);
@@ -324,9 +324,9 @@ public class AdversarialTrainerRunner : MonoBehaviour
         _world.Players.Add(1, new SimPlayerData
         {
             PlayerID = 1,
-            Wood = 1000,
-            Stone = 1000,
-            Meat = 1000,
+            Wood = 500,
+            Stone = 500,
+            Meat = 500,
             MaxPopulation = 20,
             CurrentPopulation = 0  // EKSTRA: Population'ı sıfırla
         });

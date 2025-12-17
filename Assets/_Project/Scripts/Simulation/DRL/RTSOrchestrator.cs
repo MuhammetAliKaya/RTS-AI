@@ -8,7 +8,6 @@ public class RTSOrchestrator : MonoBehaviour
     public static RTSOrchestrator Instance;
 
     [Header("Sub-Agents")]
-    // Alt Ajan Referansları (Inspector'dan atayın)
     public UnitSelectionAgent UnitAgent;
     public ActionSelectionAgent ActionAgent;
     public TargetSelectionAgent TargetAgent;
@@ -20,12 +19,16 @@ public class RTSOrchestrator : MonoBehaviour
     private SimBuildingSystem _buildingSystem;
 
     public DRLActionTranslator Translator;
-
     public int MyPlayerID = 1;
 
-    // Anlık Karar Verileri (Context - Alt ajanlar buradan okur)
+    // --- CONTEXT (Agentlar buradan okur) ---
+    // Bu değerler anlık olarak değişecek, agentlar gözlem yaparken bunları okuyacak.
     [HideInInspector] public int SelectedSourceIndex = -1;
     [HideInInspector] public int SelectedActionType = 0;
+
+    // --- DEMO BUFFER (İnsan Kararları Burada Bekler) ---
+    private int _tempSourceIndex = -1;
+    private int _tempActionType = 0;
 
     // Durum Makinesi
     public enum OrchestratorState { Idle, WaitingUnit, WaitingAction, WaitingTarget }
@@ -33,6 +36,9 @@ public class RTSOrchestrator : MonoBehaviour
     public OrchestratorState CurrentState => _state;
 
     private AdversarialTrainerRunner _runner;
+
+    [Header("Demo Recording")]
+    public bool IsHumanDemoMode = true; // Editörden aç!
 
     private void Awake()
     {
@@ -42,117 +48,149 @@ public class RTSOrchestrator : MonoBehaviour
     public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys, AdversarialTrainerRunner runner)
     {
         _state = OrchestratorState.Idle;
-
         _world = world;
         _gridSystem = gridSys;
         _unitSystem = unitSys;
         _buildingSystem = buildSys;
-        _runner = runner; // Runner'ı kaydet!
+        _runner = runner;
 
-        // Translator'ı oluştur
         Translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem, MyPlayerID);
 
-        // --- ALT AJANLARI BAŞLAT ---
-
-        // 1. UnitAgent: Sadece world ve translator yeterli (veya ihtiyaca göre gridSys)
         UnitAgent.Setup(this, _world, Translator);
-
-        // 2. ActionAgent: Sadece context'e bakar, grid'e ihtiyacı yoktur.
         ActionAgent.Setup(this, _world, Translator);
-
-        // 3. TargetAgent: HARİTAYI GÖRMELİ! Bu yüzden gridSys'i buraya paslıyoruz.
-        // (TargetSelectionAgent.cs içindeki Setup fonksiyonunu buna göre güncellemiştik)
         TargetAgent.Setup(this, _world, Translator, _gridSystem, _runner);
     }
 
+    // =================================================================================
+    //  İNSAN GİRDİSİ YÖNETİMİ (BUFFERING)
+    // =================================================================================
 
-    private void SubscribeToEvents()
+    // ADIM 1: Ünite Seçildi (Sadece hafızaya at)
+    public void UserSelectUnit(int unitGridIndex)
     {
-        SimResourceSystem.OnResourceGathered += HandleResourceGathered;
-        SimBuildingSystem.OnBuildingFinished += HandleBuildingCompleted;
+        if (!IsHumanDemoMode) return;
+
+        // Yeni bir ünite seçildiyse önceki buffer'ı ez ve süreci başlat
+        _tempSourceIndex = unitGridIndex;
+        _tempActionType = 0; // Aksiyonu sıfırla
+
+        _state = OrchestratorState.WaitingAction;
+
+        // Görsel hata ayıklama
+        // Debug.Log($"[Buffer] Ünite Hazır: {unitGridIndex}");
     }
 
-    private void OnDestroy()
+    // ADIM 2: Aksiyon Seçildi (Sadece hafızaya at)
+    public void UserSelectAction(int actionType)
     {
-        SimResourceSystem.OnResourceGathered -= HandleResourceGathered;
-        SimBuildingSystem.OnBuildingFinished -= HandleBuildingCompleted;
+        if (!IsHumanDemoMode) return;
+
+        // Eğer ünite seçmeden aksiyona basıldıysa (Hata koruması)
+        if (_tempSourceIndex == -1)
+        {
+            Debug.LogWarning("Önce ünite seçmelisin!");
+            return;
+        }
+
+        _tempActionType = actionType;
+        _state = OrchestratorState.WaitingTarget;
+
+        // Debug.Log($"[Buffer] Aksiyon Hazır: {actionType}");
     }
 
-    private void HandleResourceGathered(int playerID, int amount, SimResourceType type)
+    // ADIM 3: Hedef Seçildi -> KOMPLE KAYIT (COMMIT)
+    public void UserSelectTarget(int targetGridIndex)
     {
-        if (playerID != MyPlayerID) return;
+        if (!IsHumanDemoMode) return;
 
-        // Kaynak toplama başarısı kime yazar?
-        // - TargetAgent: Doğru kaynağa tıkladığı için.
-        // - UnitAgent: Doğru işçiyi seçtiği için.
-        // ActionAgent: Zaten "Gather" dediği için.
+        if (_tempSourceIndex == -1 || _tempActionType == 0)
+        {
+            // Eğer ünite veya aksiyon eksikse, belki de sadece yürüme emridir (Smart Context).
+            // SimInputManager zaten aksiyonu Move(11) veya Attack(10) olarak göndermeliydi.
+            // Eğer hala eksikse işlem iptal.
+            if (_tempSourceIndex != -1 && _tempActionType == 0)
+            {
+                // Varsayılan bir aksiyon ataması yapılabilir ama InputManager halletmeli.
+                Debug.LogWarning("Eksik Aksiyon!");
+                return;
+            }
+            return;
+        }
 
-        // Bu yüzden Küçük bir grup ödülü en iyisidir.
-        AddGroupReward(amount * 0.001f);
+        // --- ZİNCİRLEME KAYIT BAŞLIYOR ---
+        // Buradaki hile şudur: Agentlara "karar ver" demeden önce ortam değişkenlerini (Context)
+        // manuel olarak değiştiriyoruz ki Agent doğru gözlemi yapsın.
+
+        // 1. UNIT AGENT KAYDI
+        // Unit Agent karar verirken henüz kimse seçili değildir.
+        SelectedSourceIndex = -1;
+        SelectedActionType = 0;
+        // Kaydı tetikle (Source: _tempSourceIndex)
+        UnitAgent.RegisterExternalAction(0, _tempSourceIndex, 0);
+
+        // 2. ACTION AGENT KAYDI
+        // Action Agent karar verirken Ünite seçili olmalıdır.
+        SelectedSourceIndex = _tempSourceIndex; // Context'i güncelle
+        // Kaydı tetikle (Action: _tempActionType)
+        ActionAgent.RegisterExternalAction(_tempActionType, _tempSourceIndex, 0);
+
+        // 3. TARGET AGENT KAYDI
+        // Target Agent karar verirken Ünite ve Aksiyon seçili olmalıdır.
+        SelectedActionType = _tempActionType; // Context'i güncelle
+        // Kaydı tetikle (Target: targetGridIndex)
+        TargetAgent.RegisterExternalAction(_tempActionType, _tempSourceIndex, targetGridIndex);
+
+        // 4. İŞLEMİ GERÇEKLEŞTİR
+        bool success = Translator.ExecuteAction(_tempActionType, _tempSourceIndex, targetGridIndex);
+
+        if (success) Debug.Log("[Demo] Zincir Başarıyla Kaydedildi ve Uygulandı.");
+
+        // 5. TEMİZLİK (İsteğe bağlı, seri tıklama için temizlemeyebilirsin ama temizlemek güvenlidir)
+        // _tempSourceIndex = -1; // Yorum satırı: Seri emir vermek için seçimi koruyabiliriz.
+        _tempActionType = 0;
+        _state = OrchestratorState.WaitingAction; // Tekrar aksiyon beklemeye dön (veya Idle)
     }
 
-    private void HandleBuildingCompleted(SimBuildingData building)
-    {
-        if (building.PlayerID != MyPlayerID) return;
+    // =================================================================================
+    //  AI OTOMATİK OYUN DÖNGÜSÜ (EĞİTİM / INFERENCE)
+    // =================================================================================
 
-        // Bina tamamlandı! Bu büyük bir stratejik başarı.
-        // ActionAgent (İnşa emri veren) ve TargetAgent (Yeri seçen) ödül almalı.
-        float reward = 0.5f;
-        if (building.Type == SimBuildingType.Barracks) reward = 2.0f; // Kışla çok önemli
-
-        AddActionRewardOnly(reward);
-        AddTargetRewardOnly(reward);
-
-        // UnitAgent'a da ufak bir pay
-        AddUnitRewardOnly(reward * 0.2f);
-    }
     public void RequestFullDecision()
     {
-        // Zinciri Başlat: Adım 1 - Kim?
+        if (IsHumanDemoMode) return; // İnsan modundaysak AI karışmasın
+
         _state = OrchestratorState.WaitingUnit;
         SelectedSourceIndex = -1;
         SelectedActionType = 0;
-
         UnitAgent.RequestDecision();
     }
 
-    // Adım 1 Tamamlandığında Çağrılır (UnitSelectionAgent'tan gelir)
     public void OnUnitSelected(int sourceIndex)
     {
         SelectedSourceIndex = sourceIndex;
-
-        // Adım 2'ye Geç - Ne Yapacak?
         _state = OrchestratorState.WaitingAction;
-        ActionAgent.RequestDecision();
+        // Eğer Demo Modu değilse devam et
+        if (!IsHumanDemoMode) ActionAgent.RequestDecision();
     }
 
-    // Adım 2 Tamamlandığında Çağrılır (ActionSelectionAgent'tan gelir)
     public void OnActionSelected(int actionType)
     {
         SelectedActionType = actionType;
-
-        // Adım 3'e Geç - Nereye?
         _state = OrchestratorState.WaitingTarget;
-        TargetAgent.RequestDecision();
+        // Eğer Demo Modu değilse devam et
+        if (!IsHumanDemoMode) TargetAgent.RequestDecision();
     }
 
-    // Adım 3 Tamamlandığında (TargetSelectionAgent'tan gelir -> Zincir Biter)
     public void OnTargetSelected(int targetIndex)
     {
         _state = OrchestratorState.Idle;
-
-        // Eylemi Uygula
         bool success = Translator.ExecuteAction(SelectedActionType, SelectedSourceIndex, targetIndex);
 
-        // --- ÖDÜL MEKANİZMASI ---
-        // Sadece basit bir işlem ödülü/cezası veriyoruz. 
-        // Asıl büyük ödüller (Savaş/Ekonomi) AdversarialTrainerRunner üzerinden verilecek.
-        float stepReward = success ? 0.01f : -0.02f; // Hata yaparsa biraz daha fazla ceza
+        float stepReward = success ? 0.01f : -0.02f;
         AddGroupReward(stepReward);
     }
 
-    // Tüm ajanlara ortak ödül ekler (Cooperative Multi-Agent)
-    // Runner scripti, kill/resource ödüllerini buraya gönderir.
+    // --- YARDIMCI METOTLAR ---
     public void AddGroupReward(float reward)
     {
         if (UnitAgent != null) UnitAgent.AddReward(reward);
@@ -166,25 +204,7 @@ public class RTSOrchestrator : MonoBehaviour
         if (ActionAgent != null) ActionAgent.EndEpisode();
         if (TargetAgent != null) TargetAgent.EndEpisode();
     }
-    public void AddTargetRewardOnly(float reward)
-    {
-        if (TargetAgent != null) TargetAgent.AddReward(reward);
-    }
-    public void AddActionRewardOnly(float reward)
-    {
-        if (ActionAgent != null) ActionAgent.AddReward(reward);
-    }
-    public void AddUnitRewardOnly(float reward)
-    {
-        if (UnitAgent != null) UnitAgent.AddReward(reward);
-    }
-
-    public void OnActionFailed(string reason)
-    {
-        AddActionRewardOnly(-0.01f);
-        AddTargetRewardOnly(-0.02f);
-    }
-
-
-
+    public void AddTargetRewardOnly(float reward) { if (TargetAgent != null) TargetAgent.AddReward(reward); }
+    public void AddActionRewardOnly(float reward) { if (ActionAgent != null) ActionAgent.AddReward(reward); }
+    public void AddUnitRewardOnly(float reward) { if (UnitAgent != null) UnitAgent.AddReward(reward); }
 }

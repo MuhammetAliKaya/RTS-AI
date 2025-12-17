@@ -16,6 +16,9 @@ public class TargetSelectionAgent : Agent
     private RTSGridSensorComponent _gridSensorComp;
     private AdversarialTrainerRunner _runner;
 
+    private bool _hasPendingDemo = false;
+    private int _pendingTargetIndex = 0;
+
     // Setup metodunu güncelledik: SimGridSystem'i de paramatre olarak alıyoruz (Sensör için)
     public void Setup(RTSOrchestrator orchestrator, SimWorldState world, DRLActionTranslator translator, SimGridSystem gridSystem, AdversarialTrainerRunner runner)
     {
@@ -114,6 +117,29 @@ public class TargetSelectionAgent : Agent
         if (_gridSensorComp != null)
         {
             _gridSensorComp.SetHighlight(-1);
+        }
+    }
+
+    public void RegisterExternalAction(int actionType, int sourceIndex, int targetIndex)
+    {
+        _pendingTargetIndex = targetIndex;
+        _hasPendingDemo = true;
+
+        RequestDecision();
+    }
+
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        var discreteActions = actionsOut.DiscreteActions;
+
+        if (_hasPendingDemo)
+        {
+            discreteActions[0] = _pendingTargetIndex;
+            _hasPendingDemo = false;
+        }
+        else
+        {
+            discreteActions[0] = 0;
         }
     }
 }

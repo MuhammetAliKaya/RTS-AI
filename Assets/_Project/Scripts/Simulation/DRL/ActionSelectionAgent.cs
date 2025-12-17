@@ -27,6 +27,9 @@ public class ActionSelectionAgent : Agent
     private const int ACT_MOVE_TO = 11;
     private const int ACT_GATHER_RES = 12;
 
+    private bool _hasPendingDemo = false;
+    private int _pendingActionType = 0;
+
     public void Setup(RTSOrchestrator orchestrator, SimWorldState world, DRLActionTranslator translator)
     {
         _orchestrator = orchestrator;
@@ -199,5 +202,28 @@ public class ActionSelectionAgent : Agent
     {
         int actionType = actions.DiscreteActions[0];
         _orchestrator.OnActionSelected(actionType);
+    }
+
+    public void RegisterExternalAction(int actionType, int sourceIndex, int targetIndex)
+    {
+        _pendingActionType = actionType;
+        _hasPendingDemo = true;
+
+        RequestDecision();
+    }
+
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        var discreteActions = actionsOut.DiscreteActions;
+
+        if (_hasPendingDemo)
+        {
+            discreteActions[0] = _pendingActionType;
+            _hasPendingDemo = false;
+        }
+        else
+        {
+            discreteActions[0] = 0; // Wait
+        }
     }
 }

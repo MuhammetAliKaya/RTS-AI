@@ -18,6 +18,9 @@ public class UnitSelectionAgent : Agent
     private const float MAX_POP = 50f;
     private const float MAX_UNIT_COUNT = 30f;
 
+    private bool _hasPendingDemo = false;
+    private int _pendingSourceIndex = 0;
+
     public void Setup(RTSOrchestrator orchestrator, SimWorldState world, DRLActionTranslator translator)
     {
         _orchestrator = orchestrator;
@@ -127,5 +130,32 @@ public class UnitSelectionAgent : Agent
 
         // Orkestratöre bildir: "Ben bu birimi seçtim, sıra ActionSelectionAgent'ta."
         _orchestrator.OnUnitSelected(sourceIndex);
+    }
+
+    // Orchestrator bu fonksiyonu çağırır
+    public void RegisterExternalAction(int actionType, int sourceIndex, int targetIndex)
+    {
+        _pendingSourceIndex = sourceIndex;
+        _hasPendingDemo = true;
+
+        // Ajanı uyandır, Heuristic çalışsın, kayıt alınsın.
+        RequestDecision();
+    }
+
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        var discreteActions = actionsOut.DiscreteActions;
+
+        if (_hasPendingDemo)
+        {
+            // İnsanın seçtiği üniteyi yapay zekanın kararı gibi çıktı ver
+            discreteActions[0] = _pendingSourceIndex;
+            _hasPendingDemo = false; // Reset
+        }
+        else
+        {
+            // Eğer demo yoksa ve heuristic çalıştıysa (test amaçlı) 0 döndür
+            discreteActions[0] = 0;
+        }
     }
 }

@@ -30,6 +30,39 @@ public class SimInputManager : MonoBehaviour
 
         if (Input.GetMouseButtonDown(0)) HandleSelection();      // Left Click: Select
         if (Input.GetMouseButtonDown(1)) HandleMovementOrder();  // Right Click: Action
+        if (Input.GetKeyDown(KeyCode.Space)) HandleWaitCommand();
+    }
+    private void HandleWaitCommand()
+    {
+        // Sadece Demo Modunda ve bir ünite seçiliyken çalışır
+        if (RTSOrchestrator.Instance == null || !RTSOrchestrator.Instance.IsHumanDemoMode) return;
+        if (SelectedUnitID == -1) return;
+
+        var world = SimGameContext.ActiveWorld;
+        if (world != null && world.Units.TryGetValue(SelectedUnitID, out SimUnitData u))
+        {
+            // Sadece kendi ünitelerimiz için
+            if (u.PlayerID != RTSOrchestrator.Instance.MyPlayerID) return;
+
+            int mapW = world.Map.Width;
+            int sourceIndex = (u.GridPosition.y * mapW) + u.GridPosition.x;
+
+            // --- ZİNCİRLEME KAYIT (Wait) ---
+            // Sanki mouse ile tıklamışız gibi 3 adımı da hızlıca simüle ediyoruz.
+
+            // 1. Adım: Üniteyi Seçtiğimizi Teyit Et
+            RTSOrchestrator.Instance.UserSelectUnit(sourceIndex);
+
+            // 2. Adım: Aksiyon Olarak "0" (WAIT) Seç
+            // (ActionSelectionAgent.cs içinde ACT_WAIT = 0 sabiti var)
+            RTSOrchestrator.Instance.UserSelectAction(0);
+
+            // 3. Adım: Hedef Olarak "0" (veya kendisi) Seç ve KAYDI BİTİR
+            // Wait eyleminde hedef önemsizdir ama zincirin tamamlanması için gereklidir.
+            RTSOrchestrator.Instance.UserSelectTarget(sourceIndex);
+
+            Debug.Log($"[Demo] '{u.UnitType}' için BEKLE (Wait) emri kaydedildi.");
+        }
     }
     // --- DIŞARIDAN (UI) ÇAĞRILACAK METOT ---
     public void SetPendingAction(int actionID)
@@ -54,42 +87,68 @@ public class SimInputManager : MonoBehaviour
     }
     void HandleSelection()
     {
-
         Vector2 mousePos = MainCamera.ScreenToWorldPoint(Input.mousePosition);
         RaycastHit2D hit = Physics2D.Raycast(mousePos, Vector2.zero);
 
+        int clickedID = -1;
+        bool isUnit = false;
+
         if (hit.collider != null)
         {
-            Debug.Log($"🎯 Unit SelectedAAAAAAAAAAA");
-
             SimEntityVisual visual = hit.collider.GetComponent<SimEntityVisual>();
             if (visual != null)
             {
-                int id = visual.ID;
-                var world = SimGameContext.ActiveWorld;
-
-                // 1. Is it a Unit?
-                if (world.Units.ContainsKey(id))
-                {
-                    SelectedUnitID = id;
-                    SelectedBuildingID = -1;
-                    Debug.Log($"🎯 Unit Selected: {id}");
-                    return;
-                }
-                // 2. Is it a Building?
-                else if (world.Buildings.ContainsKey(id))
-                {
-                    SelectedBuildingID = id;
-                    SelectedUnitID = -1;
-                    Debug.Log($"🏠 Building Selected: {id}");
-                    return;
-                }
+                clickedID = visual.ID;
+                if (SimGameContext.ActiveWorld.Units.ContainsKey(clickedID)) isUnit = true;
             }
         }
 
-        // Clicked on empty space -> Deselect all
-        SelectedUnitID = -1;
-        SelectedBuildingID = -1;
+        if (clickedID != -1)
+        {
+            if (isUnit)
+            {
+                SelectedUnitID = clickedID;
+                SelectedBuildingID = -1;
+
+                // --- ORCHESTRATOR'A BİLDİR (BUFFER START) ---
+                if (RTSOrchestrator.Instance != null && RTSOrchestrator.Instance.IsHumanDemoMode)
+                {
+                    var world = SimGameContext.ActiveWorld;
+                    var u = world.Units[clickedID];
+                    // Sadece bizim ünitelerimiz kayda girsin
+                    if (u.PlayerID == RTSOrchestrator.Instance.MyPlayerID)
+                    {
+                        int gridIndex = (u.GridPosition.y * world.Map.Width) + u.GridPosition.x;
+                        RTSOrchestrator.Instance.UserSelectUnit(gridIndex);
+                    }
+                }
+            }
+            else
+            {
+                // Bina seçimi (Şimdilik AI için bina seçimi yoksa pas geçiyoruz)
+                SelectedBuildingID = clickedID;
+                SelectedUnitID = -1;
+            }
+        }
+        else
+        {
+            // --- BOŞA TIKLANDI: SEÇİMİ VE BUFFER'I İPTAL ET ---
+            SelectedUnitID = -1;
+            SelectedBuildingID = -1;
+
+            // Orchestrator'a "Vazgeçtik" demenin basit yolu:
+            // Geçersiz bir unit ID göndererek state'i resetleyebiliriz veya 
+            // Orchestrator'a public void CancelSelection() yazabilirsin.
+            // Şimdilik en basit yöntem, yeni bir unit seçilmediği için 
+            // _tempSourceIndex zaten eski kalacak veya UserSelectUnit çağrılmayacak.
+            // Ama temiz iş için Orchestrator'a -1 gönderebiliriz.
+            if (RTSOrchestrator.Instance != null)
+            {
+                RTSOrchestrator.Instance.UserSelectUnit(-1);
+                // UserSelectUnit(-1) metodun içinde _tempSourceIndex = -1 yapacağı için
+                // sonraki Action/Target çağrıları "Source Eksik" diyip iptal olur.
+            }
+        }
     }
 
     void HandleMovementOrder()
