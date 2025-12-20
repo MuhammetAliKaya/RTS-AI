@@ -3897,10 +3897,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   VisualizeOnlyFinalBest: 1
   ForceStandardPSO: 0
-  PopulationSize: 30
+  PopulationSize: 10
   MaxGenerations: 50
   MaxTicksPerGame: 4000
-  CurrentTrainingGoal: 0
+  CurrentTrainingGoal: 2
   EnableLogging: 1
   UseRandomMasterSeed: 0
   MasterSeed: 55

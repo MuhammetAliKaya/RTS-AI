@@ -6,7 +6,7 @@ using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Diagnostics; // Zaman ölçümü için
+using System.Diagnostics;
 using RTS.Simulation.AI;
 
 namespace RTS.Simulation.Orchestrator
@@ -15,7 +15,6 @@ namespace RTS.Simulation.Orchestrator
     {
         [Header("Eğitim Ayarları")]
         public bool VisualizeOnlyFinalBest = false;
-        [Tooltip("İşaretlenirse APSO-SL özellikleri kapanır, Standart PSO çalışır (Kıyaslama için).")]
         public bool ForceStandardPSO = false;
         public int PopulationSize = 20;
         public int MaxGenerations = 5000;
@@ -30,7 +29,6 @@ namespace RTS.Simulation.Orchestrator
         [Header("Rastgelelik (Seed System)")]
         public bool UseRandomMasterSeed = true;
         public int MasterSeed = 12345;
-        [Tooltip("Bu jenerasyondaki her bireyin kullandığı seedler")]
         public List<int> CurrentGenerationSeeds;
         public int LastBestSeed;
 
@@ -40,14 +38,12 @@ namespace RTS.Simulation.Orchestrator
         public bool UseFixedSeedForVisual = true;
         public int VisualFixedSeed = 42;
 
-        // --- GÖZLEM PANELİ (Inspector) ---
         [Header("APSO-SL Durum Paneli")]
         public string CurrentState;
         public float Inertia_W;
         public float Cognitive_C1;
         public float Social_C2;
         public float CurrentBestScore;
-        // ---------------------------------
 
         private PSOAlgorithm _pso;
         private int _currentGen = 0;
@@ -61,11 +57,7 @@ namespace RTS.Simulation.Orchestrator
         void Start()
         {
             if (Visualizer == null) Visualizer = FindObjectOfType<GameVisualizer>();
-
-            // Logger Başlat
             if (EnableLogging) _logger = new DataLogger();
-
-            // Master Seed Kurulumu
             if (UseRandomMasterSeed) MasterSeed = UnityEngine.Random.Range(0, 9999999);
             _masterRng = new System.Random(MasterSeed);
 
@@ -75,12 +67,9 @@ namespace RTS.Simulation.Orchestrator
 
         void Update()
         {
-            // PSO parametrelerini Inspector'da canlı göster
             if (_pso != null)
             {
-                // Anahtarı anlık olarak algoritmaya ilet
                 _pso.UseStandardPSO = ForceStandardPSO;
-
                 CurrentState = _pso.CurrentState.ToString();
                 Inertia_W = _pso.W;
                 Cognitive_C1 = _pso.C1;
@@ -89,14 +78,21 @@ namespace RTS.Simulation.Orchestrator
             }
         }
 
+        private AIStrategyMode GetEnemyStrategy(AIStrategyMode myGoal)
+        {
+            switch (myGoal)
+            {
+                case AIStrategyMode.Defensive: return AIStrategyMode.Aggressive;
+                case AIStrategyMode.Aggressive: return AIStrategyMode.Defensive;
+                case AIStrategyMode.Economic: return AIStrategyMode.Economic;
+                default: return AIStrategyMode.Aggressive;
+            }
+        }
+
         IEnumerator TrainingRoutine()
         {
             _isTraining = true;
-
-            // 14 GENLİ YAPI: [Worker, Soldier, Attack, Def, Barrack, Eco, Farm, Wood, Stone, House, TowerPos, BaseDef, SaveThres, Bloodlust]
-            // Algoritmayı MasterSeed'den türetilen bir seed ile başlatıyoruz.
             _pso = new PSOAlgorithm(PopulationSize, 14, 0, 40, _masterRng.Next());
-
             CurrentGenerationSeeds = new List<int>(new int[PopulationSize]);
             Stopwatch genTimer = new Stopwatch();
 
@@ -105,28 +101,17 @@ namespace RTS.Simulation.Orchestrator
                 genTimer.Restart();
                 _statusText = $"Eğitiliyor... %{(float)_currentGen / MaxGenerations * 100:F1} (Gen: {_currentGen})";
 
-                // --- PARALEL EĞİTİM VE İSTATİSTİK TOPLAMA ---
                 var genStats = RunGenerationHeadlessParallelWithStats();
 
                 genTimer.Stop();
                 float timeTaken = genTimer.ElapsedMilliseconds / 1000f;
 
-                // --- LOGLAMA ---
                 if (EnableLogging && _logger != null)
                 {
-                    _logger.LogGeneration(
-                        _currentGen,
-                        _pso.GlobalBestFitness,
-                        genStats.AvgFitness,
-                        genStats.WinRate,
-                        timeTaken,
-                        genStats.AverageStats
-                    );
-
+                    _logger.LogGeneration(_currentGen, _pso.GlobalBestFitness, genStats.AvgFitness, genStats.WinRate, timeTaken, genStats.AverageStats);
                     _logger.LogBestGenome(_currentGen, _pso.GlobalBestFitness, _pso.GlobalBestPosition);
                 }
 
-                // --- GBEST GÜNCELLEME ---
                 if (_pso.GlobalBestFitness > _bestFitnessAllTime)
                 {
                     _bestFitnessAllTime = _pso.GlobalBestFitness;
@@ -136,7 +121,6 @@ namespace RTS.Simulation.Orchestrator
                 if (_currentGen % 10 == 0)
                     UnityEngine.Debug.Log($"🚀 Gen {_currentGen} | Best: {_bestFitnessAllTime:F0} | Time: {timeTaken:F2}s");
 
-                // --- GÖRSEL İZLEME ---
                 if (!VisualizeOnlyFinalBest)
                 {
                     _statusText = $"İzleniyor... Gen: {_currentGen}";
@@ -145,9 +129,8 @@ namespace RTS.Simulation.Orchestrator
                 }
                 else
                 {
-                    yield return null; // Donmayı engelle
+                    yield return null;
                 }
-
                 _currentGen++;
             }
 
@@ -155,7 +138,6 @@ namespace RTS.Simulation.Orchestrator
             _statusText = "EĞİTİM BİTTİ!";
             LogFinalResults();
 
-            // Sonsuz döngüde en iyiyi izlet
             while (true)
             {
                 int finalSeed = UseFixedSeedForVisual ? VisualFixedSeed : UnityEngine.Random.Range(0, 99999);
@@ -164,32 +146,21 @@ namespace RTS.Simulation.Orchestrator
             }
         }
 
-        // --- PARALEL EĞİTİM FONKSİYONU ---
         private (float AvgFitness, float WinRate, SimStats AverageStats) RunGenerationHeadlessParallelWithStats()
         {
-            // Headless modda logları kapat (Hız için)
             SimConfig.EnableLogs = false;
-
             var positions = _pso.GetPositions();
             SimStats[] allStats = new SimStats[positions.Count];
 
-            // 1. Seedleri Belirle (Tekrarlanabilirlik için)
-            for (int i = 0; i < positions.Count; i++)
-            {
-                CurrentGenerationSeeds[i] = _masterRng.Next();
-            }
+            for (int i = 0; i < positions.Count; i++) CurrentGenerationSeeds[i] = _masterRng.Next();
 
-            // 2. Paralel İşleme
             Parallel.For(0, positions.Count, i =>
             {
                 int seed = CurrentGenerationSeeds[i];
                 System.Random rng = new System.Random(seed);
-
-                // Simülasyonu çalıştır ve istatistikleri al
                 allStats[i] = SimulateGame(positions[i], false, rng);
             });
 
-            // 3. PSO'ya Raporla ve İstatistik Hesapla
             float totalFit = 0;
             int wins = 0;
             SimStats avgStats = new SimStats();
@@ -197,26 +168,16 @@ namespace RTS.Simulation.Orchestrator
             for (int i = 0; i < positions.Count; i++)
             {
                 float fitness = allStats[i].Fitness;
-
-                // Rekor takibi (Seed için)
-                if (fitness > _bestFitnessAllTime)
-                {
-                    LastBestSeed = CurrentGenerationSeeds[i];
-                }
-
+                if (fitness > _bestFitnessAllTime) LastBestSeed = CurrentGenerationSeeds[i];
                 _pso.ReportFitness(i, fitness);
-
                 totalFit += fitness;
                 if (allStats[i].IsWin) wins++;
-
-                // Ortalama istatistikler
                 avgStats.GatheredWood += allStats[i].GatheredWood;
                 avgStats.SoldierCount += allStats[i].SoldierCount;
                 avgStats.WorkerCount += allStats[i].WorkerCount;
             }
-            _pso.Step(); // Algoritmayı bir adım ilerlet
+            _pso.Step();
 
-            // Ortalamaları al
             avgStats.GatheredWood /= positions.Count;
             avgStats.SoldierCount /= positions.Count;
             avgStats.WorkerCount /= positions.Count;
@@ -224,20 +185,14 @@ namespace RTS.Simulation.Orchestrator
             return (totalFit / positions.Count, (float)wins / positions.Count, avgStats);
         }
 
-        // --- SİMÜLASYON ÇEKİRDEĞİ ---
         private SimStats SimulateGame(float[] genes, bool isVisual, System.Random rng)
         {
             SimWorldState world = CreateWorldWithResources(rng);
             if (!isVisual) SimGameContext.ActiveWorld = world;
 
-            // AI Kurulumu (System.Random ile)
-            // DİKKAT: Artık ParametricMacroAI yerine SpecializedMacroAI kullanıyoruz.
-            // Bizim Genlerimiz var (genes), modumuz "Aggressive" olsun fark etmez çünkü genler karar veriyor.
-            SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, AIStrategyMode.Aggressive, rng);
-
-            // Düşman AI: Genleri NULL gönderiyoruz, böylece statik mod çalışıyor.
-            // Modu ise PSOManager'dan seçtiğimiz CurrentTrainingGoal oluyor.
-            SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, CurrentTrainingGoal, rng);
+            SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, CurrentTrainingGoal, rng);
+            AIStrategyMode enemyMode = GetEnemyStrategy(CurrentTrainingGoal);
+            SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, enemyMode, rng);
 
             float dt = 0.25f;
             int tick = 0;
@@ -245,52 +200,76 @@ namespace RTS.Simulation.Orchestrator
             bool win = false;
             bool gameOver = false;
 
-            // Thread-Safe Cache
+            // --- SAVAŞ TAKİBİ İÇİN ÖNBELLEKLER ---
+            HashSet<int> knownEnemyUnits = new HashSet<int>();
+            HashSet<int> knownEnemyBuildings = new HashSet<int>();
+            int killedUnits = 0;
+            int destroyedBuildings = 0;
+
             List<SimUnitData> localUnitCache = new List<SimUnitData>(100);
 
             while (tick < maxTicks)
             {
                 world.TickCount++;
                 SimBuildingSystem.UpdateAllBuildings(world, dt);
-
                 localUnitCache.Clear();
                 localUnitCache.AddRange(world.Units.Values);
-                for (int i = 0; i < localUnitCache.Count; i++)
-                {
-                    SimUnitSystem.UpdateUnit(localUnitCache[i], world, dt);
-                }
+                for (int i = 0; i < localUnitCache.Count; i++) SimUnitSystem.UpdateUnit(localUnitCache[i], world, dt);
 
-                // Tick Atlatma (Optimiasyon)
                 if (tick % 5 == 0)
                 {
                     myAI.Update(dt * 5f);
                     enemyAI.Update(dt * 5f);
                 }
 
-                // Kazanma Kontrolü
-                bool enemyAlive = false;
-                bool meAlive = false;
-                foreach (var b in world.Buildings.Values)
+                // --- SAVAŞ İSTATİSTİĞİ TAKİBİ (DÜŞMAN KAYIPLARI) ---
+
+                // 1. Düşman Birlikleri Kontrolü
+                // Mevcut tüm düşmanları bul
+                var currentEnemies = world.Units.Values.Where(u => u.PlayerID == 2).Select(u => u.ID).ToHashSet();
+
+                // Önceden bildiğimiz ama şimdi olmayanlar = ÖLDÜRÜLENLER
+                foreach (var knownID in knownEnemyUnits)
                 {
-                    if (b.Type == SimBuildingType.Base)
-                    {
-                        if (b.PlayerID == 2) enemyAlive = true;
-                        if (b.PlayerID == 1) meAlive = true;
-                    }
+                    if (!currentEnemies.Contains(knownID)) killedUnits++;
                 }
+                // Listeyi güncelle (Yeni doğanları ekle)
+                knownEnemyUnits = currentEnemies;
 
-                if (!enemyAlive) { win = true; gameOver = true; break; }
-                if (!meAlive) { win = false; gameOver = true; break; }
+                // 2. Düşman Binaları Kontrolü
+                var currentEnemyBuildings = world.Buildings.Values.Where(b => b.PlayerID == 2 && b.Type != SimBuildingType.Base).Select(b => b.ID).ToHashSet();
 
+                foreach (var knownID in knownEnemyBuildings)
+                {
+                    if (!currentEnemyBuildings.Contains(knownID)) destroyedBuildings++;
+                }
+                knownEnemyBuildings = currentEnemyBuildings;
+                // ----------------------------------------------------
+
+                if (CurrentTrainingGoal != AIStrategyMode.Economic)
+                {
+                    bool enemyAlive = false;
+                    bool meAlive = false;
+                    foreach (var b in world.Buildings.Values)
+                    {
+                        if (b.Type == SimBuildingType.Base)
+                        {
+                            if (b.PlayerID == 2) enemyAlive = true;
+                            if (b.PlayerID == 1) meAlive = true;
+                        }
+                    }
+                    if (!enemyAlive) { win = true; gameOver = true; break; }
+                    if (!meAlive) { win = false; gameOver = true; break; }
+                }
                 tick++;
             }
 
-            // --- SONUÇLARI PAKETLE ---
             SimStats stats = new SimStats();
             stats.IsWin = win;
             stats.MatchDuration = tick * dt;
+            stats.EnemyUnitsKilled = killedUnits;           // Skor için kritik
+            stats.EnemyBuildingsDestroyed = destroyedBuildings; // Skor için kritik
 
-            // Kaynaklar
             var p1 = SimResourceSystem.GetPlayer(world, 1);
             if (p1 != null)
             {
@@ -298,8 +277,6 @@ namespace RTS.Simulation.Orchestrator
                 stats.GatheredMeat = p1.Meat;
                 stats.GatheredStone = p1.Stone;
             }
-
-            // Birimler ve Binalar
             foreach (var u in world.Units.Values)
             {
                 if (u.PlayerID == 1)
@@ -308,7 +285,6 @@ namespace RTS.Simulation.Orchestrator
                     if (u.UnitType == SimUnitType.Worker) stats.WorkerCount++;
                 }
             }
-
             float myBaseHealth = 0;
             float enemyBaseHealth = 0;
             foreach (var b in world.Buildings.Values)
@@ -318,67 +294,63 @@ namespace RTS.Simulation.Orchestrator
                     if (b.PlayerID == 1) myBaseHealth = b.Health;
                     if (b.PlayerID == 2) enemyBaseHealth = b.Health;
                 }
-                if (b.PlayerID == 1 && b.Type == SimBuildingType.Tower && b.IsConstructed) stats.TowersBuilt++;
-                if (b.PlayerID == 1 && b.Type == SimBuildingType.Barracks) stats.BarracksBuilt++;
+                if (b.PlayerID == 1)
+                {
+                    if (b.Type == SimBuildingType.Tower && b.IsConstructed) stats.TowersBuilt++;
+                    if (b.Type == SimBuildingType.Barracks) stats.BarracksBuilt++;
+                    if (b.Type == SimBuildingType.Farm) stats.FarmsBuilt++;
+                    if (b.Type == SimBuildingType.WoodCutter) stats.WoodCuttersBuilt++;
+                    if (b.Type == SimBuildingType.StonePit) stats.StonePitsBuilt++;
+                }
             }
             stats.BaseHealthRemaining = myBaseHealth;
-
-            // --- FITNESS HESABI ---
-            // Mevcut statik fitness yerine senin yazdığın switch'li uzman fitness'ı çağırıyoruz:
             stats.Fitness = CalculateSpecializedFitness(stats, CurrentTrainingGoal, enemyBaseHealth, myBaseHealth);
-
             return stats;
         }
 
         private IEnumerator RunVisualMatch(float[] genes, int seed)
         {
-            SimConfig.EnableLogs = true; // Görsel modda logları aç
+            SimConfig.EnableLogs = true;
             if (Visualizer) Visualizer.ResetVisuals();
 
             System.Random visualRng = new System.Random(seed);
             SimWorldState world = CreateWorldWithResources(visualRng);
             SimGameContext.ActiveWorld = world;
 
-            SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, AIStrategyMode.Aggressive, visualRng);
-            SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, CurrentTrainingGoal, visualRng);
+            SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, CurrentTrainingGoal, visualRng);
+            AIStrategyMode enemyMode = GetEnemyStrategy(CurrentTrainingGoal);
+            SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, enemyMode, visualRng);
+
+            UnityEngine.Debug.Log($"⚔️ VS MATCH: Player({CurrentTrainingGoal}) vs Enemy({enemyMode})");
 
             bool isDone = false;
-
             while (!isDone)
             {
                 try
                 {
                     float dt = Time.deltaTime * VisualSpeed;
-
-                    // Simülasyonu İlerlet
                     world.TickCount++;
                     SimBuildingSystem.UpdateAllBuildings(world, dt);
-
                     var unitList = world.Units.Values.ToList();
                     foreach (var u in unitList) SimUnitSystem.UpdateUnit(u, world, dt);
-
                     myAI.Update(dt);
                     enemyAI.Update(dt);
 
-                    // Bitiş Kontrolleri
-                    bool enemyHasBase = world.Buildings.Values.Any(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
-                    bool meHasBase = world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
-
-                    // 1. Üs Yıkıldıysa Bitir
-                    if (!enemyHasBase || !meHasBase) isDone = true;
-
-                    // 2. Space Tuşuyla Manuel Bitir
-                    if (Input.GetKeyDown(KeyCode.Space)) isDone = true;
-
-                    // 3. (YENİ) Maksimum Tick Sayısına Ulaşınca Bitir
-                    if (world.TickCount >= MaxTicksPerGame)
+                    if (CurrentTrainingGoal == AIStrategyMode.Economic)
                     {
-                        UnityEngine.Debug.Log("⌛ Görsel Maç: Süre Doldu (Max Ticks)");
-                        isDone = true;
+                        if (world.TickCount >= MaxTicksPerGame) isDone = true;
                     }
+                    else
+                    {
+                        bool enemyHasBase = world.Buildings.Values.Any(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
+                        bool meHasBase = world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
+                        if (!enemyHasBase || !meHasBase) isDone = true;
+                        if (world.TickCount >= MaxTicksPerGame) isDone = true;
+                    }
+
+                    if (Input.GetKeyDown(KeyCode.Space)) isDone = true;
                 }
                 catch (System.Exception e) { UnityEngine.Debug.LogError(e); isDone = true; }
-
                 yield return null;
             }
             yield return new WaitForSeconds(0.5f);
@@ -388,14 +360,11 @@ namespace RTS.Simulation.Orchestrator
         {
             SimWorldState world = new SimWorldState(SimConfig.MAP_WIDTH, SimConfig.MAP_HEIGHT);
             if (!world.Players.ContainsKey(2)) world.Players.Add(2, new SimPlayerData { PlayerID = 2 });
-
             SpawnBaseForPlayer(world, 1, new int2(5, 5));
             SpawnBaseForPlayer(world, 2, new int2(44, 44));
-
             for (int i = 0; i < 30; i++) SpawnResource(world, SimResourceType.Wood, rng);
             for (int i = 0; i < 20; i++) SpawnResource(world, SimResourceType.Stone, rng);
             for (int i = 0; i < 20; i++) SpawnResource(world, SimResourceType.Meat, rng);
-
             return world;
         }
 
@@ -403,14 +372,12 @@ namespace RTS.Simulation.Orchestrator
         {
             int x = rng.Next(2, SimConfig.MAP_WIDTH - 2);
             int y = rng.Next(2, SimConfig.MAP_HEIGHT - 2);
-
             int2 pos = new int2(x, y);
             if (SimGridSystem.IsWalkable(world, pos))
             {
                 var r = new SimResourceData { ID = world.NextID(), Type = type, GridPosition = pos, AmountRemaining = 500 };
                 world.Resources.Add(r.ID, r);
                 world.Map.Grid[x, y].IsWalkable = false;
-
                 if (type == SimResourceType.Wood) world.Map.Grid[x, y].Type = SimTileType.Forest;
                 else if (type == SimResourceType.Stone) world.Map.Grid[x, y].Type = SimTileType.Stone;
                 else if (type == SimResourceType.Meat) world.Map.Grid[x, y].Type = SimTileType.MeatBush;
@@ -419,24 +386,16 @@ namespace RTS.Simulation.Orchestrator
 
         private void SpawnBaseForPlayer(SimWorldState world, int playerID, int2 pos)
         {
-            var baseB = new SimBuildingData
-            {
-                ID = world.NextID(),
-                PlayerID = playerID,
-                Type = SimBuildingType.Base,
-                GridPosition = pos,
-                IsConstructed = true,
-                Health = SimConfig.BASE_MAX_HEALTH,
-                MaxHealth = SimConfig.BASE_MAX_HEALTH
-            };
-            SimBuildingSystem.InitializeBuildingStats(baseB);
+            var baseB = new SimBuildingData { ID = world.NextID(), PlayerID = playerID, Type = SimBuildingType.Base, GridPosition = pos, IsConstructed = true, Health = SimConfig.BASE_MAX_HEALTH, MaxHealth = SimConfig.BASE_MAX_HEALTH };
+            SimBuildingSystem.InitializeBuildingStats(baseB, true);
             world.Buildings.Add(baseB.ID, baseB);
-            world.Map.Grid[pos.x, pos.y].IsWalkable = false;
-
+            if (world.Map.IsInBounds(pos))
+            {
+                world.Map.Grid[pos.x, pos.y].IsWalkable = false;
+                world.Map.Grid[pos.x, pos.y].OccupantID = baseB.ID;
+            }
             SimResourceSystem.IncreaseMaxPopulation(world, playerID, SimConfig.POPULATION_BASE);
-            for (int i = 0; i < SimConfig.START_WORKER_COUNT; i++)
-                SimBuildingSystem.SpawnUnit(world, new int2(pos.x + 1 + i, pos.y), SimUnitType.Worker, playerID);
-
+            for (int i = 0; i < SimConfig.START_WORKER_COUNT; i++) SimBuildingSystem.SpawnUnit(world, new int2(pos.x + 1 + i, pos.y), SimUnitType.Worker, playerID);
             SimResourceSystem.AddResource(world, playerID, SimResourceType.Wood, SimConfig.START_WOOD);
             SimResourceSystem.AddResource(world, playerID, SimResourceType.Meat, SimConfig.START_MEAT);
             SimResourceSystem.AddResource(world, playerID, SimResourceType.Stone, SimConfig.START_STONE);
@@ -444,109 +403,66 @@ namespace RTS.Simulation.Orchestrator
 
         private void LogFinalResults()
         {
-            UnityEngine.Debug.Log("🏁🏁🏁 EĞİTİM TAMAMLANDI! 🏁🏁🏁");
-            UnityEngine.Debug.Log($"🏆 EN YÜKSEK SKOR: {_bestFitnessAllTime:F2}");
-
+            UnityEngine.Debug.Log("🏁 EĞİTİM TAMAMLANDI! 🏁");
             if (_bestGenesAllTime != null)
             {
                 string genesStr = string.Join(", ", _bestGenesAllTime.Select(x => x.ToString("F2").Replace(',', '.') + "f"));
-                UnityEngine.Debug.Log("⬇️ KOPYALANABİLİR GENLER: ⬇️");
-                UnityEngine.Debug.Log($"public float[] BestGenes = new float[] {{ {genesStr} }};");
+                UnityEngine.Debug.Log($"Best Genes: {genesStr}");
             }
         }
 
-        // void OnGUI()
-        // {
-        //     GUI.Box(new Rect(10, 10, 250, 120), "PSO Master");
-        //     GUI.Label(new Rect(20, 35, 230, 20), _statusText);
-        //     GUI.Label(new Rect(20, 55, 230, 20), $"Best Score: {_bestFitnessAllTime:F0}");
-        //     GUI.Label(new Rect(20, 75, 230, 20), $"Best Seed: {LastBestSeed}");
-        //     string mode = ForceStandardPSO ? "STANDART PSO" : "APSO-SL";
-        //     GUI.Label(new Rect(20, 95, 230, 20), $"Mod: {mode}");
-        // }
         private float CalculateSpecializedFitness(SimStats stats, AIStrategyMode trainingGoal, float enemyBaseHealth, float myBaseHealth)
         {
             float score = 0;
-
             switch (trainingGoal)
             {
                 case AIStrategyMode.Economic:
-                    // --- DENGELİ EKONOMİ FİTNESS ---
-
-                    // 1. Kaynak Skoru (Ağırlıklı):
-                    // Taş daha zor bulunur ve değerlidir, katsayısını yüksek tutuyoruz (3x).
-                    // Odun ve Et standart (1x).
-                    // Dengesizlik Hesabı: (En Çok - En Az)
-
                     float totalResource = stats.GatheredWood + stats.GatheredMeat + stats.GatheredStone;
-
                     float minRes = Mathf.Min(stats.GatheredWood, Mathf.Min(stats.GatheredMeat, stats.GatheredStone));
                     float maxRes = Mathf.Max(stats.GatheredWood, Mathf.Max(stats.GatheredMeat, stats.GatheredStone));
                     float difference = maxRes - minRes;
-
-                    // 1. Kaynak Skoru:
-                    // Toplam kaynağı al ama dengesizlik kadar CEZA kes.
-                    // difference * 2.0f diyerek fark açıldıkça canını yakıyoruz.
+                    float productionBuildingScore = (stats.FarmsBuilt + stats.WoodCuttersBuilt + stats.StonePitsBuilt) * 1000f;
+                    float workerScore = stats.WorkerCount * 150f;
                     float resourceScore = (totalResource * 1.0f) - (difference * 2.0f);
-
-                    // 2. Üretim Kapasitesi (Kritik Düzeltme):
-                    // İşçi başına puanı 50'den 200'e çıkardık.
-                    // Örnek: 10 İşçi (2000 puan) artık 1000 Oduna (1000 puan) baskın gelir.
-                    // Bu, botu "yatırım yapmaya" zorlar.
-                    float productionScore = stats.WorkerCount * 200f;
-
-                    // 3. Altyapı Puanı:
-                    // Sadece toplamak yetmez, bunları harcayıp binaya dönüştürmesi de ekonomi göstergesidir.
-                    // Kışla veya Ev yapmak ekonominin çarklarının döndüğünü gösterir.
-                    // float infraScore = (stats.BarracksBuilt + stats.TowersBuilt) * 500f;
-
-                    // 4. Hayatta Kalma (Survival):
-                    // Ekonomik botun savaşmasa bile maç sonuna kadar canlı kalması gerekir.
-                    // float survivalBonus = (myBaseHealth / SimConfig.BASE_MAX_HEALTH) * 2000f;
-
-                    // 5. Kazanma Bonusu (Azaltıldı):
-                    // 10.000 puan çok fazlaydı, botu tembelliğe itebilirdi. 5.000 makul.
-                    float winBonus = stats.IsWin ? 5000f : 0f;
-
-                    score = resourceScore + productionScore
-                    // + infraScore 
-                    // + survivalBonus
-                     + winBonus;
+                    score = productionBuildingScore + workerScore + resourceScore;
                     break;
 
                 case AIStrategyMode.Defensive:
-                    // --- KULE ODAKLI DEFANS DEĞERLENDİRMESİ ---
-
-                    // 1. Kule Skoru (ANA HEDEF):
-                    // "Kuleye yakın tower sayısı" kadar puan.
-                    // İnşaat mantığı kuleleri dibe dikmeye zorladığı için TowersBuilt direkt bunu verir.
-                    // Kule başına çok yüksek puan veriyoruz (2000f) ki tek motivasyonu bu olsun.
-                    float towerScore = stats.TowersBuilt * 2000f;
-
-                    // 2. Base Sağlığı (Çarpan Etkisi):
-                    // Eğer üs yıkılırsa kulelerin bir anlamı kalmaz. 
-                    // Sağlık %50'nin altına düşerse kule puanlarını da baltalasın.
+                    float towerScore = stats.TowersBuilt * 3000f;
+                    float potentialDefenseScore = (stats.GatheredStone + stats.GatheredWood) * 2.0f;
                     float healthPercentage = myBaseHealth / SimConfig.BASE_MAX_HEALTH;
-
-                    // Eğer can %20'nin altındaysa kule puanlarını hiç alamasın (Ciddi ceza)
                     if (healthPercentage < 0.2f) towerScore *= 0.1f;
-
-                    // 3. Hayatta Kalma Bonusu:
-                    // Maç süresini doldurursa (yıkılmadan dayanırsa) büyük ödül.
-
-                    score = towerScore + (myBaseHealth * 10f);
+                    score = towerScore + potentialDefenseScore + (myBaseHealth * 20f);
                     break;
 
                 case AIStrategyMode.Aggressive:
-                    // Hedef: Rakibe hasar vermek ve hızlı kazanmak.
-                    score = (SimConfig.BASE_MAX_HEALTH - enemyBaseHealth) * 200f; // Rakip hasarı
+                    // --- NİHAİ AGRESİF PUANLAMA ---
+
+                    // 1. Öldürülen Asker Puanı (EN ÖNEMLİSİ - Combat)
+                    score += stats.EnemyUnitsKilled * 300f;
+
+                    // 2. Yıkılan Bina Puanı (Stratejik Hedef)
+                    score += stats.EnemyBuildingsDestroyed * 600f;
+
+                    // 3. Asker Üretimi (Ordu Kurma)
                     score += stats.SoldierCount * 100f;
-                    if (stats.IsWin) score += (MaxTicksPerGame - (stats.MatchDuration / 0.25f)) * 50f; // Hız bonusu
+
+                    // 4. Base Hasarı (Ana Hedef)
+                    score += (SimConfig.BASE_MAX_HEALTH - enemyBaseHealth) * 5f;
+
+                    // 5. Kazanma (Büyük Ödül)
+                    if (stats.IsWin)
+                    {
+                        score += 10000f;
+                        score += (MaxTicksPerGame - (stats.MatchDuration / 0.25f)) * 20f; // Hız Bonusu
+                    }
+                    else if (stats.SoldierCount == 0)
+                    {
+                        score = 0; // Asker basmayana puan yok!
+                    }
                     break;
             }
-
             return score;
         }
     }
-
 }
