@@ -7,6 +7,7 @@ using RTS.Simulation.Core;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics; // Zaman ölçümü için
+using RTS.Simulation.AI;
 
 namespace RTS.Simulation.Orchestrator
 {
@@ -19,6 +20,9 @@ namespace RTS.Simulation.Orchestrator
         public int PopulationSize = 20;
         public int MaxGenerations = 5000;
         public int MaxTicksPerGame = 2000;
+
+        [Header("Uzmanlık Hedefi")]
+        public AIStrategyMode CurrentTrainingGoal;
 
         [Header("Veri Kaydı (Logging)")]
         public bool EnableLogging = true;
@@ -227,10 +231,13 @@ namespace RTS.Simulation.Orchestrator
             if (!isVisual) SimGameContext.ActiveWorld = world;
 
             // AI Kurulumu (System.Random ile)
-            ParametricMacroAI myAI = new ParametricMacroAI(world, 1, genes, rng);
+            // DİKKAT: Artık ParametricMacroAI yerine SpecializedMacroAI kullanıyoruz.
+            // Bizim Genlerimiz var (genes), modumuz "Aggressive" olsun fark etmez çünkü genler karar veriyor.
+            SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, AIStrategyMode.Aggressive, rng);
 
-            // Düşman AI da artık SimConfig kullanıyor ve eşit şartlarda
-            SimpleMacroAI enemyAI = new SimpleMacroAI(world, 2);
+            // Düşman AI: Genleri NULL gönderiyoruz, böylece statik mod çalışıyor.
+            // Modu ise PSOManager'dan seçtiğimiz CurrentTrainingGoal oluyor.
+            SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, CurrentTrainingGoal, rng);
 
             float dt = 0.25f;
             int tick = 0;
@@ -317,25 +324,8 @@ namespace RTS.Simulation.Orchestrator
             stats.BaseHealthRemaining = myBaseHealth;
 
             // --- FITNESS HESABI ---
-            // 1. Kaynak Puanı
-            float resScore = (stats.GatheredWood + stats.GatheredMeat) * 0.5f;
-
-            // 2. Asker Puanı
-            float soldierScore = stats.SoldierCount * 100f;
-
-            // 3. Savaş Puanı
-            float damageDealt = (SimConfig.BASE_MAX_HEALTH - enemyBaseHealth);
-            float damageTaken = (SimConfig.BASE_MAX_HEALTH - myBaseHealth);
-            float defensePenalty = damageTaken * 100f;
-            float combatScore = (damageDealt * 50f) - defensePenalty;
-
-            // 4. Bonuslar
-            float towerBonus = (win) ? (stats.TowersBuilt * 2000f) : 0f;
-            float winBonus = win ? 100000f : 0f;
-            float timeBonus = win ? (maxTicks - tick) * 20f : 0f;
-            float deathPenalty = (gameOver && !win) ? -50000f : 0f;
-
-            stats.Fitness = resScore + soldierScore + combatScore + towerBonus + winBonus + deathPenalty + timeBonus;
+            // Mevcut statik fitness yerine senin yazdığın switch'li uzman fitness'ı çağırıyoruz:
+            stats.Fitness = CalculateSpecializedFitness(stats, CurrentTrainingGoal, enemyBaseHealth, myBaseHealth);
 
             return stats;
         }
@@ -349,17 +339,18 @@ namespace RTS.Simulation.Orchestrator
             SimWorldState world = CreateWorldWithResources(visualRng);
             SimGameContext.ActiveWorld = world;
 
-            ParametricMacroAI myAI = new ParametricMacroAI(world, 1, genes, visualRng);
-            SimpleMacroAI enemyAI = new SimpleMacroAI(world, 2);
+            SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, AIStrategyMode.Aggressive, visualRng);
+            SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, CurrentTrainingGoal, visualRng);
 
             bool isDone = false;
-            float timer = 0;
 
             while (!isDone)
             {
                 try
                 {
                     float dt = Time.deltaTime * VisualSpeed;
+
+                    // Simülasyonu İlerlet
                     world.TickCount++;
                     SimBuildingSystem.UpdateAllBuildings(world, dt);
 
@@ -369,16 +360,25 @@ namespace RTS.Simulation.Orchestrator
                     myAI.Update(dt);
                     enemyAI.Update(dt);
 
+                    // Bitiş Kontrolleri
                     bool enemyHasBase = world.Buildings.Values.Any(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
                     bool meHasBase = world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
 
+                    // 1. Üs Yıkıldıysa Bitir
                     if (!enemyHasBase || !meHasBase) isDone = true;
+
+                    // 2. Space Tuşuyla Manuel Bitir
                     if (Input.GetKeyDown(KeyCode.Space)) isDone = true;
-                    if (timer > 60f) isDone = true;
+
+                    // 3. (YENİ) Maksimum Tick Sayısına Ulaşınca Bitir
+                    if (world.TickCount >= MaxTicksPerGame)
+                    {
+                        UnityEngine.Debug.Log("⌛ Görsel Maç: Süre Doldu (Max Ticks)");
+                        isDone = true;
+                    }
                 }
                 catch (System.Exception e) { UnityEngine.Debug.LogError(e); isDone = true; }
 
-                timer += Time.deltaTime;
                 yield return null;
             }
             yield return new WaitForSeconds(0.5f);
@@ -464,5 +464,89 @@ namespace RTS.Simulation.Orchestrator
         //     string mode = ForceStandardPSO ? "STANDART PSO" : "APSO-SL";
         //     GUI.Label(new Rect(20, 95, 230, 20), $"Mod: {mode}");
         // }
+        private float CalculateSpecializedFitness(SimStats stats, AIStrategyMode trainingGoal, float enemyBaseHealth, float myBaseHealth)
+        {
+            float score = 0;
+
+            switch (trainingGoal)
+            {
+                case AIStrategyMode.Economic:
+                    // --- DENGELİ EKONOMİ FİTNESS ---
+
+                    // 1. Kaynak Skoru (Ağırlıklı):
+                    // Taş daha zor bulunur ve değerlidir, katsayısını yüksek tutuyoruz (3x).
+                    // Odun ve Et standart (1x).
+                    // Dengesizlik Hesabı: (En Çok - En Az)
+
+                    float totalResource = stats.GatheredWood + stats.GatheredMeat + stats.GatheredStone;
+
+                    float minRes = Mathf.Min(stats.GatheredWood, Mathf.Min(stats.GatheredMeat, stats.GatheredStone));
+                    float maxRes = Mathf.Max(stats.GatheredWood, Mathf.Max(stats.GatheredMeat, stats.GatheredStone));
+                    float difference = maxRes - minRes;
+
+                    // 1. Kaynak Skoru:
+                    // Toplam kaynağı al ama dengesizlik kadar CEZA kes.
+                    // difference * 2.0f diyerek fark açıldıkça canını yakıyoruz.
+                    float resourceScore = (totalResource * 1.0f) - (difference * 2.0f);
+
+                    // 2. Üretim Kapasitesi (Kritik Düzeltme):
+                    // İşçi başına puanı 50'den 200'e çıkardık.
+                    // Örnek: 10 İşçi (2000 puan) artık 1000 Oduna (1000 puan) baskın gelir.
+                    // Bu, botu "yatırım yapmaya" zorlar.
+                    float productionScore = stats.WorkerCount * 200f;
+
+                    // 3. Altyapı Puanı:
+                    // Sadece toplamak yetmez, bunları harcayıp binaya dönüştürmesi de ekonomi göstergesidir.
+                    // Kışla veya Ev yapmak ekonominin çarklarının döndüğünü gösterir.
+                    // float infraScore = (stats.BarracksBuilt + stats.TowersBuilt) * 500f;
+
+                    // 4. Hayatta Kalma (Survival):
+                    // Ekonomik botun savaşmasa bile maç sonuna kadar canlı kalması gerekir.
+                    // float survivalBonus = (myBaseHealth / SimConfig.BASE_MAX_HEALTH) * 2000f;
+
+                    // 5. Kazanma Bonusu (Azaltıldı):
+                    // 10.000 puan çok fazlaydı, botu tembelliğe itebilirdi. 5.000 makul.
+                    float winBonus = stats.IsWin ? 5000f : 0f;
+
+                    score = resourceScore + productionScore
+                    // + infraScore 
+                    // + survivalBonus
+                     + winBonus;
+                    break;
+
+                case AIStrategyMode.Defensive:
+                    // --- KULE ODAKLI DEFANS DEĞERLENDİRMESİ ---
+
+                    // 1. Kule Skoru (ANA HEDEF):
+                    // "Kuleye yakın tower sayısı" kadar puan.
+                    // İnşaat mantığı kuleleri dibe dikmeye zorladığı için TowersBuilt direkt bunu verir.
+                    // Kule başına çok yüksek puan veriyoruz (2000f) ki tek motivasyonu bu olsun.
+                    float towerScore = stats.TowersBuilt * 2000f;
+
+                    // 2. Base Sağlığı (Çarpan Etkisi):
+                    // Eğer üs yıkılırsa kulelerin bir anlamı kalmaz. 
+                    // Sağlık %50'nin altına düşerse kule puanlarını da baltalasın.
+                    float healthPercentage = myBaseHealth / SimConfig.BASE_MAX_HEALTH;
+
+                    // Eğer can %20'nin altındaysa kule puanlarını hiç alamasın (Ciddi ceza)
+                    if (healthPercentage < 0.2f) towerScore *= 0.1f;
+
+                    // 3. Hayatta Kalma Bonusu:
+                    // Maç süresini doldurursa (yıkılmadan dayanırsa) büyük ödül.
+
+                    score = towerScore + (myBaseHealth * 10f);
+                    break;
+
+                case AIStrategyMode.Aggressive:
+                    // Hedef: Rakibe hasar vermek ve hızlı kazanmak.
+                    score = (SimConfig.BASE_MAX_HEALTH - enemyBaseHealth) * 200f; // Rakip hasarı
+                    score += stats.SoldierCount * 100f;
+                    if (stats.IsWin) score += (MaxTicksPerGame - (stats.MatchDuration / 0.25f)) * 50f; // Hız bonusu
+                    break;
+            }
+
+            return score;
+        }
     }
+
 }

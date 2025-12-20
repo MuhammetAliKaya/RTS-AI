@@ -1768,9 +1768,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 61ec2a4fa0676d94e84f5eef5ee8badd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanSpeed: 20
+  PanSpeed: 2
   PanLimitMin: {x: -10, y: -10}
-  ScrollSpeed: 20
+  ScrollSpeed: 2
   MinZoom: 5
   MaxZoom: 30
 --- !u!1 &682332566
@@ -3898,8 +3898,9 @@ MonoBehaviour:
   VisualizeOnlyFinalBest: 1
   ForceStandardPSO: 0
   PopulationSize: 30
-  MaxGenerations: 100
-  MaxTicksPerGame: 2000
+  MaxGenerations: 50
+  MaxTicksPerGame: 4000
+  CurrentTrainingGoal: 0
   EnableLogging: 1
   UseRandomMasterSeed: 0
   MasterSeed: 55
