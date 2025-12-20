@@ -121,70 +121,121 @@ namespace RTS.Simulation.AI
                     break;
 
                 case AIStrategyMode.Defensive:
-                    // --- DEFANS MODU (7 İşçi, 1 İnşaatçı, 6 Kaynakçı) ---
-                    var dWorkers = myUnits.Where(u => u.UnitType == SimUnitType.Worker).ToList();
-                    int dwCount = dWorkers.Count;
+                    // --- GELİŞTİRİLMİŞ DEFANS MODU ---
+                    // Hedef: Hızlı Kule, Taş Odaklı Toplama, Üs Savunması
 
-                    // 1. 7 İşçiye kadar bas
-                    if (baseB != null && !baseB.IsTraining && dwCount < 7)
+                    var dWorkers = myUnits
+        .Where(u => u.UnitType == SimUnitType.Worker)
+        .OrderBy(u => u.ID)
+        .ToList();
+
+                    int dwCount = dWorkers.Count;
+                    int towerCountDef = myBuildings.Count(b => b.Type == SimBuildingType.Tower);
+
+                    // 1. İşçi Basımı (Ekonomiyi canlı tutmak için 12'ye çıkardık, 7 çok azdı)
+                    if (baseB != null && !baseB.IsTraining && dwCount < 12)
                     {
                         if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT))
                             SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
                     }
 
-                    // 2. İşçi Görev Dağılımı (6 Kaynakçı + 1 İnşaatçı)
                     SimUnitData builderD = null;
 
                     for (int i = 0; i < dwCount; i++)
                     {
                         var w = dWorkers[i];
 
-                        // 7. İşçi (Index 6) İNŞAATÇI olsun
-                        if (i == 6)
+                        // Sonuncu işçiyi İNŞAATÇI yap (Liste sıralı olduğu için bu hep aynı birim olur)
+                        if (i == dwCount - 1)
                         {
                             builderD = w;
-                            continue; // İnşaatçı kaynak toplamaz
+                            continue;
                         }
 
-                        // Diğerleri (0-5 arası) Kaynak Toplasın (Eşit Dağılım: Odun, Taş, Et)
-                        if (w.State == SimTaskType.Idle || w.State == SimTaskType.Gathering)
-                        {
-                            SimResourceType type = SimResourceType.Wood;
-                            if (i % 3 == 1) type = SimResourceType.Stone;
-                            if (i % 3 == 2) type = SimResourceType.Meat;
+                        // Diğerleri Kaynak Toplasın
+                        // Sadece boşta ise VEYA yanlış kaynak türü topluyorsa müdahale et (Performans için kritik)
+                        bool needsOrder = (w.State == SimTaskType.Idle);
 
-                            var res = FindNearestResource(basePos, type);
+                        // Hangi kaynağı toplaması lazım?
+                        SimResourceType targetType = SimResourceType.Wood;
+                        if (towerCountDef < 3)
+                        {
+                            if (i % 2 == 0) targetType = SimResourceType.Stone;
+                            else targetType = SimResourceType.Wood;
+                        }
+                        else
+                        {
+                            if (i % 3 == 1) targetType = SimResourceType.Stone;
+                            else if (i % 3 == 2) targetType = SimResourceType.Meat;
+                        }
+
+                        // Eğer zaten bir şey topluyorsa, doğru şeyi mi topluyor kontrol et
+                        if (w.State == SimTaskType.Gathering || w.State == SimTaskType.Moving)
+                        {
+                            // Hedefindeki obje gerçekten istediğimiz tipte bir kaynak mı?
+                            if (_world.Resources.TryGetValue(w.TargetID, out SimResourceData currentRes))
+                            {
+                                if (currentRes.Type != targetType) needsOrder = true; // Yanlış topluyor, değiştir
+                            }
+                            else if (w.State == SimTaskType.Gathering)
+                            {
+                                needsOrder = true; // Hedef kaybolmuş
+                            }
+                        }
+
+                        if (needsOrder)
+                        {
+                            var res = FindNearestResource(basePos, targetType);
                             if (res != null && w.TargetID != res.ID)
                                 SimUnitSystem.TryAssignGatherTask(w, res, _world);
                         }
                     }
 
-                    // 3. İnşaatçı Mantığı
-                    if (builderD != null && builderD.State == SimTaskType.Idle)
+                    // 3. İnşaat Mantığı (ÖNCELİK KULE!)
+                    if (builderD != null
+                    // && builderD.State == SimTaskType.Idle
+                    )
                     {
+                        // Buradaki TryBuildBuilding çağrıların aynen kalabilir (2 birim, 4 birim vs.)
                         if (pData.MaxPopulation - pData.CurrentPopulation <= 2)
-                        {
                             TryBuildBuilding(SimBuildingType.House, new List<SimUnitData> { builderD }, basePos, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
-                        }
+                        else if (towerCountDef < 6)
+                            TryBuildBuilding(SimBuildingType.Tower, new List<SimUnitData> { builderD }, basePos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT, 4); // <--- Senin istediğin 4 birim ayarı
                         else if (!myBuildings.Any(b => b.Type == SimBuildingType.Barracks))
-                        {
                             TryBuildBuilding(SimBuildingType.Barracks, new List<SimUnitData> { builderD }, basePos, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
-                        }
                         else
-                        {
-                            TryBuildBuilding(SimBuildingType.Tower, new List<SimUnitData> { builderD }, basePos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT);
-                        }
+                            TryBuildBuilding(SimBuildingType.Tower, new List<SimUnitData> { builderD }, basePos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT, 4);
                     }
 
-                    // Defansif Saldırı (Eğer asker varsa ve düşman çok yakındaysa)
-                    int soldiersD = myUnits.Count(u => u.UnitType == SimUnitType.Soldier);
-                    if (soldiersD >= 5 && enemyBase != null)
+                    // 4. Asker Basımı (Kışla varsa sürekli bas)
+                    foreach (var b in myBuildings.Where(x => x.Type == SimBuildingType.Barracks && x.IsConstructed && !x.IsTraining))
                     {
-                        foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier))
+                        if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT))
+                            SimBuildingSystem.StartTraining(b, _world, SimUnitType.Soldier);
+                    }
+
+                    // 5. Defansif Asker Mantığı (Saldırı YOK, Devriye VAR)
+                    // Askerler düşman üssüne gitmesin, kendi üssünün etrafında beklesin.
+                    var soldiersd = myUnits.Where(u => u.UnitType == SimUnitType.Soldier).ToList();
+                    foreach (var s in soldiersd)
+                    {
+                        if (s.State == SimTaskType.Idle)
                         {
-                            if (s.TargetID == -1 || s.State == SimTaskType.Idle)
-                                SimUnitSystem.OrderAttack(s, enemyBase, _world);
+                            // Base'in biraz etrafında rastgele bir nokta (Devriye gibi)
+                            float angle = (float)_rng.NextDouble() * Mathf.PI * 2;
+                            int radius = _rng.Next(3, 8); // Base'e yakın dur (3-8 birim)
+                            int2 patrolPos = new int2(
+                                basePos.x + (int)(Mathf.Cos(angle) * radius),
+                                basePos.y + (int)(Mathf.Sin(angle) * radius)
+                            );
+
+                            if (SimGridSystem.IsWalkable(_world, patrolPos))
+                            {
+                                SimUnitSystem.MoveTo(s, patrolPos, _world);
+                            }
                         }
+                        // Not: SimUnitSystem içinde otomatik saldırı (range içine girince) varsa o çalışmaya devam eder.
+                        // Ama biz zorla "OrderAttack" yapıp haritanın öbür ucuna göndermiyoruz.
                     }
                     break;
 
@@ -351,7 +402,7 @@ namespace RTS.Simulation.AI
                         );
                     }
 
-                    if (TryBuildBuilding(SimBuildingType.Tower, myUnits, targetPos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT))
+                    if (TryBuildBuilding(SimBuildingType.Tower, myUnits, targetPos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT, 2))
                         return true;
 
                     return true;
@@ -497,14 +548,14 @@ namespace RTS.Simulation.AI
             return units.FirstOrDefault(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Gathering);
         }
 
-        private bool TryBuildBuilding(SimBuildingType type, List<SimUnitData> units, int2 centerPos, int costWood, int costStone, int costMeat)
+        private bool TryBuildBuilding(SimBuildingType type, List<SimUnitData> units, int2 centerPos, int costWood, int costStone, int costMeat, int strictRadius = -1)
         {
             if (!SimResourceSystem.CanAfford(_world, _playerID, costWood, costStone, costMeat)) return false;
 
             SimUnitData worker = null;
             if (units != null && units.Count > 0)
             {
-                if (units.Count == 1) worker = units[0]; // Zorunlu işçi
+                if (units.Count == 1) worker = units[0];
                 else worker = GetAvailableWorker(units);
             }
 
@@ -513,7 +564,14 @@ namespace RTS.Simulation.AI
             int minRadius;
             int maxRadius;
 
-            if (type == SimBuildingType.Tower)
+            // --- YENİ MANTIK BURADA ---
+            // Eğer dışarıdan özel bir sınır (4 gibi) verildiyse onu kullan
+            if (strictRadius > 0)
+            {
+                minRadius = 2; // Base'in hemen dibinden başla
+                maxRadius = strictRadius;
+            }
+            else if (type == SimBuildingType.Tower)
             {
                 minRadius = 6;
                 maxRadius = 14;
@@ -524,6 +582,7 @@ namespace RTS.Simulation.AI
                 minRadius = 4 + (buildingCount / 5) * 2;
                 maxRadius = minRadius + 10;
             }
+            // --------------------------
 
             // Düşman kulelerinden kaçın
             List<int2> avoidTargets = new List<int2>();

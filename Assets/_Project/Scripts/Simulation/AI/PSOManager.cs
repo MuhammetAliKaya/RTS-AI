@@ -54,6 +54,9 @@ namespace RTS.Simulation.Orchestrator
         private System.Random _masterRng;
         private DataLogger _logger;
 
+        [Header("Güvenlik")]
+        public float MaxRealTimePerGame = 5.0f; // Bir maç en fazla 5 saniye sürsün (Donmayı engeller)
+
         void Start()
         {
             if (Visualizer == null) Visualizer = FindObjectOfType<GameVisualizer>();
@@ -101,7 +104,10 @@ namespace RTS.Simulation.Orchestrator
                 genTimer.Restart();
                 _statusText = $"Eğitiliyor... %{(float)_currentGen / MaxGenerations * 100:F1} (Gen: {_currentGen})";
 
-                var genStats = RunGenerationHeadlessParallelWithStats();
+                var task = RunGenerationAsync();
+                yield return new WaitUntil(() => task.IsCompleted);
+
+                var genStats = task.Result; // Sonucu al
 
                 genTimer.Stop();
                 float timeTaken = genTimer.ElapsedMilliseconds / 1000f;
@@ -146,21 +152,36 @@ namespace RTS.Simulation.Orchestrator
             }
         }
 
-        private (float AvgFitness, float WinRate, SimStats AverageStats) RunGenerationHeadlessParallelWithStats()
+        private async Task<(float AvgFitness, float WinRate, SimStats AverageStats)> RunGenerationAsync()
         {
             SimConfig.EnableLogs = false;
             var positions = _pso.GetPositions();
             SimStats[] allStats = new SimStats[positions.Count];
 
+            // Seedleri hazırla
             for (int i = 0; i < positions.Count; i++) CurrentGenerationSeeds[i] = _masterRng.Next();
 
-            Parallel.For(0, positions.Count, i =>
+            // İşlemi ThreadPool'a atıyoruz ki Unity Main Thread donmasın
+            await Task.Run(() =>
             {
-                int seed = CurrentGenerationSeeds[i];
-                System.Random rng = new System.Random(seed);
-                allStats[i] = SimulateGame(positions[i], false, rng);
+                Parallel.For(0, positions.Count, i =>
+                {
+                    try
+                    {
+                        int seed = CurrentGenerationSeeds[i];
+                        System.Random rng = new System.Random(seed);
+                        allStats[i] = SimulateGame(positions[i], false, rng);
+                    }
+                    catch (System.Exception e)
+                    {
+                        // Hata olursa en azından fitness'ı 0 yapıp devam etsin, donmasın
+                        UnityEngine.Debug.LogError($"Thread Error in Sim {i}: {e.Message}");
+                        allStats[i] = new SimStats(); // Boş istatistik
+                    }
+                });
             });
 
+            // Sonuçları toplama (Main Thread'de yapılabilir artık)
             float totalFit = 0;
             int wins = 0;
             SimStats avgStats = new SimStats();
@@ -172,24 +193,21 @@ namespace RTS.Simulation.Orchestrator
                 _pso.ReportFitness(i, fitness);
                 totalFit += fitness;
                 if (allStats[i].IsWin) wins++;
-                avgStats.GatheredWood += allStats[i].GatheredWood;
-                avgStats.SoldierCount += allStats[i].SoldierCount;
-                avgStats.WorkerCount += allStats[i].WorkerCount;
+                // ... istatistik toplama kodların aynen kalabilir ...
             }
             _pso.Step();
-
-            avgStats.GatheredWood /= positions.Count;
-            avgStats.SoldierCount /= positions.Count;
-            avgStats.WorkerCount /= positions.Count;
 
             return (totalFit / positions.Count, (float)wins / positions.Count, avgStats);
         }
 
         private SimStats SimulateGame(float[] genes, bool isVisual, System.Random rng)
         {
+            // --- GÜVENLİK ZAMANLAYICISI BAŞLAT ---
+            Stopwatch safetyTimer = Stopwatch.StartNew();
+            // -------------------------------------
             SimWorldState world = CreateWorldWithResources(rng);
-            if (!isVisual) SimGameContext.ActiveWorld = world;
-
+            // if (!isVisual) SimGameContext.ActiveWorld = world;
+            if (isVisual) SimGameContext.ActiveWorld = world;
             SpecializedMacroAI myAI = new SpecializedMacroAI(world, 1, genes, CurrentTrainingGoal, rng);
             AIStrategyMode enemyMode = GetEnemyStrategy(CurrentTrainingGoal);
             SpecializedMacroAI enemyAI = new SpecializedMacroAI(world, 2, null, enemyMode, rng);
@@ -210,6 +228,14 @@ namespace RTS.Simulation.Orchestrator
 
             while (tick < maxTicks)
             {
+                // --- KRİTİK KONTROL: SÜRE DOLDU MU? ---
+                if (safetyTimer.Elapsed.TotalSeconds > MaxRealTimePerGame && !isVisual) // Görsel modda kesme
+                {
+                    // Süre doldu, maçı olduğu yerde bitir!
+                    break;
+                }
+                // --------------------------------------
+
                 world.TickCount++;
                 SimBuildingSystem.UpdateAllBuildings(world, dt);
                 localUnitCache.Clear();

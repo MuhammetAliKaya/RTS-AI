@@ -3897,10 +3897,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   VisualizeOnlyFinalBest: 1
   ForceStandardPSO: 0
-  PopulationSize: 10
-  MaxGenerations: 50
-  MaxTicksPerGame: 4000
-  CurrentTrainingGoal: 2
+  PopulationSize: 100
+  MaxGenerations: 100
+  MaxTicksPerGame: 8000
+  CurrentTrainingGoal: 1
   EnableLogging: 1
   UseRandomMasterSeed: 0
   MasterSeed: 55
@@ -3911,10 +3911,11 @@ MonoBehaviour:
   UseFixedSeedForVisual: 1
   VisualFixedSeed: 42
   CurrentState: 
-  Inertia_W: 0.4
-  Cognitive_C1: 0.5
-  Social_C2: 0.5
+  Inertia_W: 0
+  Cognitive_C1: 0
+  Social_C2: 0
   CurrentBestScore: 0
+  MaxRealTimePerGame: 5
 --- !u!1 &1917624334
 GameObject:
   m_ObjectHideFlags: 0

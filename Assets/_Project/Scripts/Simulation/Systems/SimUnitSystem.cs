@@ -384,5 +384,9 @@ namespace RTS.Simulation.Systems
             if (unit.Path != null && unit.Path.Count > 0) unit.State = SimTaskType.Moving;
             else unit.State = SimTaskType.Attacking;
         }
+        public static void MoveTo(SimUnitData unit, int2 targetPos, SimWorldState world)
+        {
+            OrderMove(unit, targetPos, world);
+        }
     }
 }
