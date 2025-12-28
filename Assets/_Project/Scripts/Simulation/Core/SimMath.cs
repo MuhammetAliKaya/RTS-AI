@@ -1,4 +1,7 @@
 using System;
+using RTS.Simulation.Data;
+using RTS.Simulation.Systems;
+using RTS.Simulation.Core; // SimGameContext ve SimConfig için
 
 namespace RTS.Simulation.Core
 {
@@ -8,6 +11,12 @@ namespace RTS.Simulation.Core
     /// </summary>
     public static class SimMath
     {
+        public static float Distance(int2 a, int2 b)
+        {
+            float dx = a.x - b.x;
+            float dy = a.y - b.y;
+            return (float)Math.Sqrt(dx * dx + dy * dy);
+        }
         // Yuvarlama İşlemleri
         public static int RoundToInt(float f) => (int)Math.Round(f);
         public static int FloorToInt(float f) => (int)Math.Floor(f);
@@ -53,5 +62,6 @@ namespace RTS.Simulation.Core
         {
             return a + (b - a) * Clamp01(t);
         }
+
     }
 }

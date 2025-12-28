@@ -1,11 +1,11 @@
 using System.Linq;
 using RTS.Simulation.Data;
+using RTS.Simulation.Core;
 using RTS.Simulation.Systems;
 using UnityEngine;
 
 namespace RTS.Simulation.AI
 {
-    // Oyun durumunu matematiksel verilere döken statik analiz aracı
     public static class SimGameStateAnalyzer
     {
         public struct GameMetrics
@@ -17,44 +17,80 @@ namespace RTS.Simulation.AI
             public float GSF; // Global Situation Factor
         }
 
-        public static GameMetrics CalculateGSF(SimWorldState world, int myPlayerID)
+        // PARAMETRELERİ GÜNCELLEDİK: Artık kısıtlamaları da alıyor
+        public static GameMetrics CalculateGSF(SimWorldState world, int myPlayerID, float inactivityTime,
+                                               int minDefSteps, int minTowers,
+                                               int matSoldier, int matRes)
         {
             GameMetrics m = new GameMetrics();
 
-            // Oyuncuları ve birimleri ayıkla
+            // --- TEMEL VERİLERİ ÇEK ---
             var myUnits = world.Units.Values.Where(u => u.PlayerID == myPlayerID).ToList();
             var enemyUnits = world.Units.Values.Where(u => u.PlayerID != myPlayerID).ToList();
-
             var myBuildings = world.Buildings.Values.Where(b => b.PlayerID == myPlayerID).ToList();
             var enemyBuildings = world.Buildings.Values.Where(b => b.PlayerID != myPlayerID).ToList();
 
-            // --- GÜÇ FORMÜLLERİ ---
+            var pData = SimResourceSystem.GetPlayer(world, myPlayerID);
+            int totalRes = (pData != null) ? (pData.Wood + pData.Stone + pData.Meat) : 0;
 
-            // 1. Saldırı Gücü (Asker Sayısı + Askerlerin Can Oranı)
-            // Sadece sayı yetmez, canı azalan askerin gücü düşmeli mi? Şimdilik sayı üzerinden gidelim.
-            // Asker başına 10 puan.
+            // --- 1. GÜÇ HESAPLARI (KLASİK) ---
             m.MAP = myUnits.Count(u => u.UnitType == SimUnitType.Soldier) * 10f;
-            m.EAP = enemyUnits.Count(u => u.UnitType == SimUnitType.Soldier) * 10f;
 
-            // 2. Savunma Gücü (Kuleler + Ana Bina Sağlığı)
-            // Kule başına 50 puan (Kule askeri yener mantığı)
-            // Base sağlığı da son kale olduğu için puana dahil edilir (Max 100 puan)
+            float totalEnemyThreat = 0f;
+            var myBase = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
+            int2 myBasePos = (myBase != null) ? myBase.GridPosition : new int2(SimConfig.MAP_WIDTH / 2, SimConfig.MAP_HEIGHT / 2);
 
-            float myBaseHealth = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base)?.Health ?? 0;
-            m.MDP = (myBuildings.Count(b => b.Type == SimBuildingType.Tower && b.IsConstructed) * 50f) + (myBaseHealth * 0.1f);
+            foreach (var u in enemyUnits)
+            {
+                if (u.UnitType == SimUnitType.Soldier)
+                {
+                    float baseScore = 10f;
+                    float dist = SimMath.Distance(u.GridPosition, myBasePos);
+                    if (dist < 15f) baseScore *= 3.0f;
+                    else if (dist < 30f) baseScore *= 1.5f;
+                    totalEnemyThreat += baseScore;
+                }
+            }
+            m.EAP = totalEnemyThreat;
 
-            float enemyBaseHealth = enemyBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base)?.Health ?? 0;
-            m.EDP = (enemyBuildings.Count(b => b.Type == SimBuildingType.Tower && b.IsConstructed) * 50f) + (enemyBaseHealth * 0.1f);
+            m.MDP = (myBuildings.Count(b => b.Type == SimBuildingType.Tower && b.IsConstructed) * 50f);
+            float myBaseHp = (myBase != null) ? myBase.Health : 0;
+            m.MDP += myBaseHp * 0.1f;
 
-            // --- GSF HESABI ---
-            // GSF = (Benim Toplam Gücüm) - (Rakibin Toplam Gücü)
-            // Pozitif (+): Ben üstünüm -> Saldırabilirim
-            // Negatif (-): Rakip üstün -> Savunmalıyım
+            m.EDP = (enemyBuildings.Count(b => b.Type == SimBuildingType.Tower && b.IsConstructed) * 50f);
+            float enemyBaseHp = enemyBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base)?.Health ?? 0;
+            m.EDP += enemyBaseHp * 0.1f;
 
-            float myTotalPower = m.MAP + m.MDP;
-            float enemyTotalPower = m.EAP + m.EDP;
+            // --- 2. GSF HESAPLAMA (TEMEL) ---
+            m.GSF = (m.MAP + m.MDP) - (m.EAP + m.EDP);
 
-            m.GSF = myTotalPower - enemyTotalPower;
+            // --- 3. EKSTRA PUAN GİRDİLERİ (INJECTION) ---
+
+            // A. Pasiflik Bonusu (Fırsat)
+            if (inactivityTime > 60f)
+            {
+                float bonus = (inactivityTime - 60f) * 0.5f;
+                if (bonus > 150f) bonus = 150f;
+                m.GSF += bonus;
+            }
+
+            // B. Zorunlu Defans Cezası (Early Game Constraint)
+            // Eğer oyun başındaysa VE kule eksikse -> GSF'ye devasa ceza ver.
+            // Bu ceza, skoru -500'e çeker ve AI doğal olarak Savunma Modu'na girer.
+            int myTowerCount = myBuildings.Count(b => b.Type == SimBuildingType.Tower);
+            if (world.TickCount < minDefSteps && myTowerCount < minTowers)
+            {
+                m.GSF -= 1000f; // -40 eşiğini kesinlikle deler
+            }
+
+            // C. Saldırı Olgunluğu Bonusu (Late Game Trigger)
+            // Eğer asker veya kaynak hedefi tuttuysa -> GSF'ye devasa bonus ver.
+            // Bu bonus, skoru +500'e çeker ve AI doğal olarak Saldırı Modu'na girer.
+            int mySoldierCount = myUnits.Count(u => u.UnitType == SimUnitType.Soldier);
+            if (mySoldierCount >= matSoldier || totalRes >= matRes)
+            {
+                m.GSF += 1000f; // +50 eşiğini kesinlikle deler
+            }
 
             return m;
         }

@@ -388,7 +388,7 @@ namespace RTS.Simulation.AI
             {
                 int towerCount = myBuildings.Count(b => b.Type == SimBuildingType.Tower);
                 int neededTowers = 1 + SimMath.FloorToInt(soldiers * defenseRatio);
-                if (prioDef > 30) neededTowers = 50;
+                if (prioDef > 30) neededTowers = 7;
 
                 if (towerCount < neededTowers)
                 {
@@ -607,9 +607,13 @@ namespace RTS.Simulation.AI
             return false;
         }
 
+        // SpecializedMacroAI.cs içinde ilgili fonksiyonu bul ve bununla değiştir:
+
         private int2 FindBuildSpot(int2 center, int minRadius, int maxRadius, List<int2> avoidList = null)
         {
-            float safeDistSq = 100f; // 10 birim güvenlik
+            float safeDistSq = 100f; // Düşman kulelerinden kaçınma mesafesi
+            float buildingSpacingSq = 2.5f; // YENİ: Binalar arası minimum mesafe (kare cinsinden)
+                                            // 1.5f ~ 2.25f arası bir değer, binaların çapraz veya yan yana bitişik olmasını engeller.
 
             for (int r = minRadius; r <= maxRadius; r++)
             {
@@ -617,13 +621,18 @@ namespace RTS.Simulation.AI
                 {
                     for (int y = -r; y <= r; y++)
                     {
+                        // Sadece kare şeklindeki halkanın kenarlarına bak (İçi boş kare)
                         if (System.Math.Abs(x) == r || System.Math.Abs(y) == r)
                         {
                             int2 pos = new int2(center.x + x, center.y + y);
+
+                            // Harita sınırları kontrolü
                             if (pos.x > 1 && pos.x < SimConfig.MAP_WIDTH - 1 && pos.y > 1 && pos.y < SimConfig.MAP_HEIGHT - 1)
                             {
+                                // 1. Zemin yürünebilir mi?
                                 if (SimGridSystem.IsWalkable(_world, pos))
                                 {
+                                    // 2. Tehlikeli bölgelerden kaçın (Düşman kulesi vb.)
                                     if (avoidList != null && avoidList.Count > 0)
                                     {
                                         bool isSafe = true;
@@ -637,6 +646,22 @@ namespace RTS.Simulation.AI
                                         }
                                         if (!isSafe) continue;
                                     }
+
+                                    // 3. (YENİ) DİĞER BİNALARLA BİTİŞİK Mİ? (Gap Logic)
+                                    // İşçilerin sıkışmaması için bitişik bina var mı kontrol et.
+                                    bool isTooClose = false;
+                                    foreach (var b in _world.Buildings.Values)
+                                    {
+                                        // Sadece tamamlanmış veya inşaat halindeki kendi binalarımıza bak
+                                        if (SimGridSystem.GetDistanceSq(pos, b.GridPosition) < buildingSpacingSq)
+                                        {
+                                            isTooClose = true;
+                                            break;
+                                        }
+                                    }
+                                    if (isTooClose) continue; // Bitişikse buraya yapma, pas geç.
+
+                                    // Tüm testleri geçti, burası uygun!
                                     return pos;
                                 }
                             }
@@ -646,7 +671,6 @@ namespace RTS.Simulation.AI
             }
             return new int2(-1, -1);
         }
-
         private SimBuildingData SpawnPlaceholder(SimBuildingType type, int2 pos)
         {
             var b = new SimBuildingData
@@ -678,6 +702,18 @@ namespace RTS.Simulation.AI
                 if (d < minDst) { minDst = d; best = r; }
             }
             return best;
+        }
+
+        public void SetGenes(float[] newGenes, string strategyName = "")
+        {
+            // Genleri güncelle
+            this._genes = newGenes;
+
+            // Debug için log (Hangi stratejiye geçtiğimizi görmek için)
+            if (!string.IsNullOrEmpty(strategyName) && SimConfig.EnableLogs)
+            {
+                Debug.Log($"🧬 STRATEJİ DEĞİŞTİ: {strategyName} Moduna Geçildi.");
+            }
         }
     }
 }

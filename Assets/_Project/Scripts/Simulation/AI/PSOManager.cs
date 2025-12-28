@@ -454,11 +454,44 @@ namespace RTS.Simulation.Orchestrator
                     break;
 
                 case AIStrategyMode.Defensive:
-                    float towerScore = stats.TowersBuilt * 3000f;
-                    float potentialDefenseScore = (stats.GatheredStone + stats.GatheredWood) * 2.0f;
-                    float healthPercentage = myBaseHealth / SimConfig.BASE_MAX_HEALTH;
-                    if (healthPercentage < 0.2f) towerScore *= 0.1f;
-                    score = towerScore + potentialDefenseScore + (myBaseHealth * 20f);
+                    // --- YENİ SAVUNMA PUANLAMASI ---
+
+                    // 1. HAYATTA KALAN KULELER (ANA HEDEF)
+                    // stats.TowersBuilt değişkeni simülasyon sonunda sayıldığı için "Yaşayan Kule" sayısıdır.
+                    // Bir kuleyi yaşatmak 10.000 puan! (Yıkılırsa bu devasa puanı kaybeder)
+                    float livingTowerScore = stats.TowersBuilt * 10000f;
+
+                    // 2. BASE SAĞLIĞI (KRİTİK)
+                    // Kuleler var ama Base ölüyorsa anlamı yok.
+                    // Base canı %50'nin altına inerse tüm puanı cezalandır (0.2 ile çarp).
+                    float healthRatio = myBaseHealth / SimConfig.BASE_MAX_HEALTH;
+                    float baseHealthScore = myBaseHealth * 50f;
+
+                    // 3. KAYNAK TOPLAMA (DÜŞÜK ÖNCELİK)
+                    // Sadece taş toplamak yetmez, onu kuleye çevirmeli. Katsayıyı düşürdük.
+                    float hoardingScore = (stats.GatheredStone * 0.5f) + (stats.GatheredWood * 0.1f);
+
+                    // 4. HAYATTA KALMA SÜRESİ (ZAMAN BONUSU)
+                    // Eğer maç bitene kadar (MaxTicks) hayatta kaldıysa büyük ödül.
+                    float survivalBonus = 0f;
+                    if (myBaseHealth > 0 && stats.MatchDuration >= (MaxTicksPerGame * 0.25f * 0.95f))
+                    {
+                        // Sürenin %95'ini tamamladıysa ve yaşıyorsa
+                        survivalBonus = 15000f;
+                    }
+
+                    // TOPLAM SKOR HESABI
+                    score = livingTowerScore + baseHealthScore + hoardingScore + survivalBonus;
+
+                    // CEZA MEKANİZMASI: Kule Yoksa veya Base Çok Hasarlıysa
+                    if (stats.TowersBuilt == 0)
+                    {
+                        score *= 0.1f; // Kule yoksa puanın %90'ını sil. (Savunma yapmadı demektir)
+                    }
+                    else if (healthRatio < 0.4f)
+                    {
+                        score *= 0.5f; // Kule var ama Base ölmek üzereyse cezalandır.
+                    }
                     break;
 
                 case AIStrategyMode.Aggressive:

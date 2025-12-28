@@ -36,8 +36,8 @@ namespace RTS.Simulation.Systems
         public const int BARRACKS_COST_MEAT = 0; // Yeni
 
         // Kule (Tower)
-        public const int TOWER_COST_WOOD = 500;
-        public const int TOWER_COST_STONE = 500;
+        public const int TOWER_COST_WOOD = 200;
+        public const int TOWER_COST_STONE = 200;
         public const int TOWER_COST_MEAT = 0; // Yeni
 
         // Duvar (Wall)

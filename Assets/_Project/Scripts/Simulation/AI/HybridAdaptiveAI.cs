@@ -1,7 +1,8 @@
+using System.Linq;
 using RTS.Simulation.Data;
-using UnityEngine;
-using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
+using RTS.Simulation.Systems;
+using UnityEngine;
 
 namespace RTS.Simulation.AI
 {
@@ -9,109 +10,139 @@ namespace RTS.Simulation.AI
     {
         private SimWorldState _world;
         private int _playerID;
+        private SpecializedMacroAI _aiAgent;
+        private float _decisionTimer;
 
-        // --- 3 FARKLI STRATEJİ İÇİN GEN HAVUZU ---
-        private float[] _ecoGenes;    // Ekonomi odaklı eğitilmiş genler
-        private float[] _defGenes;    // Defans odaklı eğitilmiş genler
-        private float[] _attackGenes; // Saldırı odaklı eğitilmiş genler
+        private float[] _economyGenes;
+        private float[] _defenseGenes;
+        private float[] _attackGenes;
 
-        // O an kullanılan aktif genler
-        private float[] _currentGenes;
-        private SpecializedMacroAI _aiExecutor; // Genleri uygulayan "Beyin"
+        private float _defThreshold;
+        private float _atkThreshold;
 
-        private float _timer;
-        private bool _useSwitching; // Anahtarlı mı, anahtarsız mı? (Test için)
+        // Bu parametreleri artık sadece Analizör'e paslayacağız
+        private int _minDefenseSteps;
+        private int _minTowers;
+        private int _maturitySoldierCount;
+        private int _maturityResourceLevel;
 
-        // Mevcut Durum (Raporlama için)
-        public string CurrentStateName { get; private set; }
-        public float CurrentGSF { get; private set; }
+        private float _enemyInactivityTimer = 0f;
+        private string _currentStrategy = "None";
 
-        public HybridAdaptiveAI(SimWorldState world, int playerID,
-                                float[] ecoGenes, float[] defGenes, float[] attackGenes,
-                                bool useSwitching = true)
+        public HybridAdaptiveAI(SimWorldState world, int playerID, SpecializedMacroAI aiAgent,
+                                float[] ecoGenes, float[] defGenes, float[] atkGenes,
+                                float defThreshold, float atkThreshold,
+                                int minDefenseSteps, int minTowers,
+                                int maturitySoldierCount, int maturityResourceLevel)
         {
             _world = world;
             _playerID = playerID;
-            _ecoGenes = ecoGenes;
-            _defGenes = defGenes;
-            _attackGenes = attackGenes;
-            _useSwitching = useSwitching;
+            _aiAgent = aiAgent;
 
-            // Başlangıçta Ekonomi genleriyle başla
-            _currentGenes = _ecoGenes;
-            CurrentStateName = "Economy";
+            _economyGenes = ecoGenes;
+            _defenseGenes = defGenes;
+            _attackGenes = atkGenes;
 
-            // SpecializedMacroAI'yi "Motor" olarak kullanıyoruz. 
-            // Modu ne olursa olsun, biz ona gen vereceğimiz için "ExecuteParametricBehavior" çalışacak.
-            _aiExecutor = new SpecializedMacroAI(world, playerID, _currentGenes, AIStrategyMode.Economic);
+            _defThreshold = defThreshold;
+            _atkThreshold = atkThreshold;
+
+            _minDefenseSteps = minDefenseSteps;
+            _minTowers = minTowers;
+            _maturitySoldierCount = maturitySoldierCount;
+            _maturityResourceLevel = maturityResourceLevel;
         }
 
         public void Update(float dt)
         {
-            // AI motorunu çalıştır (İnşaat, asker basma vs.)
-            _aiExecutor.Update(dt);
+            _aiAgent.Update(dt);
+            UpdateInactivityTimer(dt);
 
-            // Strateji Değişim Kontrolü (Her 1 saniyede bir kontrol et yeterli)
-            _timer += dt;
-            if (_timer >= 1.0f)
+            _decisionTimer += dt;
+            if (_decisionTimer >= 0.5f)
             {
-                _timer = 0;
-                if (_useSwitching)
+                _decisionTimer = 0;
+                EvaluateAndSwitchStrategy();
+            }
+        }
+
+        private void UpdateInactivityTimer(float dt)
+        {
+            var myBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID == _playerID && b.Type == SimBuildingType.Base);
+            if (myBase == null) return;
+
+            bool isThreatened = false;
+            float threatRange = 30f;
+
+            foreach (var u in _world.Units.Values)
+            {
+                if (u.PlayerID != _playerID && u.UnitType == SimUnitType.Soldier)
                 {
-                    EvaluateAndSwitchStrategy();
+                    if (SimMath.Distance(u.GridPosition, myBase.GridPosition) < threatRange)
+                    {
+                        isThreatened = true;
+                        break;
+                    }
                 }
             }
+
+            if (isThreatened) _enemyInactivityTimer = 0f;
+            else _enemyInactivityTimer += dt;
         }
 
         private void EvaluateAndSwitchStrategy()
         {
-            // 1. GSF Hesapla
-            var metrics = SimGameStateAnalyzer.CalculateGSF(_world, _playerID);
-            CurrentGSF = metrics.GSF;
+            // Analizöre TÜM kısıtlamaları gönderiyoruz.
+            // O bize nihai bir puan (GSF) veriyor.
+            var metrics = SimGameStateAnalyzer.CalculateGSF(_world, _playerID, _enemyInactivityTimer,
+                                                            _minDefenseSteps, _minTowers,
+                                                            _maturitySoldierCount, _maturityResourceLevel);
+            float gsf = metrics.GSF;
 
-            // 2. Eşik Değerlerine Göre Karar Ver
-            // Örnek Senaryo:
-            // GSF < -80  : Çok zor durumdayım -> DEFANS Moduna geç
-            // -80 < GSF < 80 : Durum dengeli -> EKONOMİ/GELİŞİM Moduna geç
-            // GSF > 80   : Çok üstünüm -> SALDIRI Moduna geç
+            string targetStrategy = _currentStrategy;
+            float[] targetGenes = null;
 
-            string newState = CurrentStateName;
-            float[] newGenes = _currentGenes;
+            // --- TEK VE NET KARAR MEKANİZMASI ---
+            // Artık "Zorunlu Defans" veya "Zorunlu Saldırı" yok.
+            // Sadece GSF skoru var. Eğer kulem yoksa GSF zaten -1000 çıkıyor, yani otomatik Defans oluyor.
 
-            if (CurrentGSF < -80)
+            if (gsf < _defThreshold)
             {
-                newState = "Defensive";
-                newGenes = _defGenes;
+                if (_currentStrategy != "Defensive")
+                {
+                    targetStrategy = "Defensive";
+                    targetGenes = _defenseGenes;
+                }
             }
-            else if (CurrentGSF > 80)
+            else if (gsf > _atkThreshold)
             {
-                newState = "Aggressive";
-                newGenes = _attackGenes;
+                if (_currentStrategy != "Aggressive")
+                {
+                    targetStrategy = "Aggressive";
+                    targetGenes = _attackGenes;
+                }
             }
             else
             {
-                newState = "Economy";
-                newGenes = _ecoGenes;
+                if (_currentStrategy != "Economic")
+                {
+                    targetStrategy = "Economic";
+                    targetGenes = _economyGenes;
+                }
             }
 
-            // 3. Eğer strateji değiştiyse genleri değiştir
-            if (newState != CurrentStateName)
+            // Değişikliği Uygula
+            if (targetGenes != null)
             {
-                SwitchGenes(newGenes, newState);
+                _currentStrategy = targetStrategy;
+                _aiAgent.SetGenes(targetGenes, _currentStrategy);
+
+                if (SimConfig.EnableLogs)
+                {
+                    Debug.Log($"📊 GSF: {gsf:F1} (Pasiflik: {_enemyInactivityTimer:F0}s) -> Mod: {targetStrategy}");
+                }
             }
         }
 
-        private void SwitchGenes(float[] targetGenes, string stateName)
-        {
-            if (SimConfig.EnableLogs)
-                Debug.Log($"🔄 HybridAI Switch: {CurrentStateName} -> {stateName} (GSF: {CurrentGSF})");
-
-            _currentGenes = targetGenes;
-            CurrentStateName = stateName;
-
-            // Executor'ı yeni genlerle yeniden oluştur veya genleri güncelle
-            // (SpecializedMacroAI'yi public bir gen setter ile güncellemek daha performanslı olurdu ama şimdilik yeniden new'leyelim, maliyeti düşük)
-            _aiExecutor = new SpecializedMacroAI(_world, _playerID, _currentGenes, AIStrategyMode.Economic);
-        }
+        public float GetInactivityTimer() => _enemyInactivityTimer;
     }
 }
