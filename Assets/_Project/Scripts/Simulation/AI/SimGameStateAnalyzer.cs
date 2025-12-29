@@ -44,10 +44,10 @@ namespace RTS.Simulation.AI
             {
                 if (u.UnitType == SimUnitType.Soldier)
                 {
-                    float baseScore = 10f;
+                    float baseScore = 20f;
                     float dist = SimMath.Distance(u.GridPosition, myBasePos);
-                    if (dist < 15f) baseScore *= 3.0f;
-                    else if (dist < 30f) baseScore *= 1.5f;
+                    if (dist < 15f) baseScore *= 10.0f;
+                    else if (dist < 30f) baseScore *= 5f;
                     totalEnemyThreat += baseScore;
                 }
             }

@@ -3861,6 +3861,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1908953915}
   - component: {fileID: 1908953916}
+  - component: {fileID: 1908953917}
   m_Layer: 0
   m_Name: ExperimentManager
   m_TagString: Untagged
@@ -3890,32 +3891,128 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1908953912}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: bdc8c4fb24d01554288ac4ab7aac4692, type: 3}
+  m_Script: {fileID: 11500000, guid: 387d9f3b426cc4a4cac2cbe927edcdcc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  VisualizeOnlyFinalBest: 1
-  ForceStandardPSO: 0
-  PopulationSize: 5
-  MaxGenerations: 50
-  MaxTicksPerGame: 8000
-  CurrentTrainingGoal: 1
-  EnableLogging: 1
-  UseRandomMasterSeed: 0
-  MasterSeed: 55
-  CurrentGenerationSeeds: 
-  LastBestSeed: 0
   Visualizer: {fileID: 1375291963}
-  VisualSpeed: 1
-  UseFixedSeedForVisual: 1
-  VisualFixedSeed: 42
-  CurrentState: 
-  Inertia_W: 0
-  Cognitive_C1: 0
-  Social_C2: 0
-  CurrentBestScore: 0
-  MaxRealTimePerGame: 5
+  ShowDetailedGSFLogs: 1
+  EnemyStaticMode: 2
+  ForceDefenseTicks: 300
+  RequiredTowersToUnlock: 7
+  ForceAttackSoldierCount: 20
+  ForceAttackResourceLevel: 25000
+  DefenseThreshold: 0
+  AttackThreshold: 50
+  EconomyGenes:
+  - 0
+  - 24.91
+  - 8.47
+  - 40
+  - 1.86
+  - 2.99
+  - 20.43
+  - 40
+  - 37.93
+  - 2.01
+  - 24.07
+  - 12.11
+  - 0
+  - 21.07
+  DefenseGenes:
+  - 0
+  - 4.22
+  - 31.43
+  - 20.43
+  - 0
+  - 7.87
+  - 7.55
+  - 40
+  - 40
+  - 0
+  - 14.47
+  - 38.51
+  - 38.01
+  - 9.75
+  AttackGenes:
+  - 6.24
+  - 13.57
+  - 2.7
+  - 14.33
+  - 40
+  - 39.75
+  - 20.75
+  - 20.87
+  - 19.83
+  - 21.6
+  - 18.27
+  - 38.16
+  - 19.88
+  - 37.31
+--- !u!114 &1908953917
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1908953912}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e01a9210b36e0b24eb36bb0a0842ff80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Visualizer: {fileID: 1375291963}
+  CsvFileName: General_vs_Hybrid_Benchmark.csv
+  EnableCsvLogging: 1
+  TimeScale: 0.05
+  EcoGenes:
+  - 0
+  - 24.91
+  - 8.47
+  - 40
+  - 1.86
+  - 2.99
+  - 20.43
+  - 40
+  - 37.93
+  - 2.01
+  - 24.07
+  - 12.11
+  - 0
+  - 21.07
+  DefGenes:
+  - 0
+  - 4.22
+  - 31.43
+  - 20.43
+  - 0
+  - 7.87
+  - 7.55
+  - 40
+  - 40
+  - 0
+  - 14.47
+  - 38.51
+  - 38.01
+  - 9.75
+  AtkGenes:
+  - 6.24
+  - 13.57
+  - 2.7
+  - 14.33
+  - 40
+  - 39.75
+  - 20.75
+  - 20.87
+  - 19.83
+  - 21.6
+  - 18.27
+  - 38.16
+  - 19.88
+  - 37.31
+  DefenseThreshold: -40
+  AttackThreshold: 50
 --- !u!1 &1917624334
 GameObject:
   m_ObjectHideFlags: 0

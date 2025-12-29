@@ -11,5 +11,8 @@ namespace RTS.Simulation.Data
 
         public int CurrentPopulation;
         public int MaxPopulation;
+        // --- EKLENEN İSTATİSTİKLER ---
+        public float TotalDamageDealt; // Toplam verilen hasar
+        public float TotalDamageTaken; // Toplam alınan hasar
     }
 }

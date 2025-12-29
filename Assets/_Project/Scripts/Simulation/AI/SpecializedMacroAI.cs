@@ -6,8 +6,8 @@ using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using UnityEngine;
 
-// Global Enum
-public enum AIStrategyMode { Economic, Defensive, Aggressive }
+
+public enum AIStrategyMode { Economic, Defensive, Aggressive, General }
 
 namespace RTS.Simulation.AI
 {
@@ -289,6 +289,146 @@ namespace RTS.Simulation.AI
                         }
                     }
                     break;
+                case AIStrategyMode.General:
+                    // --- GELİŞTİRİLMİŞ GENERAL (DENGELİ) MOD v2 ---
+                    // Düzeltmeler: 
+                    // 1. Ev spamı engellendi (Önce Kışla!).
+                    // 2. Kuleler base etrafına (Radius 8-12) dikilecek.
+                    // 3. Ekonomi ve Asker dengesi kuruldu.
+
+                    int gWorkers = myUnits.Count(u => u.UnitType == SimUnitType.Worker);
+                    int gSoldiers = myUnits.Count(u => u.UnitType == SimUnitType.Soldier);
+
+                    int gBarracks = myBuildings.Count(b => b.Type == SimBuildingType.Barracks);
+                    int gTowers = myBuildings.Count(b => b.Type == SimBuildingType.Tower);
+                    int gFarms = myBuildings.Count(b => b.Type == SimBuildingType.Farm);
+                    int gWoodCutters = myBuildings.Count(b => b.Type == SimBuildingType.WoodCutter);
+                    int gStonePits = myBuildings.Count(b => b.Type == SimBuildingType.StonePit);
+
+                    // --- 1. KRİTİK BAŞLANGIÇ (İlk 5 İşçi & İlk Kışla) ---
+                    // Eğer hiç kışlamız yoksa ve odunumuz azsa, SAKIN ev yapma! Odunu kışlaya sakla.
+                    bool saveWoodForBarracks = (gBarracks == 0 && pData.Wood < 400);
+
+                    // İşçi Basımı (Öncelikli)
+                    if (baseB != null && !baseB.IsTraining && gWorkers < 25)
+                    {
+                        if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT))
+                            SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
+                    }
+
+                    // --- 2. AKILLI EV İNŞASI ---
+                    // Nüfus limitine 2 kala ev yap AMA kışla parasını yeme.
+                    if (pData.MaxPopulation - pData.CurrentPopulation <= 2)
+                    {
+                        if (!saveWoodForBarracks) // Kışla için para biriktirmiyorsak ev yap
+                        {
+                            TryBuildBuilding(SimBuildingType.House, myUnits, basePos, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
+                        }
+                    }
+
+                    // --- 3. İNŞAAT STRATEJİSİ ---
+                    SimUnitData builderG = myUnits.FirstOrDefault(u => u.UnitType == SimUnitType.Worker && u.State != SimTaskType.Building);
+
+                    if (builderG != null)
+                    {
+                        // A. KIŞLA (En Yüksek Öncelik)
+                        if (gBarracks < 1)
+                        {
+                            TryBuildBuilding(SimBuildingType.Barracks, new List<SimUnitData> { builderG }, basePos, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
+                        }
+                        // B. EKONOMİ BİNALARI (Kaynaklar tükenmesin)
+                        // Et, Odun veya Taş azaldığında ilgili binayı dik.
+                        else if (pData.Meat < 200 && gFarms < 4)
+                            TryBuildBuilding(SimBuildingType.Farm, new List<SimUnitData> { builderG }, basePos, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
+                        else if (pData.Wood < 200 && gWoodCutters < 4)
+                            TryBuildBuilding(SimBuildingType.WoodCutter, new List<SimUnitData> { builderG }, basePos, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
+                        else if (pData.Stone < 150 && gStonePits < 3)
+                            TryBuildBuilding(SimBuildingType.StonePit, new List<SimUnitData> { builderG }, basePos, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
+
+                        // C. SAVUNMA KULELERİ (Base Etrafına Sur Gibi)
+                        // Base etrafında 8-12 birim yarıçapında koruma çemberi oluştur.
+                        else if (gTowers < 5)
+                        {
+                            // Kuleler için "strictRadius" parametresini 10 olarak veriyoruz (Base'in dibine değil, çevresine)
+                            TryBuildBuilding(SimBuildingType.Tower, new List<SimUnitData> { builderG }, basePos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT, 10);
+                        }
+
+                        // D. İKİNCİ KIŞLA (Orduyu hızlandırmak için)
+                        else if (gBarracks < 2 && pData.Wood > 500)
+                            TryBuildBuilding(SimBuildingType.Barracks, new List<SimUnitData> { builderG }, basePos, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
+                    }
+
+                    // --- 4. KAYNAK YÖNETİMİ (İşçileri Yönlendir) ---
+                    var idleWorkers = myUnits.Where(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle).ToList();
+                    foreach (var w in idleWorkers)
+                    {
+                        SimResourceType targetRes = SimResourceType.Wood;
+
+                        // İhtiyaca göre dinamik yönlendirme
+                        if (gBarracks < 1) targetRes = SimResourceType.Wood; // Kışla yoksa odun
+                        else if (pData.Meat < 100) targetRes = SimResourceType.Meat; // Asker basacak et yoksa et
+                        else if (gTowers < 5 && pData.Stone < 100) targetRes = SimResourceType.Stone; // Kule için taş
+                        else
+                        {
+                            // Genel Dağılım (%40 Odun, %40 Et, %20 Taş)
+                            int r = _rng.Next(0, 100);
+                            if (r < 40) targetRes = SimResourceType.Wood;
+                            else if (r < 80) targetRes = SimResourceType.Meat;
+                            else targetRes = SimResourceType.Stone;
+                        }
+
+                        var rData = FindNearestResource(w.GridPosition, targetRes);
+                        if (rData != null) SimUnitSystem.TryAssignGatherTask(w, rData, _world);
+                    }
+
+                    // --- 5. ASKER ÜRETİMİ ---
+                    // Ekonomiyi bozmamak için en az 8 işçi olana kadar asker basma.
+                    if (gWorkers >= 8)
+                    {
+                        foreach (var b in myBuildings.Where(x => x.Type == SimBuildingType.Barracks && x.IsConstructed && !x.IsTraining))
+                        {
+                            if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT))
+                                SimBuildingSystem.StartTraining(b, _world, SimUnitType.Soldier);
+                        }
+                    }
+
+                    // --- 6. SALDIRI / SAVUNMA KARARLARI ---
+
+                    // A. SALDIRI: 25 Asker olunca topluca düşman üssüne git!
+                    if (gSoldiers >= 25 && enemyBase != null)
+                    {
+                        foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier && u.State == SimTaskType.Idle))
+                            SimUnitSystem.OrderAttack(s, enemyBase, _world);
+                    }
+                    // B. SAVUNMA: Saldırı gücüne ulaşana kadar üssü koru.
+                    else
+                    {
+                        // Üsse 25 birim yaklaşan düşman var mı?
+                        var nearestEnemy = _world.Units.Values
+                            .Where(u => u.PlayerID != _playerID && SimGridSystem.GetDistanceSq(u.GridPosition, basePos) < 25 * 25)
+                            .OrderBy(u => SimGridSystem.GetDistanceSq(u.GridPosition, basePos))
+                            .FirstOrDefault();
+
+                        if (nearestEnemy != null)
+                        {
+                            // Tüm boşta askerleri savunmaya çek
+                            foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier && u.State == SimTaskType.Idle))
+                                SimUnitSystem.OrderAttackUnit(s, nearestEnemy, _world);
+                        }
+                        else
+                        {
+                            // Düşman yoksa kulelerin etrafında devriye gez (Base önünde birik)
+                            // Bu sayede askerler haritanın ucunda tek kalmaz.
+                            foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier && u.State == SimTaskType.Idle))
+                            {
+                                float angle = (float)_rng.NextDouble() * Mathf.PI * 2;
+                                int patrolRadius = 8;
+                                int2 guardPos = new int2(basePos.x + (int)(Mathf.Cos(angle) * patrolRadius), basePos.y + (int)(Mathf.Sin(angle) * patrolRadius));
+                                if (SimGridSystem.IsWalkable(_world, guardPos)) SimUnitSystem.MoveTo(s, guardPos, _world);
+                            }
+                        }
+                    }
+                    break;
             }
         }
 
@@ -548,7 +688,8 @@ namespace RTS.Simulation.AI
             return units.FirstOrDefault(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Gathering);
         }
 
-        private bool TryBuildBuilding(SimBuildingType type, List<SimUnitData> units, int2 centerPos, int costWood, int costStone, int costMeat, int strictRadius = -1)
+        // Parametre sonuna 'bool createGate = false' eklendi
+        private bool TryBuildBuilding(SimBuildingType type, List<SimUnitData> units, int2 centerPos, int costWood, int costStone, int costMeat, int strictRadius = -1, bool createGate = false)
         {
             if (!SimResourceSystem.CanAfford(_world, _playerID, costWood, costStone, costMeat)) return false;
 
@@ -564,12 +705,10 @@ namespace RTS.Simulation.AI
             int minRadius;
             int maxRadius;
 
-            // --- YENİ MANTIK BURADA ---
-            // Eğer dışarıdan özel bir sınır (4 gibi) verildiyse onu kullan
             if (strictRadius > 0)
             {
-                minRadius = 2; // Base'in hemen dibinden başla
-                maxRadius = strictRadius;
+                minRadius = strictRadius; // Direkt o mesafeden başla
+                maxRadius = strictRadius + 4; // Biraz esneme payı
             }
             else if (type == SimBuildingType.Tower)
             {
@@ -582,9 +721,7 @@ namespace RTS.Simulation.AI
                 minRadius = 4 + (buildingCount / 5) * 2;
                 maxRadius = minRadius + 10;
             }
-            // --------------------------
 
-            // Düşman kulelerinden kaçın
             List<int2> avoidTargets = new List<int2>();
             if (type == SimBuildingType.Barracks)
             {
@@ -595,7 +732,8 @@ namespace RTS.Simulation.AI
                 }
             }
 
-            int2 pos = FindBuildSpot(centerPos, minRadius, maxRadius, avoidTargets);
+            // createGate parametresini buraya iletiyoruz
+            int2 pos = FindBuildSpot(centerPos, minRadius, maxRadius, avoidTargets, createGate);
 
             if (pos.x != -1)
             {
@@ -609,67 +747,105 @@ namespace RTS.Simulation.AI
 
         // SpecializedMacroAI.cs içinde ilgili fonksiyonu bul ve bununla değiştir:
 
-        private int2 FindBuildSpot(int2 center, int minRadius, int maxRadius, List<int2> avoidList = null)
+        // Fonksiyonun imzasına 'bool createGate' parametresini ekledik (Varsayılan: false)
+        private int2 FindBuildSpot(int2 center, int minRadius, int maxRadius, List<int2> avoidList = null, bool createGate = false)
         {
-            float safeDistSq = 100f; // Düşman kulelerinden kaçınma mesafesi
-            float buildingSpacingSq = 2.5f; // YENİ: Binalar arası minimum mesafe (kare cinsinden)
-                                            // 1.5f ~ 2.25f arası bir değer, binaların çapraz veya yan yana bitişik olmasını engeller.
+            float safeDistSq = 100f;
+            float buildingSpacingSq = 2.5f;
 
+            // 1. AŞAMA: İDEAL YER ARA
             for (int r = minRadius; r <= maxRadius; r++)
             {
+                List<int2> candidates = new List<int2>();
+
                 for (int x = -r; x <= r; x++)
                 {
                     for (int y = -r; y <= r; y++)
                     {
-                        // Sadece kare şeklindeki halkanın kenarlarına bak (İçi boş kare)
                         if (System.Math.Abs(x) == r || System.Math.Abs(y) == r)
                         {
+                            // --- KAPI MANTIĞI (GATE LOGIC) ---
+                            // Eğer kapı isteniyorsa ve şu an halkanın ALT kenarındaysak (y == -r),
+                            // ve merkeze yatayda yakınsak (|x| < 3), burayı pas geç.
+                            // Bu, üssün altında 5 karelik ( -2, -1, 0, 1, 2 ) bir koridor açar.
+                            if (createGate)
+                            {
+                                if (y == -r && System.Math.Abs(x) < 3) continue;
+                            }
+                            // ---------------------------------
+
                             int2 pos = new int2(center.x + x, center.y + y);
 
-                            // Harita sınırları kontrolü
-                            if (pos.x > 1 && pos.x < SimConfig.MAP_WIDTH - 1 && pos.y > 1 && pos.y < SimConfig.MAP_HEIGHT - 1)
+                            if (IsPosValid(pos))
                             {
-                                // 1. Zemin yürünebilir mi?
-                                if (SimGridSystem.IsWalkable(_world, pos))
+                                if (IsSafeFromEnemies(pos, avoidList, safeDistSq))
                                 {
-                                    // 2. Tehlikeli bölgelerden kaçın (Düşman kulesi vb.)
-                                    if (avoidList != null && avoidList.Count > 0)
+                                    if (!IsTooCloseToBuildings(pos, buildingSpacingSq))
                                     {
-                                        bool isSafe = true;
-                                        foreach (var danger in avoidList)
-                                        {
-                                            if (SimGridSystem.GetDistanceSq(pos, danger) < safeDistSq)
-                                            {
-                                                isSafe = false;
-                                                break;
-                                            }
-                                        }
-                                        if (!isSafe) continue;
+                                        candidates.Add(pos);
                                     }
-
-                                    // 3. (YENİ) DİĞER BİNALARLA BİTİŞİK Mİ? (Gap Logic)
-                                    // İşçilerin sıkışmaması için bitişik bina var mı kontrol et.
-                                    bool isTooClose = false;
-                                    foreach (var b in _world.Buildings.Values)
-                                    {
-                                        // Sadece tamamlanmış veya inşaat halindeki kendi binalarımıza bak
-                                        if (SimGridSystem.GetDistanceSq(pos, b.GridPosition) < buildingSpacingSq)
-                                        {
-                                            isTooClose = true;
-                                            break;
-                                        }
-                                    }
-                                    if (isTooClose) continue; // Bitişikse buraya yapma, pas geç.
-
-                                    // Tüm testleri geçti, burası uygun!
-                                    return pos;
                                 }
                             }
                         }
                     }
                 }
+
+                if (candidates.Count > 0)
+                {
+                    return candidates[_rng.Next(candidates.Count)];
+                }
             }
+
+            // 2. AŞAMA: YEDEK PLAN (Burada da kapı kuralına uyuyoruz)
+            for (int r = minRadius; r <= maxRadius + 5; r++)
+            {
+                for (int x = -r; x <= r; x++)
+                {
+                    for (int y = -r; y <= r; y++)
+                    {
+                        if (System.Math.Abs(x) == r || System.Math.Abs(y) == r)
+                        {
+                            // Yedek planda da kapıyı kapatma!
+                            if (createGate)
+                            {
+                                if (y == -r && System.Math.Abs(x) < 3) continue;
+                            }
+
+                            int2 pos = new int2(center.x + x, center.y + y);
+                            if (IsPosValid(pos)) return pos;
+                        }
+                    }
+                }
+            }
+
             return new int2(-1, -1);
+        }
+
+        // --- YARDIMCI KÜÇÜK FONKSİYONLAR (Okunabilirlik İçin) ---
+
+        private bool IsPosValid(int2 pos)
+        {
+            if (pos.x <= 1 || pos.x >= SimConfig.MAP_WIDTH - 1 || pos.y <= 1 || pos.y >= SimConfig.MAP_HEIGHT - 1) return false;
+            return SimGridSystem.IsWalkable(_world, pos);
+        }
+
+        private bool IsSafeFromEnemies(int2 pos, List<int2> avoidList, float safeDist)
+        {
+            if (avoidList == null || avoidList.Count == 0) return true;
+            foreach (var danger in avoidList)
+            {
+                if (SimGridSystem.GetDistanceSq(pos, danger) < safeDist) return false;
+            }
+            return true;
+        }
+
+        private bool IsTooCloseToBuildings(int2 pos, float spacing)
+        {
+            foreach (var b in _world.Buildings.Values)
+            {
+                if (SimGridSystem.GetDistanceSq(pos, b.GridPosition) < spacing) return true;
+            }
+            return false;
         }
         private SimBuildingData SpawnPlaceholder(SimBuildingType type, int2 pos)
         {

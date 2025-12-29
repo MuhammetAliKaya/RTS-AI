@@ -88,6 +88,8 @@ namespace RTS.Simulation.Orchestrator
                 case AIStrategyMode.Defensive: return AIStrategyMode.Aggressive;
                 case AIStrategyMode.Aggressive: return AIStrategyMode.Defensive;
                 case AIStrategyMode.Economic: return AIStrategyMode.Economic;
+                case AIStrategyMode.General: return AIStrategyMode.General;
+
                 default: return AIStrategyMode.Aggressive;
             }
         }
@@ -454,43 +456,43 @@ namespace RTS.Simulation.Orchestrator
                     break;
 
                 case AIStrategyMode.Defensive:
-                    // --- YENİ SAVUNMA PUANLAMASI ---
+                    // --- GÜNCELLENMİŞ SAVUNMA PUANLAMASI (AKTİF SAVUNMA) ---
 
-                    // 1. HAYATTA KALAN KULELER (ANA HEDEF)
-                    // stats.TowersBuilt değişkeni simülasyon sonunda sayıldığı için "Yaşayan Kule" sayısıdır.
-                    // Bir kuleyi yaşatmak 10.000 puan! (Yıkılırsa bu devasa puanı kaybeder)
-                    float livingTowerScore = stats.TowersBuilt * 10000f;
+                    // 1. HAYATTA KALAN KULELER (Statik Savunma)
+                    // Puanı biraz düşürdük ki asker basmaya da bütçe ayırsın.
+                    float livingTowerScore = stats.TowersBuilt * 2000f; // (Eskiden 10.000'di, çok yüksekti)
 
-                    // 2. BASE SAĞLIĞI (KRİTİK)
-                    // Kuleler var ama Base ölüyorsa anlamı yok.
-                    // Base canı %50'nin altına inerse tüm puanı cezalandır (0.2 ile çarp).
+                    // 2. ÖLDÜRÜLEN DÜŞMAN (AKTİF SAVUNMA - YENİ!)
+                    // Savunma yapmak, sadece durmak değil tehdidi yok etmektir.
+                    // Düşman öldürmeye puan verelim ki asker bassın.
+                    float defenseKillScore = stats.EnemyUnitsKilled * 100f;
+
+                    // 3. SAVUNMA ORDUSU (YENİ!)
+                    // Kuleleri koruyacak asker varlığı.
+                    float defenseArmyScore = stats.SoldierCount * 50f;
+
+                    // 4. BASE SAĞLIĞI (KRİTİK)
                     float healthRatio = myBaseHealth / SimConfig.BASE_MAX_HEALTH;
                     float baseHealthScore = myBaseHealth * 50f;
 
-                    // 3. KAYNAK TOPLAMA (DÜŞÜK ÖNCELİK)
-                    // Sadece taş toplamak yetmez, onu kuleye çevirmeli. Katsayıyı düşürdük.
-                    float hoardingScore = (stats.GatheredStone * 0.5f) + (stats.GatheredWood * 0.1f);
-
-                    // 4. HAYATTA KALMA SÜRESİ (ZAMAN BONUSU)
-                    // Eğer maç bitene kadar (MaxTicks) hayatta kaldıysa büyük ödül.
+                    // 5. HAYATTA KALMA SÜRESİ
                     float survivalBonus = 0f;
                     if (myBaseHealth > 0 && stats.MatchDuration >= (MaxTicksPerGame * 0.25f * 0.95f))
                     {
-                        // Sürenin %95'ini tamamladıysa ve yaşıyorsa
-                        survivalBonus = 15000f;
+                        survivalBonus = 15000f; // Maçı kaybetmemek asıl amaç
                     }
 
-                    // TOPLAM SKOR HESABI
-                    score = livingTowerScore + baseHealthScore + hoardingScore + survivalBonus;
+                    // TOPLAM SKOR
+                    score = livingTowerScore + defenseKillScore + defenseArmyScore + baseHealthScore + survivalBonus;
 
-                    // CEZA MEKANİZMASI: Kule Yoksa veya Base Çok Hasarlıysa
-                    if (stats.TowersBuilt == 0)
+                    // CEZALAR
+                    if (stats.TowersBuilt == 0 && stats.SoldierCount == 0)
                     {
-                        score *= 0.1f; // Kule yoksa puanın %90'ını sil. (Savunma yapmadı demektir)
+                        score -= 5000f; // Hiçbir şey yapmıyorsa büyük ceza
                     }
-                    else if (healthRatio < 0.4f)
+                    else if (healthRatio < 0.2f)
                     {
-                        score *= 0.5f; // Kule var ama Base ölmek üzereyse cezalandır.
+                        score *= 0.5f; // Base ölmek üzereyse puan kır
                     }
                     break;
 
@@ -519,6 +521,35 @@ namespace RTS.Simulation.Orchestrator
                     {
                         score = 0; // Asker basmayana puan yok!
                     }
+                    break;
+
+                case AIStrategyMode.General:
+                    // --- GENERAL FITNESS ---
+
+                    // 1. KAZANMA (En Büyük Ödül)
+                    if (stats.IsWin)
+                    {
+                        score += 10000f;
+                        float maxTime = MaxTicksPerGame * 0.25f;
+                        if (stats.MatchDuration < maxTime) score += (maxTime - stats.MatchDuration) * 10f;
+                    }
+
+                    // 2. HASAR VERME VE YIKIM
+                    score += stats.EnemyUnitsKilled * 200f;
+                    score += stats.EnemyBuildingsDestroyed * 400f;
+
+                    // 3. EKONOMİ (Sürdürülebilirlik)
+                    float totalRes = stats.GatheredWood + stats.GatheredMeat + stats.GatheredStone;
+                    score += totalRes * 0.2f;
+
+                    // 4. GELİŞİM
+                    score += stats.WorkerCount * 50f;
+                    score += stats.SoldierCount * 60f;
+
+                    // 5. CEZALAR
+                    if (stats.SoldierCount == 0) score -= 2000f; // Asker basmayan kaybeder
+                    if (stats.WorkerCount < 5) score -= 1000f;   // Ekonomi kurmayan kaybeder
+
                     break;
             }
             return score;

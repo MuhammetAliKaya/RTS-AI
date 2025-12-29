@@ -113,7 +113,7 @@ public class ParametricMacroAI
         }
 
         // C. SAVUNMA KULESİ
-        int neededTowers = SimMath.FloorToInt((enemySoldierCount + 5) * defenseRatio);
+        int neededTowers = SimMath.FloorToInt((enemySoldierCount + 10) * defenseRatio);
         if (towerCount < neededTowers && towerCount < 15)
         {
             bool built = TryBuildDefensiveStructure(myUnits, baseB, enemyBase, towerPosBias);
@@ -121,6 +121,8 @@ public class ParametricMacroAI
             // Para biriktirme kontrolü (Genetik Eşik Kullanılıyor)
             if (!built && !underThreat && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT))
             {
+                if (soldiers < targetSoldier * 0.5f) return; // <-- BU SATIR KRİTİK, YOKSA EKLE
+
                 if (workers > safeSaveThreshold) return;
             }
         }

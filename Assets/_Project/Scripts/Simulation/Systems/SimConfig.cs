@@ -50,8 +50,8 @@ namespace RTS.Simulation.Systems
         public const int WORKER_COST_WOOD = 0;
         public const int WORKER_COST_STONE = 0;
 
-        public const int SOLDIER_COST_MEAT = 100;
-        public const int SOLDIER_COST_WOOD = 100;
+        public const int SOLDIER_COST_MEAT = 250;
+        public const int SOLDIER_COST_WOOD = 250;
         public const int SOLDIER_COST_STONE = 0;
 
         // --- İNŞAAT VE ZAMANLAMA ---
@@ -60,18 +60,18 @@ namespace RTS.Simulation.Systems
         public const float BUILD_INTERVAL = 0.1f;
 
         public const float WORKER_TRAIN_TIME = 3.0f;
-        public const float SOLDIER_TRAIN_TIME = 3.0f;
+        public const float SOLDIER_TRAIN_TIME = 6.0f;
 
         // --- CAN VE SALDIRI ---
         public const int WORKER_MAX_HEALTH = 50;
         public const int SOLDIER_MAX_HEALTH = 120;
-        public const int BASE_MAX_HEALTH = 250;
+        public const int BASE_MAX_HEALTH = 5000;
         public const int BUILDING_DEFAULT_HEALTH = 100;
         public const int WALL_MAX_HEALTH = 10000;
 
 
         public const float WORKER_MOVE_SPEED = 5.0f;
-        public const float SOLDIER_MOVE_SPEED = 4.0f;
+        public const float SOLDIER_MOVE_SPEED = 2.0f;
 
         public const int SOLDIER_DAMAGE = 10;
         public const float SOLDIER_ATTACK_RANGE = 1.5f;
@@ -79,7 +79,7 @@ namespace RTS.Simulation.Systems
 
         public const int TOWER_DAMAGE = 15;
         public const float TOWER_ATTACK_RANGE = 6.0f;
-        public const float TOWER_ATTACK_SPEED = 1.5f;
+        public const float TOWER_ATTACK_SPEED = 3f;
 
         // --- POPÜLASYON ---
         public const int POPULATION_BASE = 10;

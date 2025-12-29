@@ -64,6 +64,12 @@ namespace RTS.Simulation.AI
                 EvaluateAndSwitchStrategy();
             }
         }
+        public string GetCurrentStrategy()
+        {
+            return _currentStrategy;
+        }
+
+
 
         private void UpdateInactivityTimer(float dt)
         {
