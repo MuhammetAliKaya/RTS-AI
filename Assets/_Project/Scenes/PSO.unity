@@ -607,6 +607,7 @@ GameObject:
   - component: {fileID: 232397689}
   - component: {fileID: 232397693}
   - component: {fileID: 232397694}
+  - component: {fileID: 232397695}
   m_Layer: 5
   m_Name: GameUI
   m_TagString: Untagged
@@ -734,6 +735,28 @@ MonoBehaviour:
   FastModeToggle: {fileID: 1270989074}
   SpeedSlider: {fileID: 49928630}
   SpeedValueText: {fileID: 754361128}
+--- !u!114 &232397695
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 232397688}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cddad8c175bcbfa4cb0914898be66ebc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  World:
+    TickCount: 0
+    Map:
+      Width: 0
+      Height: 0
+  PsoRunner: {fileID: 1908953916}
+  BenchRunner: {fileID: 0}
+  Runner: {fileID: 0}
+  CombatRunner: {fileID: 0}
+  SelfPlayRunner: {fileID: 0}
 --- !u!1 &280871620
 GameObject:
   m_ObjectHideFlags: 0
@@ -3897,8 +3920,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   VisualizeOnlyFinalBest: 1
   ForceStandardPSO: 0
-  PopulationSize: 5
-  MaxGenerations: 50
+  PopulationSize: 40
+  MaxGenerations: 40
   MaxTicksPerGame: 8000
   CurrentTrainingGoal: 1
   EnableLogging: 1

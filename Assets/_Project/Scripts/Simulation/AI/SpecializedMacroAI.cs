@@ -80,6 +80,12 @@ namespace RTS.Simulation.AI
             EDP = (enemyBuildings.Count(b => b.Type == SimBuildingType.Tower && b.IsConstructed) * 50f) + (enemyBaseHealth * 0.1f);
 
             GSF = (MAP + MDP) - (EAP + EDP);
+
+            // --- EKRANA YAZDIR ---
+            if (SimConfig.EnableLogs)
+            {
+                RTSDebugUI.AI_GSF_Log = $"GSF:{GSF:F0} (⚔️Biz:{MAP} vs 💀Rakip:{EAP}) | (🛡️Biz:{MDP} vs 🧱Rakip:{EDP})";
+            }
         }
 
         // ==================================================================================
@@ -443,15 +449,18 @@ namespace RTS.Simulation.AI
             var baseB = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
             var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != _playerID && b.Type == SimBuildingType.Base);
 
-            // Güvenli merkez
+            bool anyResourceLeft = _world.Resources.Count > 0;
             int2 basePos = (baseB != null) ? baseB.GridPosition : new int2(25, 25);
-
             int workers = myUnits.Count(u => u.UnitType == SimUnitType.Worker);
             int soldiers = myUnits.Count(u => u.UnitType == SimUnitType.Soldier);
             int freePop = pData.MaxPopulation - pData.CurrentPopulation;
 
-            // --- GEN OKUMA ---
-            int targetWorker = SimMath.Clamp(SimMath.RoundToInt(_genes[0] * 1.5f), 5, 80);
+            // --- GEN OKUMA VE ETKİLERİ ---
+
+            // 1. DÜZELTME: İşçi Geni Katsayısı Arttırıldı (1.5 -> 3.0)
+            // Genler artık 3-80 arası işçi hedefleyebilir. PSO doğru sayıyı bulmalı.
+            int targetWorker = SimMath.Clamp(SimMath.RoundToInt(_genes[0] * 3.0f), 3, 80);
+
             int targetSoldier = SimMath.Clamp(SimMath.RoundToInt(_genes[1] * 2f), 0, 100);
             int attackThreshold = SimMath.Clamp(SimMath.RoundToInt(_genes[2]), 1, 60);
             float defenseRatio = SimMath.Clamp01(_genes[3] / 20f);
@@ -463,19 +472,21 @@ namespace RTS.Simulation.AI
             int targetStone = SimMath.RoundToInt(_genes[8]);
             int houseBuffer = SimMath.Clamp(SimMath.RoundToInt(_genes[9] / 4f), 1, 10);
             float towerPosBias = SimMath.Clamp01(_genes[10] / 40f);
-
+            // Debug.Log($"[GEN-DEBUG] Gen[10]: {_genes[10]} -> Bias: {towerPosBias}");
             float prioEco = _genes[11];
             float prioDef = _genes[12];
             float prioMil = _genes[13];
 
+            // İşçileri Yönet (Kaynak toplama vs.)
             ManageWorkersParametric(myUnits, ecoBias, pData);
 
             List<Func<bool>> taskQueue = new List<Func<bool>>();
 
-            // A. EKONOMİ (Para varsa yap, yoksa bloke et)
+            // A. EKONOMİ (İşçi Basımı)
             taskQueue.Add(() =>
             {
                 bool busy = false;
+                // İşçi limiti genler tarafından belirlenir (targetWorker)
                 if (baseB != null && !baseB.IsTraining && workers < targetWorker && freePop > 0)
                 {
                     if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT))
@@ -483,13 +494,18 @@ namespace RTS.Simulation.AI
                         SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
                         busy = true;
                     }
-                    else return true; // İşçi basmam lazım ama param yok, BEKLE
+                    else if (anyResourceLeft)
+                    {
+                        // İşçi en temel birimdir, parası yoksa beklemek (blocking) mantıklıdır.
+                        // Amaç diğer her şeyden önce işçi basmak.
+                        return true;
+                    }
                 }
 
                 if (freePop <= houseBuffer)
                 {
                     if (TryBuildBuilding(SimBuildingType.House, myUnits, basePos, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT)) busy = true;
-                    else return true;
+                    else if (anyResourceLeft) return true;
                 }
 
                 if (TryBuildEcoStructuresBalanced(targetFarm, targetWood, targetStone, myBuildings, myUnits, basePos)) busy = true;
@@ -503,7 +519,11 @@ namespace RTS.Simulation.AI
                 if (barracksCount < targetBarracks)
                 {
                     if (TryBuildBuilding(SimBuildingType.Barracks, myUnits, basePos, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT)) return true;
-                    else return true;
+
+                    // 2. DÜZELTME: Para yoksa BLOKE ETME (return false).
+                    // Böylece sıra Ekonomi görevine geçer ve işçi basılır.
+                    // Para birikince tekrar buraya gelir ve kışlayı yapar.
+                    else return false;
                 }
 
                 if (soldiers < targetSoldier && freePop > 0)
@@ -516,74 +536,115 @@ namespace RTS.Simulation.AI
                             SimBuildingSystem.StartTraining(b, _world, SimUnitType.Soldier);
                             trainingStarted = true;
                         }
-                        else return true;
+                        // Asker basamıyorsak bloke etme, belki işçi basmamız lazımdır.
+                        else return false;
                     }
                     if (trainingStarted) return true;
                 }
                 return false;
             });
 
-            // C. SAVUNMA
+            // C. SAVUNMA (Kule)
             taskQueue.Add(() =>
             {
                 int towerCount = myBuildings.Count(b => b.Type == SimBuildingType.Tower);
-                int neededTowers = 1 + SimMath.FloorToInt(soldiers * defenseRatio);
-                if (prioDef > 30) neededTowers = 7;
+                int neededTowers = 7 + SimMath.FloorToInt(soldiers * defenseRatio);
+                // Genetik karara bırakıyoruz, eğer defans önceliği yüksekse kule abanabilir.
 
                 if (towerCount < neededTowers)
                 {
-                    // Orta Saha Kuralı (Genler istese bile düşman base'in dibine dikemez)
                     int2 targetPos = basePos;
-                    if (towerPosBias > 0.5f && enemyBase != null)
+                    if (towerPosBias > 1f && enemyBase != null)
                     {
-                        targetPos = new int2(
-                            (basePos.x + enemyBase.GridPosition.x) / 2,
-                            (basePos.y + enemyBase.GridPosition.y) / 2
-                        );
+                        targetPos = new int2((basePos.x + enemyBase.GridPosition.x) / 2, (basePos.y + enemyBase.GridPosition.y) / 2);
                     }
 
-                    if (TryBuildBuilding(SimBuildingType.Tower, myUnits, targetPos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT, 2))
-                        return true;
+                    if (TryBuildBuilding(SimBuildingType.Tower, myUnits, targetPos, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT, 2)) return true;
 
-                    return true;
+                    // 3. DÜZELTME: Kule için para yoksa BLOKE ETME (return false).
+                    // Ekonomi çalışsın, işçi bassın, para birikince kule yapılır.
+                    return false;
                 }
                 return false;
             });
 
+            // GÖREV SIRALAMASI (Gen Önceliklerine Göre)
             var priorities = new List<(float score, int index)> { (prioEco, 0), (prioMil, 1), (prioDef, 2) };
             var sortedTasks = priorities.OrderByDescending(x => x.score).ToList();
 
+            // --- YENİ: KUYRUK TAKİP SİSTEMİ ---
+            string queueLog = "";
+            bool anyBlocked = false;
+
             foreach (var item in sortedTasks)
             {
-                bool shouldBlock = taskQueue[item.index].Invoke();
-                if (shouldBlock) break;
+                // Görevin adını bul (0=EKO, 1=ASKER, 2=DEFANS)
+                string taskName = (item.index == 0) ? "EKO" : (item.index == 1 ? "MIL" : "DEF");
+
+                // Görevi çalıştır
+                bool isBusy = taskQueue[item.index].Invoke();
+
+                if (isBusy)
+                {
+                    // Eğer meşgulse (inşaat yapıyor veya para biriktiriyor)
+                    queueLog += $"[{taskName}: MEŞGUL] 🛑";
+                    anyBlocked = true;
+                    break; // Diğer görevlere bakma, burası kitledi.
+                }
+                else
+                {
+                    // Meşgul değilse (ya işi yok ya da parası yok sıradakine geçti)
+                    queueLog += $"[{taskName}: OK] -> ";
+                }
             }
 
-            if (soldiers >= attackThreshold && enemyBase != null)
+            if (!anyBlocked) queueLog += "BOŞTA (Idle)";
+
+            // Ekrana Yazdır
+            RTSDebugUI.AI_QueueStatus = queueLog;
+
+            // SALDIRI MANTIĞI
+            bool forceAttack = !anyResourceLeft && soldiers > 0;
+            if ((soldiers >= attackThreshold || forceAttack) && enemyBase != null)
             {
+                var enemyTowers = _world.Buildings.Values.Where(b => b.PlayerID != _playerID && b.Type == SimBuildingType.Tower && b.IsConstructed).ToList();
+                bool attackTowersFirst = enemyTowers.Count > 5;
+
                 foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier))
                 {
                     if (s.TargetID == -1 || s.State == SimTaskType.Idle)
-                        SimUnitSystem.OrderAttack(s, enemyBase, _world);
+                    {
+                        if (attackTowersFirst && enemyTowers.Count > 0)
+                        {
+                            var nearestTower = enemyTowers.OrderBy(t => SimGridSystem.GetDistanceSq(s.GridPosition, t.GridPosition)).FirstOrDefault();
+                            if (nearestTower != null) SimUnitSystem.OrderAttack(s, nearestTower, _world);
+                        }
+                        else if (enemyBase != null)
+                        {
+                            SimUnitSystem.OrderAttack(s, enemyBase, _world);
+                        }
+                    }
                 }
             }
         }
-
         // ==================================================================================
         // YARDIMCI FONKSİYONLAR
         // ==================================================================================
 
+        // --- HELPER 1: DEFAULT ---
         private void ManageWorkersDefault(List<SimUnitData> units, SimPlayerData pData)
         {
+            // İSTEĞİNİZ ÜZERİNE EKLENEN KONTROL: Kaynak yoksa hiç uğraşma, geri dön.
+
             var idleWorkers = units.Where(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle).ToList();
             if (idleWorkers.Count == 0) return;
+
+            if (_world.Resources.Count == 0) return;
 
             foreach (var w in idleWorkers)
             {
                 SimResourceType targetType;
-                // Önce ET (60)
                 if (pData.Meat < 60) targetType = SimResourceType.Meat;
-                // Sonra DENGE
                 else
                 {
                     if (pData.Wood <= pData.Meat && pData.Wood <= pData.Stone) targetType = SimResourceType.Wood;
@@ -597,30 +658,28 @@ namespace RTS.Simulation.AI
             }
         }
 
-        // --- AGRESİF ENEMY İÇİN KAYNAK YÖNETİMİ ---
+        // --- HELPER 2: AGGRESSIVE ---
         private void ManageWorkersAggressive(List<SimUnitData> units, SimPlayerData pData, List<SimBuildingData> myBuildings)
         {
+            // İSTEĞİNİZ ÜZERİNE EKLENEN KONTROL
+
             var idleWorkers = units.Where(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle).ToList();
             bool hasBarracks = myBuildings.Any(b => b.Type == SimBuildingType.Barracks);
             int workerCount = units.Count(u => u.UnitType == SimUnitType.Worker);
+
+            if (_world.Resources.Count == 0) return;
 
             foreach (var w in idleWorkers)
             {
                 SimResourceType targetType = SimResourceType.Meat;
 
-                // 1. Eğer 5 işçiden azsak, SADECE ET topla! (Kışla, Odun umrumuzda değil)
-                if (workerCount < 5)
-                {
-                    targetType = SimResourceType.Meat;
-                }
-                // 2. 5 İşçi tamam ama Kışla yok -> Kışla için Odun/Taş topla
+                if (workerCount < 5) targetType = SimResourceType.Meat;
                 else if (!hasBarracks)
                 {
                     if (pData.Wood < SimConfig.BARRACKS_COST_WOOD) targetType = SimResourceType.Wood;
                     else if (pData.Stone < SimConfig.BARRACKS_COST_STONE) targetType = SimResourceType.Stone;
                     else targetType = SimResourceType.Meat;
                 }
-                // 3. Kışla var -> Asker için Et/Odun topla
                 else
                 {
                     if (pData.Meat < 100) targetType = SimResourceType.Meat;
@@ -633,9 +692,15 @@ namespace RTS.Simulation.AI
             }
         }
 
+        // --- HELPER 3: PARAMETRIC ---
         private void ManageWorkersParametric(List<SimUnitData> units, float ecoBias, SimPlayerData pData)
         {
+            // İSTEĞİNİZ ÜZERİNE EKLENEN KONTROL
+
             var idleWorkers = units.Where(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle).ToList();
+
+            if (_world.Resources.Count == 0) return;
+
             foreach (var w in idleWorkers)
             {
                 SimResourceType targetType;

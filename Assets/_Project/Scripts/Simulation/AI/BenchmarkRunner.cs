@@ -20,9 +20,14 @@ public class BenchmarkRunner : MonoBehaviour
     public bool EnableCsvLogging = true;
     public float TimeScale = 5.0f; // Simülasyon hızı
 
-    [Header("⚔️ RAKİP SEÇİMİ (ÇOK ÖNEMLİ)")]
-    [Tooltip("Eğer işaretli ise aşağıya girdiğin 'Enemy Genomes' kullanılır (PSO). İşaretli değilse 'General Scripted AI' kullanılır.")]
+    [Header("⚔️ RAKİP SEÇİMİ")]
+    [Tooltip("Eğer işaretli ise 'Enemy Genomes' kullanılır (PSO). İşaretli değilse 'StaticEnemyStrategy' kullanılır.")]
     public bool UseTrainedEnemy = false;
+
+    // --- YENİ EKLENEN SEÇENEK ---
+    [Tooltip("Eğitilmiş model kapalıyken rakibin hangi stratejiyi oynayacağını seçin.")]
+    public AIStrategyMode StaticEnemyStrategy = AIStrategyMode.General;
+    // ----------------------------
 
     [Tooltip("Eğitimden çıkan en iyi 14 geni buraya yapıştır.")]
     public float[] EnemyGenomes;
@@ -37,7 +42,7 @@ public class BenchmarkRunner : MonoBehaviour
 
     // Simülasyon Değişkenleri
     private SimWorldState _world;
-    private SpecializedMacroAI _enemyAI; // İsim değiştirdik: genel kullanım için
+    private SpecializedMacroAI _enemyAI;
     private SpecializedMacroAI _hybridAgentBase;
     private HybridAdaptiveAI _hybridBrain;
 
@@ -109,8 +114,9 @@ public class BenchmarkRunner : MonoBehaviour
         {
             // GENERAL SCRIPTED BOT (Kural Tabanlı - General Mod)
             // Genler null olduğu için Static Behavior çalışacak.
-            _enemyAI = new SpecializedMacroAI(_world, 2, null, AIStrategyMode.General);
-            Debug.Log("<color=orange><b>🤖 RAKİP: GENERAL SCRIPTED AI (Dengeli Bot)</b></color>");
+            // BURADA SENİN SEÇTİĞİN MODU KULLANIYORUZ:
+            _enemyAI = new SpecializedMacroAI(_world, 2, null, StaticEnemyStrategy);
+            Debug.Log($"<color=orange><b>🤖 RAKİP: STATİK AI ({StaticEnemyStrategy} Modu)</b></color>");
         }
 
         // BİZİM AJAN (HYBRID)
@@ -149,13 +155,13 @@ public class BenchmarkRunner : MonoBehaviour
         float p1Res = p1.Wood + p1.Meat + p1.Stone;
         float p2Res = p2.Wood + p2.Meat + p2.Stone;
 
-        // Skor farkı
+        // Skor farkı hesaplama
         float scoreDiff = (p1.TotalDamageDealt - p1.TotalDamageTaken) - (p2.TotalDamageDealt - p2.TotalDamageTaken);
 
-        // --- 1. GERÇEK MODU OKU ---
+        // Modu belirle
         string mode = (_hybridBrain != null) ? _hybridBrain.GetCurrentStrategy() : "Init";
 
-        // --- 2. CSV'YE YAZ ---
+        // CSV'ye yaz
         string line = string.Format(CultureInfo.InvariantCulture, "{0:F1},{1},{2},{3:F0},{4},{5},{6:F0},{7:F1},{8}",
             Time.time,
             p1.CurrentPopulation, p1Soldiers, p1Res,
@@ -165,7 +171,7 @@ public class BenchmarkRunner : MonoBehaviour
         );
         _csvContent.AppendLine(line);
 
-        // --- 3. DEBUG LOG (RENKLİ) ---
+        // --- RENKLİ LOGLAR TEKRAR AÇILDI ---
         string color = "white";
         if (mode == "Aggressive") color = "red";
         else if (mode == "Defensive") color = "orange";

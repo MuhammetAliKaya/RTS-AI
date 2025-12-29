@@ -607,6 +607,7 @@ GameObject:
   - component: {fileID: 232397689}
   - component: {fileID: 232397693}
   - component: {fileID: 232397694}
+  - component: {fileID: 232397695}
   m_Layer: 5
   m_Name: GameUI
   m_TagString: Untagged
@@ -734,6 +735,28 @@ MonoBehaviour:
   FastModeToggle: {fileID: 1270989074}
   SpeedSlider: {fileID: 49928630}
   SpeedValueText: {fileID: 754361128}
+--- !u!114 &232397695
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 232397688}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cddad8c175bcbfa4cb0914898be66ebc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  World:
+    TickCount: 0
+    Map:
+      Width: 0
+      Height: 0
+  PsoRunner: {fileID: 0}
+  BenchRunner: {fileID: 1908953917}
+  Runner: {fileID: 0}
+  CombatRunner: {fileID: 0}
+  SelfPlayRunner: {fileID: 0}
 --- !u!1 &280871620
 GameObject:
   m_ObjectHideFlags: 0
@@ -3965,7 +3988,10 @@ MonoBehaviour:
   Visualizer: {fileID: 1375291963}
   CsvFileName: General_vs_Hybrid_Benchmark.csv
   EnableCsvLogging: 1
-  TimeScale: 0.05
+  TimeScale: 0.5
+  UseTrainedEnemy: 0
+  StaticEnemyStrategy: 2
+  EnemyGenomes: []
   EcoGenes:
   - 0
   - 24.91
@@ -3982,20 +4008,20 @@ MonoBehaviour:
   - 0
   - 21.07
   DefGenes:
+  - 40
+  - 17.34
   - 0
-  - 4.22
-  - 31.43
-  - 20.43
-  - 0
-  - 7.87
-  - 7.55
   - 40
   - 40
-  - 0
-  - 14.47
-  - 38.51
-  - 38.01
-  - 9.75
+  - 11.71
+  - 40
+  - 9.85
+  - 27.17
+  - 32.13
+  - 35.12
+  - 26.69
+  - 37.63
+  - 15.42
   AtkGenes:
   - 6.24
   - 13.57
@@ -4011,8 +4037,8 @@ MonoBehaviour:
   - 38.16
   - 19.88
   - 37.31
-  DefenseThreshold: -40
-  AttackThreshold: 50
+  DefenseThreshold: -200
+  AttackThreshold: 200
 --- !u!1 &1917624334
 GameObject:
   m_ObjectHideFlags: 0
@@ -4105,7 +4131,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1937205422
 RectTransform:
   m_ObjectHideFlags: 0

@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
-using RTS.Simulation.Core; // SimMath
-using UnityEngine; // Loglar için
+using RTS.Simulation.Core;
+using UnityEngine;
 
 public class ParametricMacroAI
 {
@@ -13,12 +13,6 @@ public class ParametricMacroAI
     private float[] _genes;
     private float _timer;
     private System.Random _rng;
-
-    // --- GEN HARİTASI (13 GEN) ---
-    // [0-9]: Worker, Soldier, Attack, Def, Barrack, Eco, Farm, Wood, Stone, House
-    // [10]: Tower Position
-    // [11]: Base Defense
-    // [12]: Save Threshold
 
     public ParametricMacroAI(SimWorldState world, int playerID, float[] genes, System.Random rng)
     {
@@ -52,6 +46,9 @@ public class ParametricMacroAI
         var baseB = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
         var enemyBase = _world.Buildings.Values.FirstOrDefault(b => b.PlayerID != _playerID && b.Type == SimBuildingType.Base);
 
+        // KONTROL: Haritada toplanabilir kaynak kaldı mı?
+        bool anyResourceLeft = _world.Resources.Count > 0;
+
         // --- GEN OKUMA ---
         int targetWorker = SimMath.Clamp(SimMath.RoundToInt(_genes[0]), 3, 50);
         int targetSoldier = SimMath.Clamp(SimMath.RoundToInt(_genes[1]), 5, 80);
@@ -62,14 +59,12 @@ public class ParametricMacroAI
 
         int targetFarm = SimMath.Clamp(SimMath.RoundToInt(_genes[6] / 5f), 0, 5);
         int targetWoodCutter = SimMath.Clamp(SimMath.RoundToInt(_genes[7] / 5f), 0, 5);
-        int targetStonePit = SimMath.Clamp(SimMath.RoundToInt(_genes[8] / 5f), 0, 5);
+        int targetStonePit = SimMath.Clamp(SimMath.RoundToInt(_genes[8] / 2f), 0, 5);
         int houseBuffer = SimMath.Clamp(SimMath.RoundToInt(_genes[9] / 4f), 1, 10);
         float towerPosBias = SimMath.Clamp01(_genes[10] / 40f);
         float defenseRadius = 5f + _genes[11];
 
-        // Genetik Tasarruf Eşiği
         int genSaveThreshold = SimMath.Clamp(SimMath.RoundToInt(_genes[12] / 2f), 0, 20);
-        // Güvenli Alt Sınır: En az 5 işçi olmadan para biriktirmeye kalkma!
         int safeSaveThreshold = Math.Max(5, genSaveThreshold);
 
         // --- 2. ACİL DURUM: AKTİF SAVUNMA ---
@@ -79,8 +74,7 @@ public class ParametricMacroAI
         }
         else
         {
-            ManageWorkers(myUnits, ecoBias, pData);
-
+            // Sadece askerler saldırır
             if (soldiers >= attackThreshold && enemyBase != null)
             {
                 foreach (var s in myUnits.Where(u => u.UnitType == SimUnitType.Soldier && u.State == SimTaskType.Idle))
@@ -97,7 +91,9 @@ public class ParametricMacroAI
             bool built = TryBuildBuilding(SimBuildingType.House, myUnits, baseB,
                 SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT);
 
-            if (!built && freePop == 0 && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT))
+            // Kaynak bitmediyse (anyResourceLeft == true) ve paramız yoksa bekleriz.
+            // Ama kaynak bittiyse (anyResourceLeft == false) beklemeye gerek yok, akış devam etsin.
+            if (!built && freePop == 0 && anyResourceLeft && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT))
                 return;
         }
 
@@ -118,11 +114,10 @@ public class ParametricMacroAI
         {
             bool built = TryBuildDefensiveStructure(myUnits, baseB, enemyBase, towerPosBias);
 
-            // Para biriktirme kontrolü (Genetik Eşik Kullanılıyor)
-            if (!built && !underThreat && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT))
+            // Kaynak tükendi ise (anyResourceLeft == false) return yapma, devam et.
+            if (!built && !underThreat && anyResourceLeft && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT))
             {
-                if (soldiers < targetSoldier * 0.5f) return; // <-- BU SATIR KRİTİK, YOKSA EKLE
-
+                if (soldiers < targetSoldier * 0.5f) return;
                 if (workers > safeSaveThreshold) return;
             }
         }
@@ -133,7 +128,8 @@ public class ParametricMacroAI
             bool built = TryBuildBuilding(SimBuildingType.Barracks, myUnits, baseB,
                 SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT);
 
-            if (!built && !underThreat && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT))
+            // Kaynak tükendi ise return yapma.
+            if (!built && !underThreat && anyResourceLeft && !SimResourceSystem.CanAfford(_world, _playerID, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT))
             {
                 if (workers > safeSaveThreshold) return;
             }
@@ -142,10 +138,15 @@ public class ParametricMacroAI
         // E. EKONOMİ BİNALARI
         if (farmCount < targetFarm)
             TryBuildBuilding(SimBuildingType.Farm, myUnits, baseB, SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT);
-        if (woodCutterCount < targetWoodCutter)
-            TryBuildBuilding(SimBuildingType.WoodCutter, myUnits, baseB, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
-        if (stonePitCount < targetStonePit)
-            TryBuildBuilding(SimBuildingType.StonePit, myUnits, baseB, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
+
+        // Sadece kaynak varsa toplayıcı bina kurmaya çalış
+        if (anyResourceLeft)
+        {
+            if (woodCutterCount < targetWoodCutter)
+                TryBuildBuilding(SimBuildingType.WoodCutter, myUnits, baseB, SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT);
+            if (stonePitCount < targetStonePit)
+                TryBuildBuilding(SimBuildingType.StonePit, myUnits, baseB, SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT);
+        }
 
         // F. NORMAL ASKER ÜRETİMİ
         if (soldiers < targetSoldier && freePop > 0)
@@ -157,16 +158,12 @@ public class ParametricMacroAI
             }
         }
 
-        // G. İŞÇİ ÜRETİMİ (DÜZELTİLDİ!)
+        // G. İŞÇİ ÜRETİMİ
         if (baseB != null && !baseB.IsTraining && workers < targetWorker && freePop > 0)
         {
-            // --- DÜZELTME BURADA ---
-            // "workers > 5" şartı ekledik.
-            // Eğer işçi sayısı 5'ten azsa, tehdit olsa bile harcamayı durdurma.
-            // Çünkü 5 işçi olmadan ekonomi dönmez, asker basılamaz.
-            // Eğer 5'ten fazlaysa ve tehdit varsa, o zaman "askere sakla" diyebiliriz.
-
-            if (underThreat && workers > 5 && SimResourceSystem.GetPlayer(_world, _playerID).Wood < 300)
+            // Kaynak bittiyse yeni işçi basma, mevcut parayı askere sakla
+            if (!anyResourceLeft) { /* Pas geç */ }
+            else if (underThreat && workers > 5 && SimResourceSystem.GetPlayer(_world, _playerID).Wood < 300)
             {
                 if (SimConfig.EnableLogs) Debug.Log("🛡️ AI: Saldırı var, odunu askere saklıyorum.");
             }
@@ -174,14 +171,18 @@ public class ParametricMacroAI
             {
                 SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
             }
-            else
-            {
-                if (SimConfig.EnableLogs) Debug.Log($"❌ AI: İşçi basacak para yok. (W:{workers})");
-            }
+        }
+
+        // --- SON ADIM: İŞÇİ YÖNETİMİ ---
+        // İşçileri saldırıya göndermiyoruz, sadece kaynak varsa toplamaya gönderiyoruz.
+        // Kaynak yoksa Idle kalırlar, böylece bina yapımı için hazır olurlar.
+        if (!CheckBaseDefense(myUnits, baseB, defenseRadius))
+        {
+            ManageWorkers(myUnits, ecoBias, pData, anyResourceLeft);
         }
     }
 
-    // --- YARDIMCILAR (AYNI) ---
+    // --- YARDIMCILAR ---
 
     private SimUnitData GetAvailableWorker(List<SimUnitData> units)
     {
@@ -256,13 +257,18 @@ public class ParametricMacroAI
         return false;
     }
 
-    private void ManageWorkers(List<SimUnitData> units, float ecoBias, SimPlayerData pData)
+    // DÜZELTİLDİ: Saldırı mantığı kaldırıldı.
+    private void ManageWorkers(List<SimUnitData> units, float ecoBias, SimPlayerData pData, bool anyResourceLeft)
     {
+        // Kaynak yoksa işçilere görev atama (Idle kalsınlar, bina yapımında kullanılırlar)
+        if (!anyResourceLeft) return;
+
         var idleWorkers = units.Where(u => u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle).ToList();
         if (idleWorkers.Count == 0) return;
 
         foreach (var w in idleWorkers)
         {
+            // Kaynak varsa toplama mantığı devam eder
             SimResourceType targetType = SimResourceType.Wood;
 
             if (pData.Meat < SimConfig.WORKER_COST_MEAT) targetType = SimResourceType.Meat;

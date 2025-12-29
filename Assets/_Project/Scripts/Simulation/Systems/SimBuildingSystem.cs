@@ -213,11 +213,15 @@ namespace RTS.Simulation.Systems
                 target.Health -= building.Damage;
                 building.AttackTimer = 0f;
                 building.TargetUnitID = target.ID;
+
                 if (target.Health <= 0)
                 {
                     target.State = SimTaskType.Dead;
                     world.Units.Remove(target.ID);
                     world.Map.Grid[target.GridPosition.x, target.GridPosition.y].OccupantID = -1;
+
+                    // EKLENEN SATIR: Kule adam öldürünce nüfusu düşür
+                    SimResourceSystem.ModifyPopulation(world, target.PlayerID, -1);
                 }
             }
             else building.TargetUnitID = -1;

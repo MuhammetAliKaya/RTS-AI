@@ -465,30 +465,32 @@ namespace RTS.Simulation.Orchestrator
                     // 2. ÖLDÜRÜLEN DÜŞMAN (AKTİF SAVUNMA - YENİ!)
                     // Savunma yapmak, sadece durmak değil tehdidi yok etmektir.
                     // Düşman öldürmeye puan verelim ki asker bassın.
-                    float defenseKillScore = stats.EnemyUnitsKilled * 100f;
+                    float defenseKillScore = stats.EnemyUnitsKilled * 10000f;
 
                     // 3. SAVUNMA ORDUSU (YENİ!)
                     // Kuleleri koruyacak asker varlığı.
-                    float defenseArmyScore = stats.SoldierCount * 50f;
+                    // float defenseArmyScore = stats.SoldierCount * 50f;
 
                     // 4. BASE SAĞLIĞI (KRİTİK)
                     float healthRatio = myBaseHealth / SimConfig.BASE_MAX_HEALTH;
-                    float baseHealthScore = myBaseHealth * 50f;
+                    float baseHealthScore = myBaseHealth * 5000f;
 
                     // 5. HAYATTA KALMA SÜRESİ
                     float survivalBonus = 0f;
                     if (myBaseHealth > 0 && stats.MatchDuration >= (MaxTicksPerGame * 0.25f * 0.95f))
                     {
-                        survivalBonus = 15000f; // Maçı kaybetmemek asıl amaç
+                        survivalBonus = 150000f; // Maçı kaybetmemek asıl amaç
                     }
 
                     // TOPLAM SKOR
-                    score = livingTowerScore + defenseKillScore + defenseArmyScore + baseHealthScore + survivalBonus;
+                    score = livingTowerScore + defenseKillScore
+                    // + defenseArmyScore 
+                    + baseHealthScore + survivalBonus;
 
                     // CEZALAR
                     if (stats.TowersBuilt == 0 && stats.SoldierCount == 0)
                     {
-                        score -= 5000f; // Hiçbir şey yapmıyorsa büyük ceza
+                        score -= 50000f; // Hiçbir şey yapmıyorsa büyük ceza
                     }
                     else if (healthRatio < 0.2f)
                     {
@@ -552,6 +554,7 @@ namespace RTS.Simulation.Orchestrator
 
                     break;
             }
+
             return score;
         }
     }
