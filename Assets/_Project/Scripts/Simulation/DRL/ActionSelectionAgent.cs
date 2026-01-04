@@ -70,13 +70,17 @@ public class ActionSelectionAgent : Agent
 
         int sourceIndex = _orchestrator.SelectedSourceIndex;
 
-        // Eğer seçim boşsa (-1) hiçbir şey yapma veya sadece Wait'i aç
+        // --- DÜZELTİLMESİ GEREKEN KISIM BURASI ---
         if (sourceIndex == -1)
         {
-            actionMask.SetActionEnabled(0, ACT_WAIT, true);
-            // Geri kalan her şeyi kapat
-            int totalActions = 13; // 0..12
-            for (int i = 1; i < 50; i++) actionMask.SetActionEnabled(0, i, false);
+            actionMask.SetActionEnabled(0, ACT_WAIT, true); // Bekle (0) her zaman açık olsun
+
+            // HATA ÇÖZÜMÜ: Döngüyü 50 yerine 13 ile sınırla.
+            // Branch Size ayarın 13 olduğu için sadece 1'den 12'ye kadar olanları kapatmalısın.
+            for (int i = 1; i < 13; i++)
+            {
+                actionMask.SetActionEnabled(0, i, false);
+            }
             return;
         }
 

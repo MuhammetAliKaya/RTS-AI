@@ -1704,7 +1704,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 1
-  orthographic size: 10
+  orthographic size: 30
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -1729,7 +1729,7 @@ Transform:
   m_GameObject: {fileID: 660227090}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 10.1, z: -10}
+  m_LocalPosition: {x: 0, y: 16.07, z: -10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3926,8 +3926,8 @@ MonoBehaviour:
   RequiredTowersToUnlock: 7
   ForceAttackSoldierCount: 20
   ForceAttackResourceLevel: 25000
-  DefenseThreshold: 0
-  AttackThreshold: 50
+  DefenseThreshold: -200
+  AttackThreshold: 0
   EconomyGenes:
   - 0
   - 24.91
@@ -3986,12 +3986,26 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Visualizer: {fileID: 1375291963}
-  CsvFileName: General_vs_Hybrid_Benchmark.csv
+  CsvFileName: record.csv
   EnableCsvLogging: 1
   TimeScale: 0.5
   UseTrainedEnemy: 0
-  StaticEnemyStrategy: 2
-  EnemyGenomes: []
+  StaticEnemyStrategy: 3
+  EnemyGenomes:
+  - 8.51
+  - 40
+  - 0
+  - 6.83
+  - 0
+  - 40
+  - 24
+  - 36
+  - 40
+  - 8.7
+  - 23.74
+  - 40
+  - 33.78
+  - 0
   EcoGenes:
   - 0
   - 24.91
@@ -4009,7 +4023,7 @@ MonoBehaviour:
   - 21.07
   DefGenes:
   - 40
-  - 17.34
+  - 0
   - 0
   - 40
   - 40
@@ -4018,15 +4032,15 @@ MonoBehaviour:
   - 9.85
   - 27.17
   - 32.13
-  - 35.12
+  - 40
   - 26.69
-  - 37.63
+  - 0
   - 15.42
   AtkGenes:
-  - 6.24
-  - 13.57
+  - 1
+  - 40
   - 2.7
-  - 14.33
+  - 0
   - 40
   - 39.75
   - 20.75

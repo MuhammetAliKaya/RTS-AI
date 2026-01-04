@@ -3920,10 +3920,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   VisualizeOnlyFinalBest: 1
   ForceStandardPSO: 0
-  PopulationSize: 40
-  MaxGenerations: 40
+  PopulationSize: 50
+  MaxGenerations: 50
   MaxTicksPerGame: 8000
-  CurrentTrainingGoal: 1
+  CurrentTrainingGoal: 3
   EnableLogging: 1
   UseRandomMasterSeed: 0
   MasterSeed: 55

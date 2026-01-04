@@ -57,18 +57,42 @@ public class SimBuildingPlacer : MonoBehaviour
             return;
         }
 
-        // 3. MALİYET KONTROLÜ (SimConfig'den)
+        // 3. MALİYET VE ACTION ID BELİRLEME
         int wood = 0, stone = 0, meat = 0;
+        int actionID = 0; // Kayıt için Action ID
 
         switch (_selectedBuildingType)
         {
-            case SimBuildingType.House: wood = SimConfig.HOUSE_COST_WOOD; break;
-            case SimBuildingType.Farm: wood = SimConfig.FARM_COST_WOOD; break;
-            case SimBuildingType.WoodCutter: meat = SimConfig.WOODCUTTER_COST_MEAT; break;
-            case SimBuildingType.StonePit: wood = SimConfig.STONEPIT_COST_WOOD; break;
-            case SimBuildingType.Barracks: wood = SimConfig.BARRACKS_COST_WOOD; stone = SimConfig.BARRACKS_COST_STONE; break;
-            case SimBuildingType.Tower: wood = SimConfig.TOWER_COST_WOOD; stone = SimConfig.TOWER_COST_STONE; break;
-            case SimBuildingType.Wall: stone = SimConfig.WALL_COST_STONE; break;
+            case SimBuildingType.House:
+                wood = SimConfig.HOUSE_COST_WOOD;
+                actionID = 1; // ACT_BUILD_HOUSE
+                break;
+            case SimBuildingType.Barracks:
+                wood = SimConfig.BARRACKS_COST_WOOD;
+                stone = SimConfig.BARRACKS_COST_STONE;
+                actionID = 2; // ACT_BUILD_BARRACKS
+                break;
+            case SimBuildingType.WoodCutter:
+                meat = SimConfig.WOODCUTTER_COST_MEAT; // Not: Config'e göre değişebilir, kontrol et.
+                actionID = 5; // ACT_BUILD_WOODCUTTER
+                break;
+            case SimBuildingType.StonePit:
+                wood = SimConfig.STONEPIT_COST_WOOD;
+                actionID = 6; // ACT_BUILD_STONEPIT
+                break;
+            case SimBuildingType.Farm:
+                wood = SimConfig.FARM_COST_WOOD;
+                actionID = 7; // ACT_BUILD_FARM
+                break;
+            case SimBuildingType.Tower:
+                wood = SimConfig.TOWER_COST_WOOD;
+                stone = SimConfig.TOWER_COST_STONE;
+                actionID = 8; // ACT_BUILD_TOWER
+                break;
+            case SimBuildingType.Wall:
+                stone = SimConfig.WALL_COST_STONE;
+                actionID = 9; // ACT_BUILD_WALL
+                break;
         }
 
         if (!SimResourceSystem.CanAfford(world, 1, wood, stone, meat))
@@ -77,6 +101,21 @@ public class SimBuildingPlacer : MonoBehaviour
             CancelBuildMode();
             return;
         }
+
+        // --- YENİ EKLENEN KISIM: KAYIT ALMA (RECORDING) ---
+        // SimInputManager üzerinden Orchestrator'a ulaşıp kaydı gönderiyoruz.
+        if (SimInputManager.Instance != null && SimInputManager.Instance.Orchestrator != null)
+        {
+            int mapW = world.Map.Width;
+            int sourceIndex = (worker.GridPosition.y * mapW) + worker.GridPosition.x;
+            int targetIndex = (pos.y * mapW) + pos.x;
+
+            // Yapay zekaya: "Ben bu işçiyle (Source), Şuraya (Target), Şu binayı (Action) yapıyorum" diyoruz.
+            SimInputManager.Instance.Orchestrator.RecordHumanDemonstration(sourceIndex, actionID, targetIndex);
+
+            // Debug.Log($"[REC] İnşaat Kaydedildi: Act {actionID} -> T {targetIndex}");
+        }
+        // --------------------------------------------------
 
         // 4. HARCA VE YAP
         SimResourceSystem.SpendResources(world, 1, wood, stone, meat);

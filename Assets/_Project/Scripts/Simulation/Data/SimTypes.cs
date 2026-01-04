@@ -11,6 +11,12 @@ namespace RTS.Simulation.Data
 
         public int2(int x, int y) { this.x = x; this.y = y; }
 
+        // --- EKLENEN KISIM: Matematik Operatörleri ---
+        public static int2 operator +(int2 a, int2 b) => new int2(a.x + b.x, a.y + b.y);
+        public static int2 operator -(int2 a, int2 b) => new int2(a.x - b.x, a.y - b.y);
+        public static int2 operator *(int2 a, int b) => new int2(a.x * b, a.y * b);
+        // ---------------------------------------------
+
         // Eşitlik Kontrolleri
         public static bool operator ==(int2 a, int2 b) => a.x == b.x && a.y == b.y;
         public static bool operator !=(int2 a, int2 b) => !(a == b);
@@ -22,14 +28,14 @@ namespace RTS.Simulation.Data
         public static int2 Zero => new int2(0, 0);
     }
 
-    // Birlik Tipleri (Enemy yok, PlayerID ile ayrılacak)
+    // Birlik Tipleri
     public enum SimUnitType
     {
         Worker,
         Soldier
     }
 
-    // Bina Tipleri (Kule ve Duvar eklendi)
+    // Bina Tipleri
     public enum SimBuildingType
     {
         None,
@@ -39,20 +45,20 @@ namespace RTS.Simulation.Data
         Farm,
         StonePit,
         WoodCutter,
-        Tower,      // Savunma Kulesi
-        Wall        // Duvar
+        Tower,
+        Wall
     }
 
-    // Görev Durumları (Savaş/Combat eklendi)
+    // Görev Durumları
     public enum SimTaskType
     {
         Idle,
         Moving,
         Gathering,
         Building,
-        Training,   // Üretim yapıyor
-        Attacking,  // Savaşıyor
-        Dead        // Öldü (Silinmeyi bekliyor)
+        Training,
+        Attacking,
+        Dead
     }
 
     public enum SimResourceType { None, Wood, Stone, Meat }

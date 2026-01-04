@@ -139,7 +139,7 @@ public class BenchmarkRunner : MonoBehaviour
         if (!EnableCsvLogging) return;
         _csvContent = new StringBuilder();
         // Başlıklar
-        _csvContent.AppendLine("Time,P1_Pop,P1_Soldiers,P1_Res,P2_Pop,P2_Soldiers,P2_Res,ScoreDiff,HybridMode");
+        _csvContent.AppendLine("Time,P1_Pop,P1_Soldiers,P1_Towers,P1_Res,P2_Pop,P2_Soldiers,P2_Towers,P2_Res,ScoreDiff,HybridMode");
     }
 
     void LogMetrics()
@@ -149,23 +149,26 @@ public class BenchmarkRunner : MonoBehaviour
         var p1 = SimResourceSystem.GetPlayer(_world, 1);
         var p2 = SimResourceSystem.GetPlayer(_world, 2);
 
+        // Mevcut asker sayımları...
         int p1Soldiers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
         int p2Soldiers = _world.Units.Values.Count(u => u.PlayerID == 2 && u.UnitType == SimUnitType.Soldier);
 
+        // --- YENİ EKLENECEK KISIM: KULE SAYIMLARI ---
+        int p1Towers = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Tower);
+        int p2Towers = _world.Buildings.Values.Count(b => b.PlayerID == 2 && b.Type == SimBuildingType.Tower);
+        // -------------------------------------------
+
         float p1Res = p1.Wood + p1.Meat + p1.Stone;
         float p2Res = p2.Wood + p2.Meat + p2.Stone;
-
-        // Skor farkı hesaplama
         float scoreDiff = (p1.TotalDamageDealt - p1.TotalDamageTaken) - (p2.TotalDamageDealt - p2.TotalDamageTaken);
-
-        // Modu belirle
         string mode = (_hybridBrain != null) ? _hybridBrain.GetCurrentStrategy() : "Init";
 
-        // CSV'ye yaz
-        string line = string.Format(CultureInfo.InvariantCulture, "{0:F1},{1},{2},{3:F0},{4},{5},{6:F0},{7:F1},{8}",
+        // CSV Formatını Güncelle (Sıraya dikkat et: Time, Pop, Soldier, TOWER, Res...)
+        string line = string.Format(CultureInfo.InvariantCulture,
+            "{0:F1},{1},{2},{3},{4:F0},{5},{6},{7},{8:F0},{9:F1},{10}",
             Time.time,
-            p1.CurrentPopulation, p1Soldiers, p1Res,
-            p2.CurrentPopulation, p2Soldiers, p2Res,
+            p1.CurrentPopulation, p1Soldiers, p1Towers, p1Res,      // P1 Verileri (Kule eklendi)
+            p2.CurrentPopulation, p2Soldiers, p2Towers, p2Res,      // P2 Verileri (Kule eklendi)
             scoreDiff,
             mode
         );

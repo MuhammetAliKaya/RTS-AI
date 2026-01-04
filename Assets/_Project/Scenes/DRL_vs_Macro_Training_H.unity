@@ -603,12 +603,12 @@ MonoBehaviour:
   Orchestrator: {fileID: 172824025}
   MapSize: 20
   MaxSteps: 75000
-  AllowedAgentName: AdversarialTrainerRunner
+  AllowedAgentName: AdvTrainerRunner
   mapSeed: 12345
   useRandomSeed: 0
   IsTrainingMode: 0
-  _simStepSize: 0.01
-  _simStepCountPerFrame: 100
+  _simStepSize: 0.005
+  _simStepCountPerFrame: 1
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
   EnemyDifficulty: 2
@@ -5255,6 +5255,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   MainCamera: {fileID: 660227092}
   Visualizer: {fileID: 1375291963}
+  Orchestrator: {fileID: 172824025}
 --- !u!114 &1892751751
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5272,6 +5273,8 @@ MonoBehaviour:
     Map:
       Width: 0
       Height: 0
+  PsoRunner: {fileID: 0}
+  BenchRunner: {fileID: 0}
   Runner: {fileID: 0}
   CombatRunner: {fileID: 775438145}
   SelfPlayRunner: {fileID: 0}
@@ -5459,6 +5462,7 @@ GameObject:
   - component: {fileID: 1979802281}
   - component: {fileID: 1979802279}
   - component: {fileID: 1979802280}
+  - component: {fileID: 1979802283}
   m_Layer: 0
   m_Name: Target_Selector
   m_TagString: Untagged
@@ -5541,6 +5545,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 172824026}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1979802283
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1979802278}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2902496c0120472b90269f94a0aec7e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Record: 1
+  NumStepsToRecord: 0
+  DemonstrationName: target_sel_rec_1
+  DemonstrationDirectory: Assets/Demonstrations
 --- !u!1 &1981398960
 GameObject:
   m_ObjectHideFlags: 0

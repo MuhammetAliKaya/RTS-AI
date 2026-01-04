@@ -390,9 +390,9 @@ namespace RTS.Simulation.Orchestrator
             if (!world.Players.ContainsKey(2)) world.Players.Add(2, new SimPlayerData { PlayerID = 2 });
             SpawnBaseForPlayer(world, 1, new int2(5, 5));
             SpawnBaseForPlayer(world, 2, new int2(44, 44));
-            for (int i = 0; i < 30; i++) SpawnResource(world, SimResourceType.Wood, rng);
-            for (int i = 0; i < 20; i++) SpawnResource(world, SimResourceType.Stone, rng);
-            for (int i = 0; i < 20; i++) SpawnResource(world, SimResourceType.Meat, rng);
+            for (int i = 0; i < 50; i++) SpawnResource(world, SimResourceType.Wood, rng);
+            for (int i = 0; i < 50; i++) SpawnResource(world, SimResourceType.Stone, rng);
+            for (int i = 0; i < 50; i++) SpawnResource(world, SimResourceType.Meat, rng);
             return world;
         }
 

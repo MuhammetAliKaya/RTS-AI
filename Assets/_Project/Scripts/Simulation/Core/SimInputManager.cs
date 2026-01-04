@@ -3,7 +3,9 @@ using UnityEngine.EventSystems;
 using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
+// using Unity.Mathematics;
 using System.Linq;
+
 
 public class SimInputManager : MonoBehaviour
 {
@@ -11,168 +13,119 @@ public class SimInputManager : MonoBehaviour
     public Camera MainCamera;
     public GameVisualizer Visualizer;
 
+    // --- AI BAĞLANTILARI ---
+    // 3 Başlı yapıyı yöneten orkestratör referansı
+    public RTSOrchestrator Orchestrator;
+
     // --- SELECTION DATA ---
     public int SelectedUnitID { get; private set; } = -1;
     public int SelectedBuildingID { get; private set; } = -1;
 
-    private int _pendingActionID = 10;
+    private int _pendingActionID = 10; // Varsayılan: Attack/Interact
 
     void Awake()
     {
         Instance = this;
         if (MainCamera == null) MainCamera = Camera.main;
+
+        // Eğer editörden atanmadıysa sahnede bulmaya çalış
+        if (Orchestrator == null) Orchestrator = FindObjectOfType<RTSOrchestrator>();
     }
 
     void Update()
     {
-        // UI blocking check
+        // UI tıklamalarını engelle
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
 
-        if (Input.GetMouseButtonDown(0)) HandleSelection();      // Left Click: Select
-        if (Input.GetMouseButtonDown(1)) HandleMovementOrder();  // Right Click: Action
-        if (Input.GetKeyDown(KeyCode.Space)) HandleWaitCommand();
+        if (Input.GetMouseButtonDown(0)) HandleSelection();      // Sol Tık: Seçim (Unit Selection)
+        if (Input.GetMouseButtonDown(1)) HandleMovementOrder();  // Sağ Tık: Aksiyon ve Hedef (Action + Target)
     }
-    private void HandleWaitCommand()
-    {
-        // Sadece Demo Modunda ve bir ünite seçiliyken çalışır
-        if (RTSOrchestrator.Instance == null || !RTSOrchestrator.Instance.IsHumanDemoMode) return;
-        if (SelectedUnitID == -1) return;
 
-        var world = SimGameContext.ActiveWorld;
-        if (world != null && world.Units.TryGetValue(SelectedUnitID, out SimUnitData u))
-        {
-            // Sadece kendi ünitelerimiz için
-            if (u.PlayerID != RTSOrchestrator.Instance.MyPlayerID) return;
-
-            int mapW = world.Map.Width;
-            int sourceIndex = (u.GridPosition.y * mapW) + u.GridPosition.x;
-
-            // --- ZİNCİRLEME KAYIT (Wait) ---
-            // Sanki mouse ile tıklamışız gibi 3 adımı da hızlıca simüle ediyoruz.
-
-            // 1. Adım: Üniteyi Seçtiğimizi Teyit Et
-            RTSOrchestrator.Instance.UserSelectUnit(sourceIndex);
-
-            // 2. Adım: Aksiyon Olarak "0" (WAIT) Seç
-            // (ActionSelectionAgent.cs içinde ACT_WAIT = 0 sabiti var)
-            RTSOrchestrator.Instance.UserSelectAction(0);
-
-            // 3. Adım: Hedef Olarak "0" (veya kendisi) Seç ve KAYDI BİTİR
-            // Wait eyleminde hedef önemsizdir ama zincirin tamamlanması için gereklidir.
-            RTSOrchestrator.Instance.UserSelectTarget(sourceIndex);
-
-            Debug.Log($"[Demo] '{u.UnitType}' için BEKLE (Wait) emri kaydedildi.");
-        }
-    }
     // --- DIŞARIDAN (UI) ÇAĞRILACAK METOT ---
     public void SetPendingAction(int actionID)
     {
         _pendingActionID = actionID;
-        Debug.Log($"[Input] Sıradaki işlem ayarlandı: {actionID}. Lütfen haritada bir yere sağ tıkla.");
+        Debug.Log($"[Input] Sıradaki işlem: {actionID}. Sağ tık ile onayla.");
     }
 
-    // --- SEÇİLİ ÜNİTENİN INDEX'İNİ DÖNDÜRÜR ---
-    public int GetSelectedUnitSourceIndex()
-    {
-        var world = SimGameContext.ActiveWorld;
-        if (world == null || SelectedUnitID == -1) return -1;
-
-        if (world.Units.TryGetValue(SelectedUnitID, out SimUnitData u))
-        {
-            // Sadece kendi oyuncumuz (Player 1)
-            if (u.PlayerID == 1)
-                return (u.GridPosition.y * world.Map.Width) + u.GridPosition.x;
-        }
-        return -1;
-    }
+    // --- SEÇİM İŞLEMİ (KİM?) ---
     void HandleSelection()
     {
         Vector2 mousePos = MainCamera.ScreenToWorldPoint(Input.mousePosition);
         RaycastHit2D hit = Physics2D.Raycast(mousePos, Vector2.zero);
-
-        int clickedID = -1;
-        bool isUnit = false;
 
         if (hit.collider != null)
         {
             SimEntityVisual visual = hit.collider.GetComponent<SimEntityVisual>();
             if (visual != null)
             {
-                clickedID = visual.ID;
-                if (SimGameContext.ActiveWorld.Units.ContainsKey(clickedID)) isUnit = true;
-            }
-        }
+                int id = visual.ID;
+                var world = SimGameContext.ActiveWorld;
 
-        if (clickedID != -1)
-        {
-            if (isUnit)
-            {
-                SelectedUnitID = clickedID;
-                SelectedBuildingID = -1;
-
-                // --- ORCHESTRATOR'A BİLDİR (BUFFER START) ---
-                if (RTSOrchestrator.Instance != null && RTSOrchestrator.Instance.IsHumanDemoMode)
+                // 1. Ünite mi?
+                if (world.Units.ContainsKey(id))
                 {
-                    var world = SimGameContext.ActiveWorld;
-                    var u = world.Units[clickedID];
-                    // Sadece bizim ünitelerimiz kayda girsin
-                    if (u.PlayerID == RTSOrchestrator.Instance.MyPlayerID)
-                    {
-                        int gridIndex = (u.GridPosition.y * world.Map.Width) + u.GridPosition.x;
-                        RTSOrchestrator.Instance.UserSelectUnit(gridIndex);
-                    }
+                    SelectedUnitID = id;
+                    SelectedBuildingID = -1;
+
+                    // --- DEMO KAYDI İÇİN: Ünite seçildiğini AI'a bildir ---
+                    // Eğer sadece seçim yapıp henüz emir vermediysek bile, AI'ın "UnitSelection" ajanı
+                    // bu seçimi görmeli mi? Genellikle emir tamamlandığında (Source+Action+Target)
+                    // üçünü birden göndermek daha temizdir. O yüzden burayı pas geçiyorum.
+
+                    Debug.Log($"🎯 Unit Selected: {id}");
+                    return;
+                }
+                // 2. Bina mı?
+                else if (world.Buildings.ContainsKey(id))
+                {
+                    SelectedBuildingID = id;
+                    SelectedUnitID = -1;
+                    Debug.Log($"🏠 Building Selected: {id}");
+                    return;
                 }
             }
-            else
-            {
-                // Bina seçimi (Şimdilik AI için bina seçimi yoksa pas geçiyoruz)
-                SelectedBuildingID = clickedID;
-                SelectedUnitID = -1;
-            }
         }
-        else
-        {
-            // --- BOŞA TIKLANDI: SEÇİMİ VE BUFFER'I İPTAL ET ---
-            SelectedUnitID = -1;
-            SelectedBuildingID = -1;
 
-            // Orchestrator'a "Vazgeçtik" demenin basit yolu:
-            // Geçersiz bir unit ID göndererek state'i resetleyebiliriz veya 
-            // Orchestrator'a public void CancelSelection() yazabilirsin.
-            // Şimdilik en basit yöntem, yeni bir unit seçilmediği için 
-            // _tempSourceIndex zaten eski kalacak veya UserSelectUnit çağrılmayacak.
-            // Ama temiz iş için Orchestrator'a -1 gönderebiliriz.
-            if (RTSOrchestrator.Instance != null)
-            {
-                RTSOrchestrator.Instance.UserSelectUnit(-1);
-                // UserSelectUnit(-1) metodun içinde _tempSourceIndex = -1 yapacağı için
-                // sonraki Action/Target çağrıları "Source Eksik" diyip iptal olur.
-            }
-        }
+        // Boşluğa tıklandı -> Seçimi kaldır
+        SelectedUnitID = -1;
+        SelectedBuildingID = -1;
     }
 
+    // --- EMİR İŞLEMİ (NE? ve NEREYE?) ---
     void HandleMovementOrder()
     {
         // 1. DÜNYA VE SEÇİM KONTROLÜ
         var world = SimGameContext.ActiveWorld;
-        if (world == null || SelectedUnitID == -1) return;
+        if (world == null) return;
 
-        if (!world.Units.TryGetValue(SelectedUnitID, out SimUnitData selectedUnit))
+        // Hem bina hem ünite seçili değilse çık
+        if (SelectedUnitID == -1 && SelectedBuildingID == -1) return;
+
+        // --- SOURCE (KAYNAK) BULMA ---
+        int sourceIndex = -1;
+        int playerID = -1;
+
+        SimUnitData selectedUnit = null;
+        SimBuildingData selectedBuilding = null;
+
+        if (SelectedUnitID != -1 && world.Units.TryGetValue(SelectedUnitID, out selectedUnit))
         {
-            SelectedUnitID = -1;
-            return;
+            sourceIndex = GetIndex(selectedUnit.GridPosition, world.Map.Width);
+            playerID = selectedUnit.PlayerID;
+        }
+        else if (SelectedBuildingID != -1 && world.Buildings.TryGetValue(SelectedBuildingID, out selectedBuilding))
+        {
+            sourceIndex = GetIndex(selectedBuilding.GridPosition, world.Map.Width);
+            playerID = selectedBuilding.PlayerID;
         }
 
-        // Sadece kendi ünitelerimiz
-        if (selectedUnit.PlayerID != 1) return;
+        if (sourceIndex == -1 || playerID != 1) return; // Sadece Player 1 (Bizim) emirlerimizi kaydet
 
         // 2. HEDEF TESPİTİ (RAYCAST ÖNCELİKLİ)
-        // Önce "Görsel" olarak neye tıkladığımıza bakıyoruz (Ağaç, Bina, Ünite).
-        // Bu sayede izometrik hataları (ağacın arkasına yürüme) engelliyoruz.
-
         int2 targetGridPos = new int2(-1, -1);
         bool hitEntity = false;
-        int clickedEntityID = -1; // Tıklanan objenin ID'sini tutalım
+        int clickedEntityID = -1;
 
         Vector2 mouseWorldPos = MainCamera.ScreenToWorldPoint(Input.mousePosition);
         RaycastHit2D hit = Physics2D.Raycast(mouseWorldPos, Vector2.zero);
@@ -185,19 +138,16 @@ public class SimInputManager : MonoBehaviour
                 int id = visual.ID;
                 clickedEntityID = id;
 
-                // Tıklanan şey Kaynak mı?
                 if (world.Resources.ContainsKey(id))
                 {
                     targetGridPos = world.Resources[id].GridPosition;
                     hitEntity = true;
                 }
-                // Tıklanan şey Bina mı?
                 else if (world.Buildings.ContainsKey(id))
                 {
                     targetGridPos = world.Buildings[id].GridPosition;
                     hitEntity = true;
                 }
-                // Tıklanan şey Ünite mi?
                 else if (world.Units.ContainsKey(id))
                 {
                     targetGridPos = world.Units[id].GridPosition;
@@ -206,94 +156,117 @@ public class SimInputManager : MonoBehaviour
             }
         }
 
-        // Eğer bir objeye denk gelmediysek, zemini (matematiksel grid'i) kullan
+        // Raycast bir şeye çarpmadıysa Grid pozisyonunu al
         if (!hitEntity)
         {
             int2? calculatedPos = GetGridPositionUnderMouse();
-            if (calculatedPos == null) return; // Harita dışı
+            if (calculatedPos == null) return;
             targetGridPos = calculatedPos.Value;
         }
 
+        int targetIndex = GetIndex(targetGridPos, world.Map.Width);
+
         // 3. AKSİYON TÜRÜNE KARAR VER (SMART CONTEXT)
-        // Varsayılan: MOVE (11)
-        int actionID = 11;
+        int actionID = DetermineSmartAction(world, targetGridPos, hitEntity, clickedEntityID, selectedUnit, selectedBuilding);
 
-        // Hedef karesinde ne var? (Raycast ile bulduysak zaten biliyoruz, yoksa Grid'den bakıyoruz)
-        var targetNode = world.Map.Grid[targetGridPos.x, targetGridPos.y];
-        int occupantID = (hitEntity) ? clickedEntityID : targetNode.OccupantID;
-
-        // A. DÜŞMAN KONTROLÜ (Ünite veya Bina)
-        if (occupantID != -1)
-        {
-            if (world.Units.TryGetValue(occupantID, out SimUnitData targetUnit))
-            {
-                // Düşman mı? -> ATTACK (10)
-                if (targetUnit.PlayerID != selectedUnit.PlayerID) actionID = 10;
-            }
-            else if (world.Buildings.TryGetValue(occupantID, out SimBuildingData targetBuilding))
-            {
-                // Düşman binası mı? -> ATTACK (10)
-                if (targetBuilding.PlayerID != selectedUnit.PlayerID) actionID = 10;
-            }
-        }
-
-        // B. KAYNAK KONTROLÜ
-        // Raycast ile bir kaynağa tıkladıysak VEYA o karede kaynak varsa
-        if (world.Resources.Values.Any(r => r.GridPosition.Equals(targetGridPos)))
-        {
-            actionID = 12; // GATHER
-        }
-
-        // C. UI'DAN GELEN ÖZEL KOMUT (İnşaat vb.)
+        // UI'dan özel bir emir (İnşaat vb.) geldiyse onu kullan
         if (_pendingActionID != 10 && _pendingActionID != 0)
         {
             actionID = _pendingActionID;
         }
 
-        // 4. ML-AGENTS KAYIT (DÜZELTİLEN KISIM)
-        if (RTSAgent.Instance != null)
+        // --------------------------------------------------------
+        // 4. KRİTİK NOKTA: 3 BAŞLI AI'A DEMO GÖNDERİMİ
+        // --------------------------------------------------------
+        if (Orchestrator != null)
         {
-            int mapW = world.Map.Width;
-            int sourceIndex = (selectedUnit.GridPosition.y * mapW) + selectedUnit.GridPosition.x;
-            int targetIndex = (targetGridPos.y * mapW) + targetGridPos.x;
-
-            // Ajanı dürt (Kayıt alması için)
-            RTSAgent.Instance.RegisterExternalAction(actionID, sourceIndex, targetIndex);
-
-            // DİKKAT: BURADA 'return' YOK! Kod aşağı akıp işlemi yapacak.
+            // Human Demo Kaydı: "Ben oyuncu olarak [Source] ile [Target]'a [Action] yaptım."
+            // Orkestratör bunu alıp sırasıyla UnitAgent, ActionAgent ve TargetAgent'a "Heuristic" olarak enjekte edecek.
+            Orchestrator.RecordHumanDemonstration(sourceIndex, actionID, targetIndex);
+        }
+        else
+        {
+            Debug.LogWarning("Orchestrator atanmadı! Eğitim verisi kaydedilemiyor.");
         }
 
-        // 5. İŞLEMİ UYGULA (MANUEL FORCING)
-        // Bu kısım hem ajan varken (kayıt anında) hem yokken (test) çalışır.
-
-        if (actionID == 10) // ATTACK
-        {
-            // Hedefi tekrar bul (Unit mi Bina mı?)
-            if (world.Units.TryGetValue(occupantID, out SimUnitData enemyUnit))
-                SimUnitSystem.OrderAttackUnit(selectedUnit, enemyUnit, world);
-            else if (world.Buildings.TryGetValue(occupantID, out SimBuildingData enemyBuilding))
-                SimUnitSystem.OrderAttack(selectedUnit, enemyBuilding, world);
-        }
-        else if (actionID == 12) // GATHER
-        {
-            var res = world.Resources.Values.FirstOrDefault(r => r.GridPosition.Equals(targetGridPos));
-            if (res != null)
-            {
-                bool assigned = SimUnitSystem.TryAssignGatherTask(selectedUnit, res, world);
-                if (!assigned)
-                {
-                    // Eğer toplama görevi verilemezse (örn: asker seçiliyse) oraya yürü
-                    SimUnitSystem.OrderMove(selectedUnit, targetGridPos, world);
-                }
-            }
-        }
-        else // MOVE (11) veya diğerleri
-        {
-            SimUnitSystem.OrderMove(selectedUnit, targetGridPos, world);
-        }
+        // 5. OYUNA MÜDAHALE (Görsel olarak emri hemen uygula)
+        // Eğer "Adversarial Trainer" gibi bir yapı kullanıyorsan ve AI senin yerine oynuyorsa burayı kapatabilirsin.
+        // Ama genellikle "Heuristic" modda hem kaydederiz hem oynarız.
+        ExecuteGameAction(world, actionID, selectedUnit, selectedBuilding, clickedEntityID, targetGridPos);
 
         // Modu sıfırla
         _pendingActionID = 10;
+    }
+
+    // --- YARDIMCI METOTLAR ---
+
+    private int DetermineSmartAction(SimWorldState world, int2 targetPos, bool hitEntity, int entityID, SimUnitData unit, SimBuildingData building)
+    {
+        // Varsayılan: MOVE (11)
+        int actionID = 11;
+
+        // Hedef karesinde ne var?
+        var targetNode = world.Map.Grid[targetPos.x, targetPos.y];
+        int occupantID = (hitEntity) ? entityID : targetNode.OccupantID;
+
+        // A. DÜŞMAN KONTROLÜ
+        if (occupantID != -1)
+        {
+            int myPlayerID = (unit != null) ? unit.PlayerID : building.PlayerID;
+
+            if (world.Units.TryGetValue(occupantID, out SimUnitData targetUnit))
+            {
+                if (targetUnit.PlayerID != myPlayerID) actionID = 10; // ATTACK
+            }
+            else if (world.Buildings.TryGetValue(occupantID, out SimBuildingData targetB))
+            {
+                if (targetB.PlayerID != myPlayerID) actionID = 10; // ATTACK
+            }
+        }
+
+        // B. KAYNAK KONTROLÜ
+        if (world.Resources.Values.Any(r => r.GridPosition.Equals(targetPos)))
+        {
+            actionID = 12; // GATHER
+        }
+
+        return actionID;
+    }
+
+    private void ExecuteGameAction(SimWorldState world, int actionID, SimUnitData unit, SimBuildingData building, int targetEntityID, int2 targetPos)
+    {
+        // Not: Burada simülasyon kodlarını çağırıyoruz. AI arka planda öğrenirken oyunun donmaması için.
+        // Sadece Üniteler hareket edebilir, binalar üretim yapar (o UI'dan gelir genelde)
+
+        if (unit == null) return; // Şimdilik sadece ünite hareketlerini elle yapıyoruz
+
+        if (actionID == 10) // ATTACK
+        {
+            var targetNode = world.Map.Grid[targetPos.x, targetPos.y];
+            int occupantID = (targetEntityID != -1) ? targetEntityID : targetNode.OccupantID;
+
+            if (world.Units.TryGetValue(occupantID, out SimUnitData enemyUnit))
+                SimUnitSystem.OrderAttackUnit(unit, enemyUnit, world);
+            else if (world.Buildings.TryGetValue(occupantID, out SimBuildingData enemyBuilding))
+                SimUnitSystem.OrderAttack(unit, enemyBuilding, world);
+        }
+        else if (actionID == 12) // GATHER
+        {
+            var res = world.Resources.Values.FirstOrDefault(r => r.GridPosition.Equals(targetPos));
+            if (res != null)
+            {
+                if (!SimUnitSystem.TryAssignGatherTask(unit, res, world))
+                    SimUnitSystem.OrderMove(unit, targetPos, world);
+            }
+        }
+        else // MOVE (11) veya inşaat dışı hareketler
+        {
+            // İnşaat komutları (1-9) buraya düşmemeli, onlar ExecuteAction ile AI tarafından veya 
+            // UI butonu tıklandığında SimBuildingPlacer tarafından halledilir. 
+            // Ama sağ tıklama ile "Move" varsayılır.
+            if (actionID == 11)
+                SimUnitSystem.OrderMove(unit, targetPos, world);
+        }
     }
 
     public int2? GetGridPositionUnderMouse()
@@ -319,28 +292,19 @@ public class SimInputManager : MonoBehaviour
         return null;
     }
 
+    private int GetIndex(int2 pos, int width) => (pos.y * width) + pos.x;
+
     // --- GIZMOS ---
     void OnDrawGizmos()
     {
         if (!Application.isPlaying) return;
-        var world = SimGameContext.ActiveWorld;
-        if (world == null || SelectedUnitID == -1) return;
-
-        if (world.Units.TryGetValue(SelectedUnitID, out SimUnitData unit))
+        if (SelectedUnitID != -1 && SimGameContext.ActiveWorld != null)
         {
-            if (unit.Path != null && unit.Path.Count > 0)
+            if (SimGameContext.ActiveWorld.Units.TryGetValue(SelectedUnitID, out SimUnitData unit))
             {
-                Gizmos.color = Color.red;
-                Vector3 previousPos = GridToWorld(unit.GridPosition);
-                foreach (var nextStep in unit.Path)
-                {
-                    Vector3 nextPos = GridToWorld(nextStep);
-                    Gizmos.DrawLine(previousPos, nextPos);
-                    Gizmos.DrawSphere(nextPos, 0.2f);
-                    previousPos = nextPos;
-                }
+                Vector3 pos = GridToWorld(unit.GridPosition);
                 Gizmos.color = Color.green;
-                Gizmos.DrawSphere(previousPos, 0.4f);
+                Gizmos.DrawWireSphere(pos, 0.5f);
             }
         }
     }

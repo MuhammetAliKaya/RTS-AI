@@ -191,6 +191,36 @@ public class RTSOrchestrator : MonoBehaviour
     }
 
     // --- YARDIMCI METOTLAR ---
+    // RTSOrchestrator.cs sınıfının içine ekle:
+
+    public void RecordHumanDemonstration(int sourceIndex, int actionType, int targetIndex)
+    {
+        // 1. Unit Selection Ajanını Tetikle
+        // "Ben insan olarak BU kaynağı (sourceIndex) seçtim, bunu öğren" der.
+        if (UnitAgent != null)
+        {
+            // Not: UnitAgent scriptine RegisterExternalAction fonksiyonu eklediğini varsayıyorum
+            // (Verdiğin dosyalarda vardı)
+            UnitAgent.RegisterExternalAction(0, sourceIndex, 0);
+        }
+
+        // 2. Action Selection Ajanını Tetikle
+        // "Ben bu üniteyle ŞU işi (actionType) yapmaya karar verdim" der.
+        if (ActionAgent != null)
+        {
+            // Action ajanı source'u Orchestrator üzerinden okur, biz actionType'ı veririz.
+            ActionAgent.RegisterExternalAction(actionType, sourceIndex, targetIndex);
+        }
+
+        // 3. Target Selection Ajanını Tetikle
+        // "Hedef olarak ŞU kareyi (targetIndex) seçtim" der.
+        if (TargetAgent != null)
+        {
+            TargetAgent.RegisterExternalAction(actionType, sourceIndex, targetIndex);
+        }
+
+        Debug.Log($"[DEMO] Kayıt Alındı -> Source:{sourceIndex} Action:{actionType} Target:{targetIndex}");
+    }
     public void AddGroupReward(float reward)
     {
         if (UnitAgent != null) UnitAgent.AddReward(reward);

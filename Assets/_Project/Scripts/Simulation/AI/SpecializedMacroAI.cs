@@ -481,7 +481,7 @@ namespace RTS.Simulation.AI
             ManageWorkersParametric(myUnits, ecoBias, pData);
 
             List<Func<bool>> taskQueue = new List<Func<bool>>();
-
+            // Debug.Log("task area below");
             // A. EKONOMİ (İşçi Basımı)
             taskQueue.Add(() =>
             {
@@ -498,48 +498,55 @@ namespace RTS.Simulation.AI
                     {
                         // İşçi en temel birimdir, parası yoksa beklemek (blocking) mantıklıdır.
                         // Amaç diğer her şeyden önce işçi basmak.
-                        return true;
+                        return false;
                     }
                 }
 
                 if (freePop <= houseBuffer)
                 {
                     if (TryBuildBuilding(SimBuildingType.House, myUnits, basePos, SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT)) busy = true;
-                    else if (anyResourceLeft) return true;
+                    else if (anyResourceLeft) return false;
                 }
 
                 if (TryBuildEcoStructuresBalanced(targetFarm, targetWood, targetStone, myBuildings, myUnits, basePos)) busy = true;
-                return busy;
+                return false;
             });
 
             // B. ASKERİ
             taskQueue.Add(() =>
             {
+                // Debug.Log("Askeri iç");
                 int barracksCount = myBuildings.Count(b => b.Type == SimBuildingType.Barracks);
                 if (barracksCount < targetBarracks)
                 {
-                    if (TryBuildBuilding(SimBuildingType.Barracks, myUnits, basePos, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT)) return true;
+                    if (TryBuildBuilding(SimBuildingType.Barracks, myUnits, basePos, SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT)) return false;
 
                     // 2. DÜZELTME: Para yoksa BLOKE ETME (return false).
                     // Böylece sıra Ekonomi görevine geçer ve işçi basılır.
                     // Para birikince tekrar buraya gelir ve kışlayı yapar.
                     else return false;
                 }
+                // Debug.Log("asker soldiers < targetSoldier  " + soldiers + "  <" + targetSoldier);
+                // Debug.Log("asker freePop > 0  " + freePop);
+
 
                 if (soldiers < targetSoldier && freePop > 0)
                 {
+                    // Debug.Log("Asker bas");
                     bool trainingStarted = false;
                     foreach (var b in myBuildings.Where(x => x.Type == SimBuildingType.Barracks && x.IsConstructed && !x.IsTraining))
                     {
+                        // Debug.Log("Asker bas boşta kışla var");
                         if (SimResourceSystem.CanAfford(_world, _playerID, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT))
                         {
+                            // Debug.Log("Asker bas boşta kışla var kaynak da var");
                             SimBuildingSystem.StartTraining(b, _world, SimUnitType.Soldier);
                             trainingStarted = true;
                         }
                         // Asker basamıyorsak bloke etme, belki işçi basmamız lazımdır.
                         else return false;
                     }
-                    if (trainingStarted) return true;
+                    if (trainingStarted) return false;
                 }
                 return false;
             });
@@ -548,7 +555,7 @@ namespace RTS.Simulation.AI
             taskQueue.Add(() =>
             {
                 int towerCount = myBuildings.Count(b => b.Type == SimBuildingType.Tower);
-                int neededTowers = 7 + SimMath.FloorToInt(soldiers * defenseRatio);
+                int neededTowers = 3 + SimMath.FloorToInt(soldiers * defenseRatio) + SimMath.FloorToInt(defenseRatio / 4f);
                 // Genetik karara bırakıyoruz, eğer defans önceliği yüksekse kule abanabilir.
 
                 if (towerCount < neededTowers)
@@ -597,6 +604,38 @@ namespace RTS.Simulation.AI
                     queueLog += $"[{taskName}: OK] -> ";
                 }
             }
+            // ---------------------------------------------------------
+            // 🔥 YENİ EKLENEN KISIM: "ASLA BOŞ DURMA" (FALLBACK) 🔥
+            // ---------------------------------------------------------
+            // if (!anyBlocked)
+            // {
+            //     queueLog += "[BOŞTA KALDI - YEDEK PLAN DEVREDE] ";
+
+            //     // 1. ÖNCELİK: Paran varsa, limit dolsa bile ASKER BAS (Parayı erit)
+            //     var idleBarracks = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Barracks && b.IsConstructed && !b.IsTraining);
+            //     if (idleBarracks != null && SimResourceSystem.CanAfford(_world, _playerID, SimConfig.SOLDIER_COST_WOOD, SimConfig.SOLDIER_COST_STONE, SimConfig.SOLDIER_COST_MEAT))
+            //     {
+            //         SimBuildingSystem.StartTraining(idleBarracks, _world, SimUnitType.Soldier);
+            //         queueLog += "-> Ekstra Asker Basıldı ⚔️";
+            //     }
+            //     // 2. ÖNCELİK: Asker basamıyorsan ve boşta askerin varsa SALDIR (Bekleme yapma)
+            //     else if (soldiers > 2)
+            //     {
+            //         // Saldırı emrini aşağıda tetikleyeceğiz, sadece logluyoruz
+            //         queueLog += "-> Zorunlu Saldırı Emri! 🔥";
+            //         attackThreshold = 0; // Saldırı limitini sıfırla ki aşağıdaki kod kesin çalışsın
+            //     }
+            //     // 3. ÖNCELİK: Hiçbir şey yapamıyorsan İŞÇİ BAS (Ekonomiyi şişir)
+            //     else if (baseB != null && !baseB.IsTraining && SimResourceSystem.CanAfford(_world, _playerID, SimConfig.WORKER_COST_WOOD, SimConfig.WORKER_COST_STONE, SimConfig.WORKER_COST_MEAT))
+            //     {
+            //         SimBuildingSystem.StartTraining(baseB, _world, SimUnitType.Worker);
+            //         queueLog += "-> Can sıkıntısından İşçi basıldı ⚒️";
+            //     }
+            //     else
+            //     {
+            //         queueLog += "-> (Kaynak Bekleniyor...)";
+            //     }
+            // }
 
             if (!anyBlocked) queueLog += "BOŞTA (Idle)";
 
@@ -807,6 +846,10 @@ namespace RTS.Simulation.AI
                 SimUnitSystem.OrderBuild(worker, b, _world);
                 return true;
             }
+            else
+            {
+                Debug.Log("pos.x = -1");
+            }
             return false;
         }
 
@@ -815,75 +858,78 @@ namespace RTS.Simulation.AI
         // Fonksiyonun imzasına 'bool createGate' parametresini ekledik (Varsayılan: false)
         private int2 FindBuildSpot(int2 center, int minRadius, int maxRadius, List<int2> avoidList = null, bool createGate = false)
         {
-            float safeDistSq = 100f;
-            float buildingSpacingSq = 2.5f;
+            float safeDistSq = 64f; // 100f -> 64f (8 birim mesafe) biraz gevşetildi
+            float buildingSpacingSq = 1f;
 
-            // 1. AŞAMA: İDEAL YER ARA
+            // --- 1. AŞAMA: İDEAL VE STRATEJİK YER ARAMA ---
             for (int r = minRadius; r <= maxRadius; r++)
             {
                 List<int2> candidates = new List<int2>();
-
                 for (int x = -r; x <= r; x++)
                 {
                     for (int y = -r; y <= r; y++)
                     {
+                        // Sadece halkanın kenarlarını kontrol et (performans ve halka mantığı için)
                         if (System.Math.Abs(x) == r || System.Math.Abs(y) == r)
                         {
-                            // --- KAPI MANTIĞI (GATE LOGIC) ---
-                            // Eğer kapı isteniyorsa ve şu an halkanın ALT kenarındaysak (y == -r),
-                            // ve merkeze yatayda yakınsak (|x| < 3), burayı pas geç.
-                            // Bu, üssün altında 5 karelik ( -2, -1, 0, 1, 2 ) bir koridor açar.
-                            if (createGate)
-                            {
-                                if (y == -r && System.Math.Abs(x) < 3) continue;
-                            }
-                            // ---------------------------------
+                            if (createGate && y == -r && System.Math.Abs(x) < 3) continue;
 
                             int2 pos = new int2(center.x + x, center.y + y);
-
-                            if (IsPosValid(pos))
+                            if (IsPosValid(pos) && IsSafeFromEnemies(pos, avoidList, safeDistSq))
                             {
-                                if (IsSafeFromEnemies(pos, avoidList, safeDistSq))
-                                {
-                                    if (!IsTooCloseToBuildings(pos, buildingSpacingSq))
-                                    {
-                                        candidates.Add(pos);
-                                    }
-                                }
+                                if (!IsTooCloseToBuildings(pos, buildingSpacingSq))
+                                    candidates.Add(pos);
                             }
                         }
                     }
                 }
-
-                if (candidates.Count > 0)
-                {
-                    return candidates[_rng.Next(candidates.Count)];
-                }
+                if (candidates.Count > 0) return candidates[_rng.Next(candidates.Count)];
             }
 
-            // 2. AŞAMA: YEDEK PLAN (Burada da kapı kuralına uyuyoruz)
-            for (int r = minRadius; r <= maxRadius + 5; r++)
+            // --- 2. AŞAMA: AGRESİF KURTARMA (RESCUE) MODU ---
+            // Eğer ideal yer bulunamazsa, tüm kısıtlamaları (güvenlik, mesafe) kaldırıp 
+            // haritayı merkezden dışarı doğru çok daha geniş bir alanda tarıyoruz.
+
+            int rescueMaxRadius = 60; // Harita boyutuna göre çok geniş bir tarama alanı
+            for (int r = minRadius; r <= rescueMaxRadius; r++)
             {
                 for (int x = -r; x <= r; x++)
                 {
                     for (int y = -r; y <= r; y++)
                     {
+                        // Sadece halkanın kenarlarını kontrol et
                         if (System.Math.Abs(x) == r || System.Math.Abs(y) == r)
                         {
-                            // Yedek planda da kapıyı kapatma!
-                            if (createGate)
-                            {
-                                if (y == -r && System.Math.Abs(x) < 3) continue;
-                            }
+                            // Kapı kuralı kutsaldır, yedek planda bile koruyoruz ki AI hapsolmasın
+                            if (createGate && y == -r && System.Math.Abs(x) < 3) continue;
 
                             int2 pos = new int2(center.x + x, center.y + y);
-                            if (IsPosValid(pos)) return pos;
+
+                            // Sadece "Harita içinde mi ve Yürünebilir mi?" kontrolü
+                            if (IsPosValid(pos))
+                            {
+                                // Üst üste binmeyi engellemek için minimum spacing (0.5f)
+                                if (!IsTooCloseToBuildings(pos, 0.5f))
+                                    return pos;
+                            }
                         }
                     }
                 }
             }
 
-            return new int2(-1, -1);
+            // --- 3. AŞAMA: SON ÇARE (KAPIDAN FERAGAT ETME) ---
+            // Eğer hala bulunamadıysa (harita çok daralmış demektir), kapıyı bile boşverip 
+            // haritadaki İLK bulduğu boş yere diker.
+            for (int rx = 5; rx < SimConfig.MAP_WIDTH - 5; rx++)
+            {
+                for (int ry = 5; ry < SimConfig.MAP_HEIGHT - 5; ry++)
+                {
+                    int2 pos = new int2(rx, ry);
+                    if (IsPosValid(pos)) return pos;
+                }
+            }
+
+            return new int2(-1, -1); // Buraya düşmesi için haritada tek bir boş kare kalmaması gerekir.
         }
 
         // --- YARDIMCI KÜÇÜK FONKSİYONLAR (Okunabilirlik İçin) ---

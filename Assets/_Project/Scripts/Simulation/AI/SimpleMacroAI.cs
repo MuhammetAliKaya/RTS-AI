@@ -5,7 +5,7 @@ using System.Linq;
 using System.Collections.Generic;
 using UnityEngine; // Mathf ve Random için
 
-public class SimpleMacroAI
+public class SimpleMacroAI : IMacroAI
 {
     private SimWorldState _world;
     private int _playerID;

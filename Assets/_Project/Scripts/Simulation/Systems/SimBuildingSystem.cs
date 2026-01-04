@@ -180,9 +180,14 @@ namespace RTS.Simulation.Systems
 
             if (building.TrainingTimer >= requiredTime)
             {
-                SpawnUnit(world, building.GridPosition, building.UnitInProduction, building.PlayerID);
-                building.TrainingTimer = 0f;
-                building.IsTraining = false;
+                bool success = SpawnUnit(world, building.GridPosition, building.UnitInProduction, building.PlayerID);
+                // SpawnUnit(world, building.GridPosition, building.UnitInProduction, building.PlayerID);
+                if (success)
+                {
+                    // Ancak başarılı olursa üretimi bitir ve sayacı sıfırla
+                    building.TrainingTimer = 0f;
+                    building.IsTraining = false;
+                }
             }
         }
 
@@ -227,11 +232,21 @@ namespace RTS.Simulation.Systems
             else building.TargetUnitID = -1;
         }
 
-        public static void SpawnUnit(SimWorldState world, int2 basePos, SimUnitType type, int playerID)
+        public static bool SpawnUnit(SimWorldState world, int2 basePos, SimUnitType type, int playerID)
         {
-            if (!SimResourceSystem.HasPopulationSpace(world, playerID)) return;
-            int2? spawnPos = SimGridSystem.FindWalkableNeighbor(world, basePos);
-            if (spawnPos == null) return;
+            if (!SimResourceSystem.HasPopulationSpace(world, playerID)) return false;
+
+            // ESKİ YÖNTEM: Sadece bitişiğe bakıyordu.
+            // int2? spawnPos = SimGridSystem.FindWalkableNeighbor(world, basePos);
+
+            // YENİ YÖNTEM: Spiral Arama (4 birim yarıçapa kadar boş yer arar)
+            int2? spawnPos = FindFreeSpawnSpot(world, basePos, 4);
+
+            if (spawnPos == null)
+            {
+                // Etraf tamamen kapalı, doğacak yer yok!
+                return false;
+            }
 
             SimUnitData newUnit = new SimUnitData
             {
@@ -248,9 +263,49 @@ namespace RTS.Simulation.Systems
             };
             newUnit.Health = newUnit.MaxHealth;
             world.Units.Add(newUnit.ID, newUnit);
+
+            // Grid'i güncelle
             world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = newUnit.ID;
+
             SimResourceSystem.ModifyPopulation(world, playerID, 1);
             OnUnitCreated?.Invoke(newUnit);
+
+            return true;
+        }
+
+        // --- YENİ EKLENEN YARDIMCI FONKSİYON ---
+        private static int2? FindFreeSpawnSpot(SimWorldState world, int2 center, int maxRadius)
+        {
+            // 1. Önce hızlıca bitişiklere bak (Eski yöntem, performans için)
+            int2? simpleCheck = SimGridSystem.FindWalkableNeighbor(world, center);
+            if (simpleCheck.HasValue) return simpleCheck;
+
+            // 2. Eğer oralar doluysa dışa doğru genişleyerek (Spiral) ara
+            for (int r = 2; r <= maxRadius; r++)
+            {
+                // Kare şeklinde genişleyen çerçeve
+                for (int x = -r; x <= r; x++)
+                {
+                    for (int y = -r; y <= r; y++)
+                    {
+                        // Sadece çerçevenin kenarlarına bak (içini zaten önceki döngüde baktık)
+                        if (Mathf.Abs(x) != r && Mathf.Abs(y) != r) continue;
+
+                        int2 checkPos = center + new int2(x, y);
+
+                        if (world.Map.IsInBounds(checkPos))
+                        {
+                            var node = world.Map.Grid[checkPos.x, checkPos.y];
+                            // Yürünebilir mi ve üzerinde kimse yok mu?
+                            if (node.IsWalkable && node.OccupantID == -1)
+                            {
+                                return checkPos;
+                            }
+                        }
+                    }
+                }
+            }
+            return null; // Hiçbir yerde boşluk yok
         }
 
         private static SimUnitData FindNearestEnemy(SimWorldState world, int2 towerPos, float range, int myPlayerID)

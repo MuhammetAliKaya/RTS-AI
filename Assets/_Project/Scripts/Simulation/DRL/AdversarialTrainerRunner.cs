@@ -13,6 +13,13 @@ public enum AIDifficulty
     Aggressive
 }
 
+public enum AIOpponentType
+{
+    Balanced, // SimpleMacroAI
+    Rusher,   // RusherAI
+    Turtle    // TurtleAI
+}
+
 public class AdversarialTrainerRunner : MonoBehaviour
 {
     [Header("Ayarlar")]
@@ -42,6 +49,9 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     [Header("Rakip Ayarları")]
     public bool UseMacroAI = true;
+
+    [Header("PARALEL EĞİTİM AYARI")]
+    public AIOpponentType SelectedBotType = AIOpponentType.Balanced;
     public AIDifficulty EnemyDifficulty = AIDifficulty.Passive;
 
     // SİSTEMLER
@@ -63,7 +73,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private int _lastStone = 0;
     private int _lastWorkerCount = 0;
 
-    private SimpleMacroAI _enemyAI;
+    private IMacroAI _enemyAI;
     private int _currentStep = 0;
     private bool _gameEnded = false;
 
@@ -308,8 +318,11 @@ public class AdversarialTrainerRunner : MonoBehaviour
         }
         GenerateMap(finalSeed);
 
+        Debug.Log("gameObject.name" + gameObject.name);
+
         if (gameObject.name == AllowedAgentName)
         {
+            Debug.Log("here");
             SimGameContext.ActiveWorld = _world;
         }
 
@@ -359,8 +372,27 @@ public class AdversarialTrainerRunner : MonoBehaviour
             Orchestrator.Setup(_world, _gridSys, _unitSys, _buildSys, this);
         }
 
-        if (UseMacroAI) _enemyAI = new SimpleMacroAI(_world, 2, difficultyLevel);
-        else _enemyAI = null;
+        if (UseMacroAI)
+        {
+            switch (SelectedBotType)
+            {
+                case AIOpponentType.Rusher:
+                    _enemyAI = new RusherAI(_world, 2);
+                    break;
+                case AIOpponentType.Turtle:
+                    _enemyAI = new TurtleAI(_world, 2);
+                    break;
+                case AIOpponentType.Balanced:
+                default:
+                    // Eski SimpleMacroAI
+                    _enemyAI = new SimpleMacroAI(_world, 2, 1.0f);
+                    break;
+            }
+        }
+        else
+        {
+            _enemyAI = null;
+        }
 
         if (Visualizer != null) Visualizer.Initialize(_world);
 
