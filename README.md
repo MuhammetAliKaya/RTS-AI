@@ -214,7 +214,7 @@ game logic but rather the synchronization constraints inherent in the socket-bas
 communication between the Unity ML-Agents environment and the Python API.
 Consequently, the hardware utilization remained balanced, ensuring effective headless
 training without the need for industrial-scale infrastructure.
-![alt text](table1.PNG)
+![alt text](Images/table1.PNG)
 
 ### 5.2. Training Metrics
 
@@ -230,7 +230,7 @@ drastically improved survival capabilities. Notably, the introduction of the GAI
 provided a significant "jump-start" to the learning curve. Unlike pure reinforcement learning
 runs which often plateaued early due to sparse rewards, the runs augmented with imitation learning showed a steeper initial ascent in average reward, suggesting that the agent quickly
 internalized the basic mechanics of the game from the expert demonstrations.
-![alt text](entropy.PNG)
+![alt text](Images/entropy.PNG)
 
 ### 5.3. Competitor Analysis and Win-Rates
 
@@ -245,7 +245,7 @@ that high-level micro-management remains a challenge. Additionally, the agent st
 against Turtle (34.92%) and WorkerRush (34.59%), indicating current limitations in breaking
 heavily fortified defensive lines or reacting to the extreme speed of coordinated worker-only
 attacks within the first few seconds of a match.
-![alt text](table2.PNG)
+![alt text](Images/table2.PNG)
 
 
 ## 6. Strategic Behavior Analysis
@@ -265,7 +265,7 @@ agent learned to achieve victories with fewer but more effective units rather th
 accumulation. Furthermore, the agent adopted a "Hybrid Aggression" strategy, repurposing
 workers as "combat-workers" to pressure opponents early, thereby minimizing the ramp-up
 time required for a standard economy.
-![alt text](obtained_resource.png)
+![alt text](Images/obtained_resource.png)
 
 
 ### 6.2. Tower and Fortification Usage
@@ -282,7 +282,7 @@ restricting opponent movement and accelerating victory conditions through aggres
 territorial encroachment.. This proactive terraforming of the battlefield suggests that the
 spatial tensor input allowed the ResNet component to identify and exploit the topological
 features of the map for strategic advantage.
-![alt text](tower_construction_per_game.png)
+![alt text](Images/tower_construction_per_game.png)
 
 
 ### 6.3. Spatial Activity Distribution
@@ -301,7 +301,7 @@ hierarchical agent’s activity is concentrated along optimal pathing routes and
 intersections. This concentrated activity proves that the agent is not merely reacting to
 immediate threats but is actively asserting map control to deny resources and vision to the
 opponent.
-![alt text](Heatmap.png)
+![alt text](Images/Heatmap.png)
 
 
 
