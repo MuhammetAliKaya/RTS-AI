@@ -5,15 +5,13 @@ using RTS.Simulation.Data;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Core;
 using Unity.MLAgents;
+using RTS.Simulation.AI;
 
 public class DRLSimRunner : MonoBehaviour
 {
     [Header("AI Ayarları")]
     public RTSAgent Agent;
     public bool TrainMode = true;
-    [Range(0, 4)]
-    public int DebugLevel = 4;
-
     public int MaxSteps = 5000;
 
     [Header("Görselleştirme")]
@@ -29,26 +27,26 @@ public class DRLSimRunner : MonoBehaviour
     private int _currentStep = 0;
     private bool _isInitialized = false;
 
-    // --- SAYAÇLAR ---
+    // --- ÖDÜL SAYAÇLARI ---
     private int _lastWood = 0;
     private int _lastStone = 0;
     private int _lastMeat = 0;
     private int _lastWorkerCount = 0;
     private int _lastSoldierCount = 0;
-
-    // Bina Sayaçları
-    private int _lastHouseCount = 0;
     private int _lastBarracksCount = 0;
-    // Diğer bina sayaçlarını basitleştirdik, gerekirse eklersin
 
     private float _decisionTimer = 0f;
     private float _currentLevel = 0;
 
+    private IMacroAI _enemyAI; // Rakip bot (Player 2)
+
     private void Start()
     {
+        // Ajan ve Runner bağlantısını kur
         if (Agent == null) Agent = GetComponentInChildren<RTSAgent>();
         if (Agent != null) Agent.Runner = this;
 
+        // Performans ayarları
         Application.targetFrameRate = !TrainMode ? 60 : -1;
         Time.timeScale = !TrainMode ? 1.0f : 20.0f;
 
@@ -57,16 +55,24 @@ public class DRLSimRunner : MonoBehaviour
 
     private void Update()
     {
-        if (!TrainMode) ManualUpdate();
+        // EĞİTİM MODUNDA DA ÇALIŞMALI: ManualUpdate simülasyonun kalbidir.
+        ManualUpdate();
     }
 
     public void ManualUpdate()
     {
         if (!_isInitialized) return;
 
+        // Eğitimde sabit, normal oyunda değişken delta time
         float dt = TrainMode ? 0.1f : Time.deltaTime;
 
-        // Karar Mekanizması
+        // 1. DÜŞMANI (BOT) GÜNCELLE
+        if (_enemyAI != null)
+        {
+            _enemyAI.Update(dt);
+        }
+
+        // 2. KARAR MEKANİZMASI (Sadece monolitik tek beyin için)
         bool requestDecision = true;
         if (!TrainMode)
         {
@@ -75,157 +81,168 @@ public class DRLSimRunner : MonoBehaviour
             else _decisionTimer = 0f;
         }
 
-        if (requestDecision && Agent != null) Agent.RequestDecision();
-
-        // Simülasyonu İlerlet
-        _buildSys.UpdateAllBuildings(dt);
-
-        var unitIds = _world.Units.Keys.ToList();
-        foreach (var uid in unitIds)
+        if (requestDecision && Agent != null)
         {
-            if (_world.Units.TryGetValue(uid, out SimUnitData unit))
-                _unitSys.UpdateUnit(unit, dt);
+            Agent.RequestDecision();
         }
 
+        // 3. SİSTEMLERİ İLERLET
+        _buildSys.UpdateAllBuildings(dt);
+        _unitSys.UpdateAllUnits(dt); // Instance tabanlı UpdateAllUnits kullanılıyor
+
+        // 4. ANALİZ VE BİTİŞ KONTROLÜ
         CalculateDenseRewards();
         CheckWinCondition();
-        _currentStep++;
 
+        _currentStep++;
         if (_currentStep >= MaxSteps)
         {
-            EndGame(0); // Zaman doldu
+            EndGame(0); // Zaman dolduğunda beraberlik/0 ödül
         }
     }
 
     public void ResetSimulation()
     {
-        if (TrainMode && Academy.IsInitialized)
-        {
-            _currentLevel = Academy.Instance.EnvironmentParameters.GetWithDefault("rts_level", 0.0f);
-        }
-
+        // A. SİSTEMLERİ VE DÜNYAYI BAŞLAT
         _world = new SimWorldState(20, 20);
-        GenerateRTSMap();
-
+        if (!_world.Players.ContainsKey(2))
+        {
+            _world.Players.Add(2, new SimPlayerData { PlayerID = 2, MaxPopulation = 0 });
+        }
         _gridSys = new SimGridSystem(_world);
         _unitSys = new SimUnitSystem(_world);
         _buildSys = new SimBuildingSystem(_world);
         _resSys = new SimResourceSystem(_world);
 
-        if (Agent != null) Agent.Setup(_world, _gridSys, _unitSys, _buildSys);
-
-        // Rush eğitimi için bol kaynak verelim
-        _resSys.AddResource(1, SimResourceType.Wood, 2000);
-        _resSys.AddResource(1, SimResourceType.Stone, 500); // Kışla için lazım
-        _resSys.AddResource(1, SimResourceType.Meat, 1000); // İşçi ve Asker için
-
+        // B. KRİTİK: NÜFUS LİMİTLERİNİ İŞÇİLERDEN ÖNCE AYARLA
+        // Bu adım eksik olursa SpawnUnit "yer yok" diyerek işçi oluşturmaz.
         _resSys.IncreaseMaxPopulation(1, 10);
-        SetupBase(1, new int2(2, 2));
+        _resSys.IncreaseMaxPopulation(2, 10);
 
-        // Değişkenleri Sıfırla
+        // C. BAŞLANGIÇ KAYNAKLARI (Her iki taraf için)
+        _resSys.AddResource(1, SimResourceType.Wood, 500);
+        _resSys.AddResource(1, SimResourceType.Stone, 500);
+        _resSys.AddResource(1, SimResourceType.Meat, 500);
+
+        _resSys.AddResource(2, SimResourceType.Wood, 500);
+        _resSys.AddResource(2, SimResourceType.Stone, 500);
+        _resSys.AddResource(2, SimResourceType.Meat, 500);
+
+        // D. HARİTAYI OLUŞTUR
+        GenerateRTSMap();
+
+        // E. ÜSLERİ VE İLK İŞÇİLERİ KUR
+        SetupBase(1, new int2(2, 2));         // Oyuncu (Player 1)
+        SetupEnemyBase(new int2(17, 17));      // Bot (Player 2)
+
+        // F. BOT VE AJAN KURULUMU
+        if (TrainMode && Academy.IsInitialized)
+        {
+            _currentLevel = Academy.Instance.EnvironmentParameters.GetWithDefault("rts_level", 4.0f);
+        }
+
+        // Botu (SimpleMacroAI) Constructor ile oluşturuyoruz
+        _enemyAI = new SimpleMacroAI(_world, 2, _currentLevel);
+
+        if (Agent != null)
+        {
+            Agent.Setup(_world, _gridSys, _unitSys, _buildSys);
+        }
+
+        // G. SAYAÇLARI VE DURUMU SIFIRLA
         _currentStep = 0;
         _isInitialized = true;
+        ResetCounters();
 
+        // Görselleştirme
+        if (Visualizer != null) Visualizer.Initialize(_world);
+    }
+
+    private void ResetCounters()
+    {
         var p = SimResourceSystem.GetPlayer(_world, 1);
         _lastWood = p.Wood;
         _lastStone = p.Stone;
         _lastMeat = p.Meat;
         _lastWorkerCount = 1;
         _lastSoldierCount = 0;
-        _lastHouseCount = 0;
         _lastBarracksCount = 0;
-
-        if (Visualizer != null) Visualizer.Initialize(_world);
-    }
-
-    private void CheckWinCondition()
-    {
-        // 1. KAZANMA KOŞULU: Düşman üssünü yıkmak
-        bool enemyBaseExists = _world.Buildings.Values.Any(b => b.PlayerID != 1 && b.Type == SimBuildingType.Base);
-
-        if (!enemyBaseExists)
-        {
-            // JACKPOT! Büyük ödül
-            EndGame(50.0f);
-            return;
-        }
-
-        // 2. KAYBETME KOŞULU: Kendi üssünün yıkılması
-        bool myBaseExists = _world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
-        if (!myBaseExists)
-        {
-            EndGame(-1.0f);
-            return;
-        }
     }
 
     private void CalculateDenseRewards()
     {
         var player = SimResourceSystem.GetPlayer(_world, 1);
-        if (player == null) return;
+        if (player == null || Agent == null) return;
 
-        // 1. KAYNAK TOPLAMA (Mevcut mantık)
+        // 1. Kaynak Toplama Ödülü (0.0001)
+        int deltaWood = player.Wood - _lastWood;
+        int deltaStone = player.Stone - _lastStone;
         int deltaMeat = player.Meat - _lastMeat;
+
+        if (deltaWood > 0) Agent.AddReward(deltaWood * 0.0001f);
+        if (deltaStone > 0) Agent.AddReward(deltaStone * 0.0001f);
         if (deltaMeat > 0) Agent.AddReward(deltaMeat * 0.0001f);
-        _lastMeat = player.Meat;
 
-        // 2. BİNA TEŞVİĞİ (Mevcut mantık)
-        int curBarracks = 0;
-        foreach (var b in _world.Buildings.Values)
-        {
-            if (b.PlayerID == 1 && b.IsConstructed && b.Type == SimBuildingType.Barracks)
-                curBarracks++;
-        }
+        _lastWood = player.Wood; _lastStone = player.Stone; _lastMeat = player.Meat;
 
-        if (curBarracks > _lastBarracksCount)
-        {
-            float reward = (_lastBarracksCount == 0) ? 5.0f : 1.0f;
-            Agent.AddReward(reward);
-        }
-        _lastBarracksCount = curBarracks;
+        // 2. Birim ve Bina Üretimi
+        int currentWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker);
+        if (currentWorkers > _lastWorkerCount) Agent.AddReward(0.1f);
+        _lastWorkerCount = currentWorkers;
 
-        // 3. ASKER ÜRETİMİ (Mevcut mantık)
         int currentSoldiers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Soldier);
-        if (currentSoldiers > _lastSoldierCount)
-        {
-            Agent.AddReward(1.0f);
-        }
+        if (currentSoldiers > _lastSoldierCount) Agent.AddReward(0.1f);
         _lastSoldierCount = currentSoldiers;
 
-        // --- YENİ EKLENEN KISIM ---
-        // 4. TEMBELLİK CEZASI (IDLE WORKER PENALTY)
-        int idleWorkers = _world.Units.Values.Count(u =>
-            u.PlayerID == 1 &&
-            u.UnitType == SimUnitType.Worker &&
-            u.State == SimTaskType.Idle
-        );
+        int barracksCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.Type == SimBuildingType.Barracks && b.IsConstructed);
+        if (barracksCount > _lastBarracksCount) Agent.AddReward(2.0f);
+        _lastBarracksCount = barracksCount;
 
-        if (idleWorkers > 0)
-        {
-            // Her boş işçi için adım başına ceza.
-            // Örneğin 5 işçi boşsa: 5 * -0.002 = -0.01 ceza yer.
-            // Bu, ajanı sürekli "Topla" (Action 7) emri vermeye zorlar.
-            Agent.AddReward(-0.02f * idleWorkers);
-        }
-        // ---------------------------
+        // 3. Tembellik Cezası (-0.001)
+        int idleWorkers = _world.Units.Values.Count(u => u.PlayerID == 1 && u.UnitType == SimUnitType.Worker && u.State == SimTaskType.Idle);
+        if (idleWorkers > 0) Agent.AddReward(-0.001f * idleWorkers);
 
-        // Varoluş cezası (Hızlı bitirmeye zorla)
+        // Varoluş Cezası (Zamanla yarış için)
         Agent.AddReward(-0.0005f);
+    }
+
+    private void CheckWinCondition()
+    {
+        bool enemyBaseExists = _world.Buildings.Values.Any(b => b.PlayerID == 2 && b.Type == SimBuildingType.Base);
+        if (!enemyBaseExists)
+        {
+            EndGame(50.0f); // Galibiyet
+            return;
+        }
+
+        bool myBaseExists = _world.Buildings.Values.Any(b => b.PlayerID == 1 && b.Type == SimBuildingType.Base);
+        if (!myBaseExists)
+        {
+            EndGame(-1.0f); // Mağlubiyet
+            return;
+        }
     }
 
     private void EndGame(float reward)
     {
         if (Agent != null)
         {
-            Agent.AddReward(reward);
+            // 1. Galibiyet durumunu belirle (1: Galibiyet, 0: Mağlubiyet/Beraberlik)
+            float winStat = (reward > 0) ? 1.0f : 0.0f;
+
+            // 2. TensorBoard'a gönder
+            Unity.MLAgents.Academy.Instance.StatsRecorder.Add("Custom/WinRate", winStat);
+
+            // Mevcut ödül kodları
+            float finalReward = (reward > 0) ? 250.0f : (reward < 0 ? -250.0f : 0f);
+            Agent.AddReward(finalReward);
             Agent.EndEpisode();
         }
+        ResetSimulation();
     }
 
-    // --- HARİTA OLUŞTURMA ---
     private void GenerateRTSMap()
     {
-        // Basit bir harita: Düz çim, ortaya biraz engel
         for (int x = 0; x < 20; x++)
         {
             for (int y = 0; y < 20; y++)
@@ -237,21 +254,55 @@ public class DRLSimRunner : MonoBehaviour
             }
         }
 
-        // Düşman Üssü (Sağ Üst Köşe - Uzak)
-        SetupEnemyBase(new int2(17, 17));
+        SpawnResourceOnMap(SimResourceType.Wood, 15);
+        SpawnResourceOnMap(SimResourceType.Stone, 10);
+        SpawnResourceOnMap(SimResourceType.Meat, 10);
+    }
+
+    private void SpawnResourceOnMap(SimResourceType type, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            int rx = UnityEngine.Random.Range(2, 18);
+            int ry = UnityEngine.Random.Range(2, 18);
+            int2 pos = new int2(rx, ry);
+
+            if (SimGridSystem.IsWalkable(_world, pos))
+            {
+                var res = new SimResourceData
+                {
+                    ID = _world.NextID(),
+                    Type = type,
+                    GridPosition = pos,
+                    AmountRemaining = 500
+                };
+                _world.Resources.Add(res.ID, res);
+                _world.Map.Grid[rx, ry].OccupantID = res.ID;
+                _world.Map.Grid[rx, ry].IsWalkable = false;
+
+                if (type == SimResourceType.Wood) _world.Map.Grid[rx, ry].Type = SimTileType.Forest;
+                else if (type == SimResourceType.Stone) _world.Map.Grid[rx, ry].Type = SimTileType.Stone;
+                else _world.Map.Grid[rx, ry].Type = SimTileType.MeatBush;
+            }
+        }
     }
 
     private void SetupBase(int playerID, int2 pos)
     {
-        var baseB = SpawnBuilding(playerID, SimBuildingType.Base, pos);
+        SpawnBuilding(playerID, SimBuildingType.Base, pos);
         int2? workerPos = SimGridSystem.FindWalkableNeighbor(_world, pos);
-        if (workerPos.HasValue) _buildSys.SpawnUnit(workerPos.Value, SimUnitType.Worker, playerID);
+        if (workerPos.HasValue)
+            _buildSys.SpawnUnit(workerPos.Value, SimUnitType.Worker, playerID);
     }
 
     private void SetupEnemyBase(int2 pos)
     {
-        // Düşman üssü (Player 2) - Sadece bir bina, savunmasız (Başlangıç için)
         SpawnBuilding(2, SimBuildingType.Base, pos);
+        int2? workerPos = SimGridSystem.FindWalkableNeighbor(_world, pos);
+        if (workerPos.HasValue)
+        {
+            _buildSys.SpawnUnit(workerPos.Value, SimUnitType.Worker, 2);
+        }
     }
 
     private SimBuildingData SpawnBuilding(int pid, SimBuildingType type, int2 pos)
@@ -262,7 +313,7 @@ public class DRLSimRunner : MonoBehaviour
             PlayerID = pid,
             Type = type,
             GridPosition = pos,
-            IsConstructed = true,
+            IsConstructed = true, // Başlangıç binaları kurulu gelmeli
             ConstructionProgress = 100f,
             Health = 500,
             MaxHealth = 500

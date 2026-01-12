@@ -3,6 +3,7 @@ using RTS.Simulation.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace RTS.Simulation.Systems
 {
@@ -208,6 +209,8 @@ namespace RTS.Simulation.Systems
             {
                 if (unit.TargetID != -1)
                 {
+                    Debug.Log("// TOPLA UpdateMovement VARDIK");
+
                     if (world.Resources.ContainsKey(unit.TargetID)) unit.State = SimTaskType.Gathering;
                     else if (world.Units.TryGetValue(unit.TargetID, out SimUnitData targetUnit))
                     {
@@ -255,6 +258,7 @@ namespace RTS.Simulation.Systems
             float distSq = SimGridSystem.GetDistanceSq(unit.GridPosition, res.GridPosition);
             if (distSq > 2.1f) // Yan yana (çapraz dahil) maksimum mesafe ~2 birim karedir.
             {
+
                 // Yanında değilsek oraya yürü
                 if (TryAssignGatherTask(unit, res, world))
                 {
@@ -267,6 +271,10 @@ namespace RTS.Simulation.Systems
                     unit.State = SimTaskType.Idle;
                     return;
                 }
+            }
+            else
+            {
+                Debug.Log("// TOPLA UpdateMovement VARDIK YANINDAYIZ");
             }
             // ----------------------------------------------------
 
@@ -353,9 +361,12 @@ namespace RTS.Simulation.Systems
 
         public static bool TryAssignGatherTask(SimUnitData unit, SimResourceData targetRes, SimWorldState world)
         {
+            Debug.Log("// TOPLA TryAssignGatherTask");
             int2? standPos = SimGridSystem.FindWalkableNeighbor(world, targetRes.GridPosition);
             if (standPos.HasValue)
             {
+                Debug.Log("// TOPLA standPos.HasValue");
+
                 unit.Path = SimGridSystem.FindPath(world, unit.GridPosition, standPos.Value);
                 unit.TargetID = targetRes.ID;
                 if (unit.Path != null && unit.Path.Count > 0) unit.State = SimTaskType.Moving;

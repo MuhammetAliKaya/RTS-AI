@@ -30,16 +30,20 @@ public class TrainingManager : MonoBehaviour
         // 1 Karede (Frame) N kez simülasyonu ilerlet
         for (int i = 0; i < StepsPerFrame; i++)
         {
-            // 1. Tüm oyunları 1 tık (tick) ilerlet
-            foreach (var runner in _runners)
+            if (i % 4 == 0)
             {
-                runner.ManualUpdate();
-            }
+                // 1. Tüm oyunları 1 tık (tick) ilerlet
+                foreach (var runner in _runners)
+                {
+                    runner.ManualUpdate();
+                }
 
-            // 2. Tüm ajanlar kararını verdiyse, topluca Python'a yolla ve cevap bekle
-            if (Academy.IsInitialized)
-            {
-                Academy.Instance.EnvironmentStep();
+                // 2. Tüm ajanlar kararını verdiyse, topluca Python'a yolla ve cevap bekle
+                if (Academy.IsInitialized)
+                {
+                    Academy.Instance.EnvironmentStep();
+                }
+
             }
         }
     }

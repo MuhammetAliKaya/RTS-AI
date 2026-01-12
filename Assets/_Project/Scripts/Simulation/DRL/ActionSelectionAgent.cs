@@ -42,8 +42,12 @@ public class ActionSelectionAgent : Agent
         // Gözlem 1: Seçilen Birim Türü (Context)
         // Orkestratörden hangi birimin seçildiğini öğreniyoruz.
         int selectedIndex = _orchestrator.SelectedSourceIndex;
-        float contextObs = _translator.GetEncodedTypeAt(selectedIndex);
-        sensor.AddObservation(contextObs);
+        float[] typeObservations = _translator.GetOneHotEncodedTypeAt(selectedIndex);
+
+        foreach (float obs in typeObservations)
+        {
+            sensor.AddObservation(obs); // 1 yerine 5 gözlem eklenmiş olur
+        }
 
         // Gözlem 2: Kaynaklar (Maliyet hesabı yapabilmesi için)
         if (_world.Players.ContainsKey(_orchestrator.MyPlayerID))
@@ -73,7 +77,7 @@ public class ActionSelectionAgent : Agent
         // --- DÜZELTİLMESİ GEREKEN KISIM BURASI ---
         if (sourceIndex == -1)
         {
-            actionMask.SetActionEnabled(0, ACT_WAIT, true); // Bekle (0) her zaman açık olsun
+            actionMask.SetActionEnabled(0, ACT_WAIT, false); // Bekle (0) her zaman açık olsun
 
             // HATA ÇÖZÜMÜ: Döngüyü 50 yerine 13 ile sınırla.
             // Branch Size ayarın 13 olduğu için sadece 1'den 12'ye kadar olanları kapatmalısın.
@@ -110,12 +114,24 @@ public class ActionSelectionAgent : Agent
             // --- YAPAMAYACAKLARI ---
             actionMask.SetActionEnabled(0, ACT_TRAIN_WORKER, false);  // Üretim yapamaz
             actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
-            actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, false);  // İşçi saldırmaz (Tercihen)
+            actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, true);  // İşçi saldırmaz (Tercihen)
 
             // --- YAPABİLECEKLERİ (Temel) ---
-            actionMask.SetActionEnabled(0, ACT_MOVE_TO, true);
-            actionMask.SetActionEnabled(0, ACT_GATHER_RES, true);
-            actionMask.SetActionEnabled(0, ACT_WAIT, true);
+            actionMask.SetActionEnabled(0, ACT_MOVE_TO, false);
+            // actionMask.SetActionEnabled(0, ACT_GATHER_RES, true);
+            // actionMask.SetActionEnabled(0, ACT_WAIT, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_FARM, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_WALL, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+            // actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, false);
+
+
 
             // --- İNŞAAT (Maliyet Kontrolü) ---
             actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, CanAfford(SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT));
@@ -148,8 +164,8 @@ public class ActionSelectionAgent : Agent
 
             // --- YAPABİLECEKLERİ ---
             actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, true);
-            actionMask.SetActionEnabled(0, ACT_MOVE_TO, true);
-            actionMask.SetActionEnabled(0, ACT_WAIT, true);
+            actionMask.SetActionEnabled(0, ACT_MOVE_TO, false);
+            actionMask.SetActionEnabled(0, ACT_WAIT, false);
         }
         // ---------------------------------------------------------
         // SENARYO 3: BİNA (BUILDING)
@@ -192,7 +208,7 @@ public class ActionSelectionAgent : Agent
                 actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
             }
 
-            actionMask.SetActionEnabled(0, ACT_WAIT, true); // Bekle her zaman serbest
+            actionMask.SetActionEnabled(0, ACT_WAIT, false); // Bekle her zaman serbest
         }
         else
         {

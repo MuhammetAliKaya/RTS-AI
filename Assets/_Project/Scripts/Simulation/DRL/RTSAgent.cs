@@ -91,7 +91,7 @@ public class RTSAgent : Agent
 
     public void Setup(SimWorldState world, SimGridSystem gridSys, SimUnitSystem unitSys, SimBuildingSystem buildSys)
     {
-        UnbindEvents();
+        // UnbindEvents();
 
         _world = world;
         _gridSystem = gridSys;
@@ -110,13 +110,13 @@ public class RTSAgent : Agent
         _translator = new DRLActionTranslator(_world, _unitSystem, _buildingSystem, _gridSystem, MyPlayerID);
         // ------------------------------------------
 
-        RebindEvents();
+        // RebindEvents();
     }
     // --- EVENT YÖNETİMİ ---
     protected override void OnEnable()
     {
         base.OnEnable();
-        RebindEvents();
+        // RebindEvents();
     }
 
     protected override void OnDisable()
@@ -131,42 +131,42 @@ public class RTSAgent : Agent
         }
     }
 
-    private void RebindEvents()
-    {
-        UnbindEvents();
-        if (_unitSystem != null)
-        {
-            _unitSystem.OnUnitAttackedUnit += HandleUnitAttackedUnit;
-            _unitSystem.OnUnitAttackedBuilding += HandleUnitAttackedBuilding;
-            _unitSystem.OnUnitKilledEnemy += HandleUnitKilledEnemy;
-            _unitSystem.OnUnitDestroyedBuilding += HandleUnitDestroyedBuilding;
+    // private void RebindEvents()
+    // {
+    //     UnbindEvents();
+    //     if (_unitSystem != null)
+    //     {
+    //         _unitSystem.OnUnitAttackedUnit += HandleUnitAttackedUnit;
+    //         _unitSystem.OnUnitAttackedBuilding += HandleUnitAttackedBuilding;
+    //         _unitSystem.OnUnitKilledEnemy += HandleUnitKilledEnemy;
+    //         _unitSystem.OnUnitDestroyedBuilding += HandleUnitDestroyedBuilding;
 
 
-        }
-        SimResourceSystem.OnResourceGathered += HandleResourceGathered;
-        SimBuildingSystem.OnBuildingFinished += HandleBuildingCompleted;
-        SimBuildingSystem.OnUnitCreated += HandleUnitCreated;
-    }
+    //     }
+    //     SimResourceSystem.OnResourceGathered += HandleResourceGathered;
+    //     SimBuildingSystem.OnBuildingFinished += HandleBuildingCompleted;
+    //     // SimBuildingSystem.OnUnitCreated += HandleUnitCreated;
+    // }
 
-    private void UnbindEvents()
-    {
-        if (_unitSystem != null)
-        {
-            _unitSystem.OnUnitAttackedUnit -= HandleUnitAttackedUnit;
-            _unitSystem.OnUnitAttackedBuilding -= HandleUnitAttackedBuilding;
-            _unitSystem.OnUnitKilledEnemy -= HandleUnitKilledEnemy;
-            _unitSystem.OnUnitDestroyedBuilding -= HandleUnitDestroyedBuilding;
-        }
+    // private void UnbindEvents()
+    // {
+    //     if (_unitSystem != null)
+    //     {
+    //         _unitSystem.OnUnitAttackedUnit -= HandleUnitAttackedUnit;
+    //         _unitSystem.OnUnitAttackedBuilding -= HandleUnitAttackedBuilding;
+    //         _unitSystem.OnUnitKilledEnemy -= HandleUnitKilledEnemy;
+    //         _unitSystem.OnUnitDestroyedBuilding -= HandleUnitDestroyedBuilding;
+    //     }
 
-        // Statik eventlerden çık
-        SimResourceSystem.OnResourceGathered -= HandleResourceGathered;
-        SimBuildingSystem.OnBuildingFinished -= HandleBuildingCompleted;
-        SimBuildingSystem.OnUnitCreated -= HandleUnitCreated;
-    }
-    // --- ÖDÜL FONKSİYONLARI ---
+    //     // Statik eventlerden çık
+    //     SimResourceSystem.OnResourceGathered -= HandleResourceGathered;
+    //     SimBuildingSystem.OnBuildingFinished -= HandleBuildingCompleted;
+    //     // SimBuildingSystem.OnUnitCreated -= HandleUnitCreated;
+    // }
+    // // --- ÖDÜL FONKSİYONLARI ---
     private void HandleUnitAttackedUnit(SimUnitData attacker, SimUnitData victim, float damage)
     {
-        if (attacker.PlayerID == MyPlayerID) AddReward(damage * 0.002f);
+        // if (attacker.PlayerID == MyPlayerID) AddReward(damage * 0.002f);
     }
 
     private void HandleUnitAttackedBuilding(SimUnitData attacker, SimBuildingData building, float damage)
@@ -174,13 +174,13 @@ public class RTSAgent : Agent
         if (attacker.PlayerID == MyPlayerID)
         {
             float multiplier = (building.Type == SimBuildingType.Base) ? 0.05f : 0.002f;
-            AddReward(damage * multiplier);
+            // AddReward(damage * multiplier);
         }
     }
 
     private void HandleUnitKilledEnemy(SimUnitData attacker, SimUnitData victim)
     {
-        if (attacker.PlayerID == 1) AddReward(1.0f);
+        // if (attacker.PlayerID == 1) AddReward(1.0f);
     }
 
     private void HandleUnitDestroyedBuilding(SimUnitData attacker, SimBuildingData building)
@@ -189,10 +189,10 @@ public class RTSAgent : Agent
         {
             if (building.Type == SimBuildingType.Base)
             {
-                AddReward(100.0f);
+                // AddReward(100.0f);
                 EndEpisode();
             }
-            else AddReward(2.0f);
+            // else AddReward(2.0f);
         }
     }
 
@@ -211,6 +211,7 @@ public class RTSAgent : Agent
 
     public override void OnEpisodeBegin()
     {
+
         // --- GÜNCELLENMİŞ HALİ (SelfPlay Desteği) ---
         if (SelfPlayRunner != null)
         {
@@ -235,6 +236,7 @@ public class RTSAgent : Agent
         _gatheredWood = 0;
         _gatheredStone = 0;
         _gatheredMeat = 0;
+        RequestDecision();
     }
     private float LogScale(int value, float anchor)
     {
@@ -337,7 +339,7 @@ public class RTSAgent : Agent
                     // Ciddi bir ceza ver ki gereksiz yere işçileri dürtmesin.
                     if (_selectedActionType != ACT_WAIT)
                     {
-                        AddReward(-0.5f); // "Rahat bırak şu işçiyi" cezası
+                        // AddReward(-0.5f); // "Rahat bırak şu işçiyi" cezası
                         if (ShowDebugLogs) Debug.Log("Toplayan işçi bölündü! Ceza verildi.");
                     }
                 }
@@ -349,7 +351,7 @@ public class RTSAgent : Agent
                 if (!success)
                 {
                     if (ShowDebugLogs) Debug.Log("maskelemeye rağmen hatalı işlem");
-                    AddReward(-0.01f); // Hata cezası (Maskelemeye rağmen olursa)
+                    // AddReward(-0.01f); // Hata cezası (Maskelemeye rağmen olursa)
                 }
 
                 // --- RESET ---
@@ -464,7 +466,7 @@ public class RTSAgent : Agent
                     actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
 
                     // Temel Aksiyonlar: HEPSİ AÇIK
-                    actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, false); // 10: Saldır
+                    actionMask.SetActionEnabled(0, ACT_ATTACK_ENEMY, true); // 10: Saldır
                     actionMask.SetActionEnabled(0, ACT_MOVE_TO, true);      // 11: Yürü
                     actionMask.SetActionEnabled(0, ACT_GATHER_RES, true);   // 12: Topla
 
@@ -572,20 +574,20 @@ public class RTSAgent : Agent
                 break;
         }
 
-        if (reward > 0) AddReward(reward);
+        // if (reward > 0) AddReward(reward);
     }
 
 
-    private void HandleUnitCreated(SimUnitData unit)
-    {
-        if (unit.PlayerID == MyPlayerID) // DÜZELTİLDİ
-        {
-            if (unit.UnitType == SimUnitType.Worker)
-                AddReward(0.2f); // İşçi basmak iyidir (Ekonomiyi büyütür)
-            else if (unit.UnitType == SimUnitType.Soldier)
-                AddReward(1f); // Asker basmak daha iyidir (Güvenlik)
-        }
-    }
+    // private void HandleUnitCreated(SimUnitData unit)
+    // {
+    //     if (unit.PlayerID == MyPlayerID) // DÜZELTİLDİ
+    //     {
+    //         if (unit.UnitType == SimUnitType.Worker)
+    //             // AddReward(0.2f); // İşçi basmak iyidir (Ekonomiyi büyütür)
+    //         else if (unit.UnitType == SimUnitType.Soldier)
+    //             // AddReward(1f); // Asker basmak daha iyidir (Güvenlik)
+    //     }
+    // }
 
     // 3. İNŞAAT ÖDÜLÜ
     // Nüfus ve Teknoloji gelişimi için.
@@ -629,7 +631,7 @@ public class RTSAgent : Agent
                 return;
             }
 
-            AddReward(reward);
+            // AddReward(reward);
             if (ShowDebugLogs)
                 Debug.Log($"[Reward] Building: {building.Type} | Count: {divisor} | Awarded: {reward:F4}");
         }

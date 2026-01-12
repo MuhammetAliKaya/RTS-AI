@@ -313,7 +313,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 5
+    VectorObservationSize: 9
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -361,7 +361,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Record: 1
   NumStepsToRecord: 0
-  DemonstrationName: action_sel_rec_1
+  DemonstrationName: action_sel_rec_4
   DemonstrationDirectory: Assets/Demonstrations
 --- !u!1 &172824024
 GameObject:
@@ -399,6 +399,23 @@ MonoBehaviour:
   SelectedSourceIndex: -1
   SelectedActionType: 0
   IsHumanDemoMode: 1
+  CurrentMatchStats:
+    Opponent: 0
+    IsWin: 0
+    EpisodeID: 0
+    TotalWorkersCreated: 0
+    TotalSoldiersCreated: 0
+    TotalTowersBuilt: 0
+    TotalWoodGathered: 0
+    TotalStoneGathered: 0
+    TotalMeatGathered: 0
+    TotalWoodSpent: 0
+    TotalStoneSpent: 0
+    TotalMeatSpent: 0
+    SourceHeatmap: 
+    TargetHeatmap: 
+    MatchDuration: 0
+  IsWaitingForDecision: 0
 --- !u!4 &172824026
 Transform:
   m_ObjectHideFlags: 0
@@ -604,14 +621,20 @@ MonoBehaviour:
   MapSize: 20
   MaxSteps: 75000
   AllowedAgentName: AdvTrainerRunner
+  RecordInferenceToCSV: 1
   mapSeed: 12345
   useRandomSeed: 0
-  IsTrainingMode: 0
-  _simStepSize: 0.005
+  IsTrainingMode: 1
+  _simStepSize: 0.001
   _simStepCountPerFrame: 1
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
+  SelectedBotType: 0
   EnemyDifficulty: 2
+  ShowGUI: 1
+  ToggleKey: 103
+  GUIScale: 1.3
+  AgentDecisionTimeStep: 0.01
 --- !u!4 &204622059
 Transform:
   m_ObjectHideFlags: 0
@@ -678,7 +701,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Record: 1
   NumStepsToRecord: 0
-  DemonstrationName: unit_sel_rec_1
+  DemonstrationName: unit_sel_rec_4
   DemonstrationDirectory: Assets/Demonstrations
 --- !u!114 &338059960
 MonoBehaviour:
@@ -1572,8 +1595,8 @@ MonoBehaviour:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
   MaxStep: 0
-  Runner: {fileID: 0}
-  CombatRunner: {fileID: 775438145}
+  Runner: {fileID: 775438146}
+  CombatRunner: {fileID: 0}
   SelfPlayRunner: {fileID: 0}
   ShowDebugLogs: 1
   _overrideActionType: 0
@@ -1803,8 +1826,9 @@ GameObject:
   m_Component:
   - component: {fileID: 775438144}
   - component: {fileID: 775438145}
+  - component: {fileID: 775438146}
   m_Layer: 0
-  m_Name: AdversarialTrainerRunner
+  m_Name: DrlSimRunner
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1842,6 +1866,7 @@ MonoBehaviour:
   MapSize: 20
   MaxSteps: 75000
   AllowedAgentName: AdversarialTrainerRunner
+  RecordInferenceToCSV: 1
   mapSeed: 12345
   useRandomSeed: 0
   IsTrainingMode: 0
@@ -1849,7 +1874,28 @@ MonoBehaviour:
   _simStepCountPerFrame: 1
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
+  SelectedBotType: 0
   EnemyDifficulty: 2
+  ShowGUI: 1
+  ToggleKey: 103
+  GUIScale: 1.3
+  AgentDecisionTimeStep: 0.01
+--- !u!114 &775438146
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 775438143}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba3c62f16db38cd489f5471fb157379b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Agent: {fileID: 645419872}
+  TrainMode: 1
+  MaxSteps: 5000
+  Visualizer: {fileID: 1375291963}
 --- !u!1 &803310767
 GameObject:
   m_ObjectHideFlags: 0
@@ -5512,7 +5558,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 2
+    VectorObservationSize: 6
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -5559,7 +5605,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Record: 1
   NumStepsToRecord: 0
-  DemonstrationName: target_sel_rec_1
+  DemonstrationName: target_sel_rec_4
   DemonstrationDirectory: Assets/Demonstrations
 --- !u!1 &1981398960
 GameObject:

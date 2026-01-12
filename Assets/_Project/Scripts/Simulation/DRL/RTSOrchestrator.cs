@@ -2,6 +2,8 @@ using UnityEngine;
 using RTS.Simulation.Core;
 using RTS.Simulation.Systems;
 using RTS.Simulation.Data;
+using System.Diagnostics; // En üste ekleyin
+using System.Linq;
 
 public class RTSOrchestrator : MonoBehaviour
 {
@@ -21,6 +23,8 @@ public class RTSOrchestrator : MonoBehaviour
     public DRLActionTranslator Translator;
     public int MyPlayerID = 1;
 
+    private Stopwatch _inferenceStopwatch = new Stopwatch();
+
     // --- CONTEXT (Agentlar buradan okur) ---
     // Bu değerler anlık olarak değişecek, agentlar gözlem yaparken bunları okuyacak.
     [HideInInspector] public int SelectedSourceIndex = -1;
@@ -39,6 +43,11 @@ public class RTSOrchestrator : MonoBehaviour
 
     [Header("Demo Recording")]
     public bool IsHumanDemoMode = true; // Editörden aç!
+
+    private int _lastSelectedSourceIndex = -1;
+    public MatchAnalytics CurrentMatchStats;
+
+    public bool IsWaitingForDecision = false;
 
     private void Awake()
     {
@@ -88,7 +97,7 @@ public class RTSOrchestrator : MonoBehaviour
         // Eğer ünite seçmeden aksiyona basıldıysa (Hata koruması)
         if (_tempSourceIndex == -1)
         {
-            Debug.LogWarning("Önce ünite seçmelisin!");
+            // Debug.LogWarning("Önce ünite seçmelisin!");
             return;
         }
 
@@ -111,7 +120,7 @@ public class RTSOrchestrator : MonoBehaviour
             if (_tempSourceIndex != -1 && _tempActionType == 0)
             {
                 // Varsayılan bir aksiyon ataması yapılabilir ama InputManager halletmeli.
-                Debug.LogWarning("Eksik Aksiyon!");
+                // Debug.LogWarning("Eksik Aksiyon!");
                 return;
             }
             return;
@@ -143,7 +152,7 @@ public class RTSOrchestrator : MonoBehaviour
         // 4. İŞLEMİ GERÇEKLEŞTİR
         bool success = Translator.ExecuteAction(_tempActionType, _tempSourceIndex, targetGridIndex);
 
-        if (success) Debug.Log("[Demo] Zincir Başarıyla Kaydedildi ve Uygulandı.");
+        // if (success) Debug.Log("[Demo] Zincir Başarıyla Kaydedildi ve Uygulandı.");
 
         // 5. TEMİZLİK (İsteğe bağlı, seri tıklama için temizlemeyebilirsin ama temizlemek güvenlidir)
         // _tempSourceIndex = -1; // Yorum satırı: Seri emir vermek için seçimi koruyabiliriz.
@@ -158,7 +167,8 @@ public class RTSOrchestrator : MonoBehaviour
     public void RequestFullDecision()
     {
         if (IsHumanDemoMode) return; // İnsan modundaysak AI karışmasın
-
+        IsWaitingForDecision = true;
+        _inferenceStopwatch.Restart();
         _state = OrchestratorState.WaitingUnit;
         SelectedSourceIndex = -1;
         SelectedActionType = 0;
@@ -167,9 +177,32 @@ public class RTSOrchestrator : MonoBehaviour
 
     public void OnUnitSelected(int sourceIndex)
     {
+        if (sourceIndex == _lastSelectedSourceIndex)
+        {
+            // "Kararsızlık" cezası ver ve işlemi iptal etme (devam etsin ama öğrensin)
+            // UnitAgent.AddReward(-0.005f);
+        }
+
+        if (CurrentMatchStats != null) CurrentMatchStats.SourceHeatmap[sourceIndex]++;
+
+        _lastSelectedSourceIndex = sourceIndex; // Son seçimi kaydet
         SelectedSourceIndex = sourceIndex;
+
+        var unit = Translator.GetUnitAtPosIndex(sourceIndex);
+        if (unit != null)
+        {
+            // Boşta bir işçi bulduysa ödül ver (Teşvik)
+            if (unit.UnitType == SimUnitType.Worker && unit.State == SimTaskType.Idle)
+            {
+                // Ancak bunu sadece yeni bir seçimse ver, spam yapıyorsa verme!
+                if (sourceIndex != _lastSelectedSourceIndex)
+                {
+                    // UnitAgent.AddReward(0.02f);
+                }
+            }
+        }
+
         _state = OrchestratorState.WaitingAction;
-        // Eğer Demo Modu değilse devam et
         if (!IsHumanDemoMode) ActionAgent.RequestDecision();
     }
 
@@ -181,18 +214,111 @@ public class RTSOrchestrator : MonoBehaviour
         if (!IsHumanDemoMode) TargetAgent.RequestDecision();
     }
 
+
     public void OnTargetSelected(int targetIndex)
     {
-        _state = OrchestratorState.Idle;
+        // Eylemi analiz et ve akıllı ödüller ver
+        // EvaluateMoveQuality(SelectedActionType, SelectedSourceIndex, targetIndex);
+
+        if (_runner != null)
+        {
+            _runner.NotifyAgentAction(SelectedActionType, targetIndex);
+        }
+
+        // Eylemi Gerçekleştir
         bool success = Translator.ExecuteAction(SelectedActionType, SelectedSourceIndex, targetIndex);
 
-        float stepReward = success ? 0.01f : -0.02f;
-        AddGroupReward(stepReward);
+        _inferenceStopwatch.Stop();
+        double elapsedMs = _inferenceStopwatch.Elapsed.TotalMilliseconds;
+
+        // Runner'a süreyi raporla
+        if (_runner != null)
+        {
+            _runner.RecordInferenceTime(elapsedMs);
+        }
+
+        if (success)
+        {
+            if (CurrentMatchStats != null)
+            {
+                // EKLENECEK SATIRLAR:
+                CurrentMatchStats.TargetHeatmap[targetIndex]++;
+
+                if (SelectedActionType == 10) // 10 = ACT_ATTACK_ENEMY
+                {
+                    var targetUnit = Translator.GetUnitAtPosIndex(targetIndex);
+                    var targetBuilding = Translator.GetBuildingAtPosIndex(targetIndex);
+                    string typeKey = targetUnit != null ? targetUnit.UnitType.ToString() :
+                                    (targetBuilding != null ? targetBuilding.Type.ToString() : "Empty");
+
+                    if (!CurrentMatchStats.AttackTargets.ContainsKey(typeKey)) CurrentMatchStats.AttackTargets[typeKey] = 0;
+                    CurrentMatchStats.AttackTargets[typeKey]++;
+                }
+            }
+            // Standart başarı ödülleri (Herkes mutlu)
+            // Target Agent zaten yukarıda analizden puan aldıysa burası kümülatif olur.
+            // AddTargetRewardOnly(0.05f);
+            // AddActionRewardOnly(0.05f);
+            _lastSelectedSourceIndex = -1;
+        }
+
+        // State Reset
+        IsWaitingForDecision = false;
+        _state = OrchestratorState.Idle;
     }
 
     // --- YARDIMCI METOTLAR ---
     // RTSOrchestrator.cs sınıfının içine ekle:
 
+    private void EvaluateMoveQuality(int actionType, int sourceIndex, int targetIndex)
+    {
+        // 1. Verilere Erişim (Mevcut Translator metotlarını kullanıyoruz)
+        var sourceUnit = Translator.GetUnitAtPosIndex(sourceIndex);
+        var targetUnit = Translator.GetUnitAtPosIndex(targetIndex);
+
+        // HATA DÜZELTME: GetBuildingAtPosIndex metodunu Translator'a ekleyeceğiz (Aşağıda)
+        var targetBuilding = Translator.GetBuildingAtPosIndex(targetIndex);
+
+        // 2. Koordinatları int2 Olarak Al (Manuel hesap yerine Translator mantığı)
+        // Grid genişliğini al
+        int w = _gridSystem.Width;
+        int2 sourcePos = new int2(sourceIndex % w, sourceIndex / w);
+        int2 targetPos = new int2(targetIndex % w, targetIndex / w);
+
+        // --- SENARYO 1: SAVAŞ VE SAVUNMA ---
+        if (actionType == 10) // ACT_ATTACK_ENEMY
+        {
+            if (targetUnit != null)
+            {
+                // A) FOCUS FIRE
+                float hpPercent = targetUnit.Health / targetUnit.MaxHealth;
+                // if (hpPercent < 0.25f) AddTargetRewardOnly(0.1f);
+
+                if (sourceUnit != null && sourceUnit.UnitType == SimUnitType.Worker &&
+            targetUnit != null && targetUnit.UnitType == SimUnitType.Worker)
+                {
+                    // İşçiyi kavgaya sokmak risklidir ama erken oyunda etkilidir. Teşvik et.
+                    // AddActionRewardOnly(0.15f);
+                    // AddTargetRewardOnly(0.15f);
+                }
+            }
+        }
+
+        // --- SENARYO 2: EKONOMİ VE MESAFE ---
+        if (actionType == 12) // ACT_GATHER_RES
+        {
+            // HATA DÜZELTME: SimGridSystem.GetDistance kullanarak Manhattan mesafesi alıyoruz
+            // Veya GetDistanceSq kullanıp karekök alabiliriz, ama kaynak için Manhattan yeterlidir.
+            int distance = SimGridSystem.GetDistance(sourcePos, targetPos);
+
+            // Mesafe arttıkça ödül azalır
+            float distanceReward = 0.05f / (1.0f + distance);
+            // AddTargetRewardOnly(distanceReward);
+        }
+
+        // --- GENEL EYLEM ÖDÜLÜ ---
+        // if (actionType >= 1 && actionType <= 9) AddActionRewardOnly(0.2f);
+    }
     public void RecordHumanDemonstration(int sourceIndex, int actionType, int targetIndex)
     {
         // 1. Unit Selection Ajanını Tetikle
@@ -219,7 +345,7 @@ public class RTSOrchestrator : MonoBehaviour
             TargetAgent.RegisterExternalAction(actionType, sourceIndex, targetIndex);
         }
 
-        Debug.Log($"[DEMO] Kayıt Alındı -> Source:{sourceIndex} Action:{actionType} Target:{targetIndex}");
+        // Debug.Log($"[DEMO] Kayıt Alındı -> Source:{sourceIndex} Action:{actionType} Target:{targetIndex}");
     }
     public void AddGroupReward(float reward)
     {

@@ -89,7 +89,7 @@ public class UnitSelectionAgent : Agent
                 {
                     // Sadece BOŞTA (Idle) olan işçiler seçilebilir
                     // (Stratejine göre burayı değiştirebilirsin ama Idle en güvenlisidir)
-                    if (unit.State == SimTaskType.Idle)
+                    if (unit.State != SimTaskType.Building && unit.State != SimTaskType.Moving)
                     {
                         canSelect = true;
                     }
@@ -99,9 +99,14 @@ public class UnitSelectionAgent : Agent
                     // Bina Kontrolü: Binalar her zaman seçilebilir (Üretim için)
                     // (Translator IsUnitOwned true dediyse ve Unit değilse binadır)
                     SimBuildingType bType = _translator.GetBuildingTypeAt(i);
-                    if (bType != SimBuildingType.None)
+                    if (bType == SimBuildingType.Base ||
+        bType == SimBuildingType.Barracks)
                     {
                         canSelect = true;
+                    }
+                    else
+                    {
+                        canSelect = false; // Ev, Çiftlik vb. seçilemez
                     }
                 }
             }

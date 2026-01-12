@@ -65,32 +65,50 @@ public class SimBuildingPlacer : MonoBehaviour
         {
             case SimBuildingType.House:
                 wood = SimConfig.HOUSE_COST_WOOD;
+                stone = SimConfig.HOUSE_COST_STONE;
+                meat = SimConfig.HOUSE_COST_MEAT;
                 actionID = 1; // ACT_BUILD_HOUSE
                 break;
+
             case SimBuildingType.Barracks:
                 wood = SimConfig.BARRACKS_COST_WOOD;
                 stone = SimConfig.BARRACKS_COST_STONE;
+                meat = SimConfig.BARRACKS_COST_MEAT;
                 actionID = 2; // ACT_BUILD_BARRACKS
                 break;
+
             case SimBuildingType.WoodCutter:
-                meat = SimConfig.WOODCUTTER_COST_MEAT; // Not: Config'e göre değişebilir, kontrol et.
+                wood = SimConfig.WOODCUTTER_COST_WOOD;
+                stone = SimConfig.WOODCUTTER_COST_STONE;
+                meat = SimConfig.WOODCUTTER_COST_MEAT;
                 actionID = 5; // ACT_BUILD_WOODCUTTER
                 break;
+
             case SimBuildingType.StonePit:
                 wood = SimConfig.STONEPIT_COST_WOOD;
+                stone = SimConfig.STONEPIT_COST_STONE;
+                meat = SimConfig.STONEPIT_COST_MEAT;
                 actionID = 6; // ACT_BUILD_STONEPIT
                 break;
+
             case SimBuildingType.Farm:
                 wood = SimConfig.FARM_COST_WOOD;
+                stone = SimConfig.FARM_COST_STONE;
+                meat = SimConfig.FARM_COST_MEAT;
                 actionID = 7; // ACT_BUILD_FARM
                 break;
+
             case SimBuildingType.Tower:
                 wood = SimConfig.TOWER_COST_WOOD;
                 stone = SimConfig.TOWER_COST_STONE;
+                meat = SimConfig.TOWER_COST_MEAT;
                 actionID = 8; // ACT_BUILD_TOWER
                 break;
+
             case SimBuildingType.Wall:
+                wood = SimConfig.WALL_COST_WOOD;
                 stone = SimConfig.WALL_COST_STONE;
+                meat = SimConfig.WALL_COST_MEAT;
                 actionID = 9; // ACT_BUILD_WALL
                 break;
         }

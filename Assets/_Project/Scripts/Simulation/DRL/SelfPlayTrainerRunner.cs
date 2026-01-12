@@ -371,29 +371,7 @@ public class SelfPlayTrainerRunner : MonoBehaviour
         int start_workercount = 1; // İleride bu sayıyı artırmak isterseniz buradan değiştirebilirsiniz.
         for (int i = 0; i < start_workercount; i++)
         {
-            // Üssün etrafında yürünebilir boş bir komşu bul
-            int2? spawnPos = SimGridSystem.FindWalkableNeighbor(_world, pos);
-            if (spawnPos.HasValue)
-            {
-                var unit = new SimUnitData
-                {
-                    ID = _world.NextID(),
-                    PlayerID = pid,
-                    UnitType = SimUnitType.Worker,
-                    GridPosition = spawnPos.Value,
-                    Health = 50,
-                    MaxHealth = 50,
-                    State = SimTaskType.Idle,
-                    MoveSpeed = 5.0f
-                };
-
-                // Birimi dünyaya ve haritaya ekle
-                _world.Units.Add(unit.ID, unit);
-                _world.Map.Grid[spawnPos.Value.x, spawnPos.Value.y].OccupantID = unit.ID;
-
-                // Nüfusu güncelle
-                SimResourceSystem.ModifyPopulation(_world, pid, 1);
-            }
+            SimBuildingSystem.SpawnUnit(_world, pos, SimUnitType.Worker, pid);
         }
     }
 

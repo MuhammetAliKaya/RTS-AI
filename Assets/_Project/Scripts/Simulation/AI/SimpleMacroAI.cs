@@ -46,7 +46,7 @@ public class SimpleMacroAI : IMacroAI
         // 0.5 -> 3 asker (Savunma için)
         // 2.0 -> 15 asker (Full ordu)
         if (_difficultyLevel < 0.2f) _maxSoldierCount = 0;
-        else _maxSoldierCount = (int)Mathf.Lerp(3, 1, (_difficultyLevel - 0.2f) / 1.8f);
+        else _maxSoldierCount = (int)Mathf.Lerp(3, 3, (_difficultyLevel - 0.2f) / 1.8f); // 1 yerine 15 gibi bir rakam verin
 
         // 3. Saldırganlık:
         // 0.0 - 0.8 arası -> %0 Saldırı (Sadece savunma)
@@ -67,6 +67,8 @@ public class SimpleMacroAI : IMacroAI
 
     private void MakeDecisions()
     {
+        Debug.Log("Make Deasicion");
+
         var myUnits = _world.Units.Values.Where(u => u.PlayerID == _playerID).ToList();
         var myBuildings = _world.Buildings.Values.Where(b => b.PlayerID == _playerID).ToList();
         var pData = SimResourceSystem.GetPlayer(_world, _playerID);
@@ -199,7 +201,7 @@ public class SimpleMacroAI : IMacroAI
             foreach (var soldier in myUnits.Where(u => u.UnitType == SimUnitType.Soldier))
             {
                 // Zaten o hedefe saldırıyorsa emri yenileme
-                if (soldier.State == SimTaskType.Attacking && soldier.TargetID == enemyBase.ID) continue;
+                if ((soldier.State == SimTaskType.Attacking || soldier.State == SimTaskType.Moving) && soldier.TargetID == enemyBase.ID) continue;
 
                 SimUnitSystem.OrderAttack(soldier, enemyBase, _world);
             }

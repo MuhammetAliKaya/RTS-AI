@@ -98,7 +98,7 @@ public class DRLActionTranslator
 
         switch (actionType)
         {
-            case 0: return true; // Wait
+            case 0: return false; // Wait
 
             // İNŞAATLAR (1-9) - (Aynı Kalıyor)
             case 1:
@@ -203,7 +203,12 @@ public class DRLActionTranslator
         // 3. AKSİYONLARI UYGULA
         switch (actionType)
         {
-            case 0: return true; // Bekle
+            case 0:
+                {
+                    Debug.Log("// BEKLE");
+                    return true; // Bekle
+                }
+                ;
 
             // --- İNŞAAT (Kaynak: WORKER olmalı) ---
             case 1: return TryBuild(sourceUnit, SimBuildingType.House, targetPos);
@@ -241,6 +246,7 @@ public class DRLActionTranslator
                 return false;
 
             case 12: // TOPLA
+                Debug.Log("// TOPLA");
                 if (sourceUnit == null || sourceUnit.UnitType != SimUnitType.Worker) return false; // Sadece işçi toplar
                 var resource = _world.Resources.Values.FirstOrDefault(r => r.GridPosition == targetPos);
 
@@ -368,5 +374,36 @@ public class DRLActionTranslator
     {
         int2 pos = GetPosFromIndex(index);
         return GetUnitAt(pos);
+    }
+
+    public SimBuildingData GetBuildingAtPosIndex(int index)
+    {
+        int2 pos = GetPosFromIndex(index);
+        return GetBuildingAt(pos); // Zaten var olan private fonksiyonu kullanıyoruz
+    }
+
+    // DRLActionTranslator.cs içinde güncellenecek kısım
+    public float[] GetOneHotEncodedTypeAt(int gridIndex)
+    {
+        float[] oneHot = new float[5] { 0, 0, 0, 0, 0 };
+        int2 pos = GetPosFromIndex(gridIndex);
+
+        var unit = GetUnitAt(pos);
+        if (unit != null)
+        {
+            if (unit.UnitType == SimUnitType.Worker) { oneHot[1] = 1f; return oneHot; }
+            if (unit.UnitType == SimUnitType.Soldier) { oneHot[2] = 1f; return oneHot; }
+        }
+
+        var building = GetBuildingAt(pos);
+        if (building != null)
+        {
+            // Sadece stratejik binaları kodla, diğerlerini filtrele
+            if (building.Type == SimBuildingType.Base) { oneHot[3] = 1f; return oneHot; }
+            if (building.Type == SimBuildingType.Barracks) { oneHot[4] = 1f; return oneHot; }
+        }
+
+        oneHot[0] = 1f; // Hiçbiri veya Stratejik olmayan bina
+        return oneHot;
     }
 }

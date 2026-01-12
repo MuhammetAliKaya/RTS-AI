@@ -44,7 +44,13 @@ public class RTSGridSensor : ISensor
     private const int CH_SELECTION = 25;
     private const int CH_MY_IDLE_WORKER = 26;
 
-    private const int TOTAL_CHANNELS = 27;
+    private const int CH_MY_UNIT_ATTACKING = 27;   // Benim birim saldırıyor mu?
+    private const int CH_MY_ENTITY_HEALTH = 28;      // Benim birimimin can yüzdesi (Gradient)
+
+    private const int CH_ENEMY_ENTITY_HEALTH = 29;   // Düşmanın can yüzdesi (Zayıfı seçmek için kritik)
+
+    // Toplam kanal sayısını güncelle
+    private const int TOTAL_CHANNELS = 30;
 
     private int _highlightedUnitIndex = -1;
 
@@ -116,12 +122,25 @@ public class RTSGridSensor : ISensor
                 var node = _world.Map.Grid[x, y];
                 if (!node.IsWalkable && node.Type != SimTileType.Water) writer[y, x, CH_OBSTACLE] = 1.0f;
 
-                if (node.Type == SimTileType.Forest) writer[y, x, CH_RES_WOOD] = 1.0f;
-                else if (node.Type == SimTileType.Stone) writer[y, x, CH_RES_STONE] = 1.0f;
-                else if (node.Type == SimTileType.MeatBush) writer[y, x, CH_RES_FOOD] = 1.0f;
-
                 writer[y, x, CH_FOG_OF_WAR] = 1.0f;
             }
+        }
+
+        // 2. KAYNAKLAR (YENİ: Miktar Bazlı Gradient)
+        foreach (var r in _world.Resources.Values)
+        {
+            int x = r.GridPosition.x;
+            int y = r.GridPosition.y;
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+
+            // Maksimum kaynak miktarına göre oranla (Örn: 500 max)
+            // 500 odun -> 1.0 (Parlak)
+            // 50 odun -> 0.1 (Sönük)
+            float amountRatio = Mathf.Clamp01((float)r.AmountRemaining / 500f);
+
+            if (r.Type == SimResourceType.Wood) writer[y, x, CH_RES_WOOD] = amountRatio;
+            else if (r.Type == SimResourceType.Stone) writer[y, x, CH_RES_STONE] = amountRatio;
+            else if (r.Type == SimResourceType.Meat) writer[y, x, CH_RES_FOOD] = amountRatio;
         }
 
         // 2. BİNALAR
@@ -136,6 +155,12 @@ public class RTSGridSensor : ISensor
 
             bool isMe = (b.PlayerID == 1);
             int channel = -1;
+
+            float healthPct = Mathf.Clamp01((float)b.Health / (float)b.MaxHealth);
+            if (isMe)
+                writer[y, x, CH_MY_ENTITY_HEALTH] = healthPct; // Benim binamın canı
+            else
+                writer[y, x, CH_ENEMY_ENTITY_HEALTH] = healthPct; // Düşman binasının canı
 
             if (isMe)
             {
@@ -179,6 +204,7 @@ public class RTSGridSensor : ISensor
             if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
             bool isMe = (u.PlayerID == 1);
+            float healthPercent = (float)u.Health / (float)u.MaxHealth;
             if (isMe)
             {
                 if (u.UnitType == SimUnitType.Soldier) writer[y, x, CH_MY_SOLDIER] = 1.0f;
@@ -187,11 +213,21 @@ public class RTSGridSensor : ISensor
                     writer[y, x, CH_MY_WORKER] = 1.0f;
                     if (u.State == SimTaskType.Idle) writer[y, x, CH_MY_IDLE_WORKER] = 1.0f;
                 }
+                // --- YENİ: SALDIRI DURUMU ---
+                if (u.State == SimTaskType.Attacking)
+                {
+                    writer[y, x, CH_MY_UNIT_ATTACKING] = 1.0f;
+                }
+                // --- YENİ: SAĞLIK DURUMU (Gradient) ---
+                // Canı %100 ise 1.0, %10 ise 0.1 yazar.
+                // Ajan bunu "buradaki değer düşükse birim ölüyor, kaçmalıyım" diye öğrenir.
+                writer[y, x, CH_MY_ENTITY_HEALTH] = healthPercent;
             }
             else
             {
                 int channel = (u.UnitType == SimUnitType.Soldier) ? CH_ENEMY_SOLDIER : CH_ENEMY_WORKER;
                 writer[y, x, channel] = 1.0f;
+                writer[y, x, CH_ENEMY_ENTITY_HEALTH] = healthPercent;
             }
         }
 

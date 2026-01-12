@@ -15,6 +15,8 @@ namespace RTS.Simulation.Systems
             _world = world ?? SimGameContext.ActiveWorld;
         }
 
+        public static Action<int, int, SimResourceType> OnResourceSpent;
+
         // --- Instance Methods (Tercih Edilen) ---
         public int GetResourceAmount(int playerID, SimResourceType type) => GetResourceAmount(_world, playerID, type);
         public bool SpendResources(int playerID, int w, int s, int m) => SpendResources(_world, playerID, w, s, m);
@@ -64,6 +66,14 @@ namespace RTS.Simulation.Systems
             data.Wood -= wood;
             data.Stone -= stone;
             data.Meat -= meat;
+
+            // --- ANALİTİK İÇİN BURAYA EKLE ---
+            if (wood > 0) OnResourceSpent?.Invoke(playerID, wood, SimResourceType.Wood);
+            if (stone > 0) OnResourceSpent?.Invoke(playerID, stone, SimResourceType.Stone);
+            if (meat > 0) OnResourceSpent?.Invoke(playerID, meat, SimResourceType.Meat);
+            // ---------------------------------
+
+
             return true;
         }
 

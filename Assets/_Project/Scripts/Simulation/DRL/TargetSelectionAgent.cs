@@ -50,7 +50,13 @@ public class TargetSelectionAgent : Agent
         int actionType = _orchestrator.SelectedActionType;
 
         // Seçilen birimin türünü (Worker/Soldier/Base vb.) kodlanmış float olarak ver
-        sensor.AddObservation(_translator.GetEncodedTypeAt(sourceIndex));
+        int selectedIndex = _orchestrator.SelectedSourceIndex;
+        float[] typeObservations = _translator.GetOneHotEncodedTypeAt(selectedIndex);
+
+        foreach (float obs in typeObservations)
+        {
+            sensor.AddObservation(obs); // 1 yerine 5 gözlem eklenmiş olur
+        }
 
         // Seçilen eylem (ActionType)
         sensor.AddObservation((float)actionType);
@@ -110,7 +116,7 @@ public class TargetSelectionAgent : Agent
         if (_runner != null)
         {
             // Ortamın sıfırlanmasını Runner'a devret.
-            _runner.ResetSimulation();
+            // _runner.ResetSimulation();
         }
 
         // Highlight'ı sıfırla

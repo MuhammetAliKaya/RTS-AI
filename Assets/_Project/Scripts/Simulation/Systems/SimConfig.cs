@@ -65,7 +65,7 @@ namespace RTS.Simulation.Systems
         // --- CAN VE SALDIRI ---
         public const int WORKER_MAX_HEALTH = 50;
         public const int SOLDIER_MAX_HEALTH = 120;
-        public const int BASE_MAX_HEALTH = 5000;
+        public const int BASE_MAX_HEALTH = 7500;
         public const int BUILDING_DEFAULT_HEALTH = 100;
         public const int WALL_MAX_HEALTH = 10000;
 
@@ -77,6 +77,10 @@ namespace RTS.Simulation.Systems
         public const float SOLDIER_ATTACK_RANGE = 1.5f;
         public const float SOLDIER_ATTACK_SPEED = 1.0f;
 
+        public const int WORKER_DAMAGE = 3;          // Düşük hasar ama 0 değil
+        public const float WORKER_ATTACK_RANGE = 1.5f; // Yakın dövüş
+        public const float WORKER_ATTACK_SPEED = 1.0f; // Askerle aynı hızda vurabilir
+
         public const int TOWER_DAMAGE = 15;
         public const float TOWER_ATTACK_RANGE = 6.0f;
         public const float TOWER_ATTACK_SPEED = 3f;
@@ -87,7 +91,7 @@ namespace RTS.Simulation.Systems
 
         // --- KAYNAK DEĞERLERİ ---
         public const float RESOURCE_GENERATION_INTERVAL = 1.0f;
-        public const int RESOURCE_GENERATION_AMOUNT = 10;
+        public const int RESOURCE_GENERATION_AMOUNT = 20;
         public const float GATHER_INTERVAL = 1.0f;
         public const int GATHER_AMOUNT = 10;
 

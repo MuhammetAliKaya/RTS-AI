@@ -10,6 +10,7 @@ namespace RTS.Simulation.Systems
     {
         public static event Action<SimBuildingData> OnBuildingFinished;
         public static event Action<SimUnitData> OnUnitCreated;
+        public static event Action<SimBuildingData, SimUnitData, float> OnTowerAttacked;
         private SimWorldState _world;
 
         public SimBuildingSystem(SimWorldState world = null)
@@ -219,6 +220,7 @@ namespace RTS.Simulation.Systems
                 building.AttackTimer = 0f;
                 building.TargetUnitID = target.ID;
 
+                OnTowerAttacked?.Invoke(building, target, (float)building.Damage);
                 if (target.Health <= 0)
                 {
                     target.State = SimTaskType.Dead;
@@ -255,12 +257,23 @@ namespace RTS.Simulation.Systems
                 UnitType = type,
                 GridPosition = spawnPos.Value,
                 State = SimTaskType.Idle,
+
+                // SAĞLIK
                 MaxHealth = (type == SimUnitType.Worker) ? SimConfig.WORKER_MAX_HEALTH : SimConfig.SOLDIER_MAX_HEALTH,
+
+                // HIZ
                 MoveSpeed = (type == SimUnitType.Worker) ? SimConfig.WORKER_MOVE_SPEED : SimConfig.SOLDIER_MOVE_SPEED,
-                Damage = (type == SimUnitType.Soldier) ? SimConfig.SOLDIER_DAMAGE : 5,
-                AttackRange = SimConfig.SOLDIER_ATTACK_RANGE,
-                AttackSpeed = SimConfig.SOLDIER_ATTACK_SPEED
+
+                // --- DÜZELTME: HASAR ---
+                Damage = (type == SimUnitType.Worker) ? SimConfig.WORKER_DAMAGE : SimConfig.SOLDIER_DAMAGE,
+
+                // --- DÜZELTME: MENZİL ---
+                AttackRange = (type == SimUnitType.Worker) ? SimConfig.WORKER_ATTACK_RANGE : SimConfig.SOLDIER_ATTACK_RANGE,
+
+                // --- DÜZELTME: SALDIRI HIZI ---
+                AttackSpeed = (type == SimUnitType.Worker) ? SimConfig.WORKER_ATTACK_SPEED : SimConfig.SOLDIER_ATTACK_SPEED
             };
+
             newUnit.Health = newUnit.MaxHealth;
             world.Units.Add(newUnit.ID, newUnit);
 
