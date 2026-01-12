@@ -214,6 +214,7 @@ game logic but rather the synchronization constraints inherent in the socket-bas
 communication between the Unity ML-Agents environment and the Python API.
 Consequently, the hardware utilization remained balanced, ensuring effective headless
 training without the need for industrial-scale infrastructure.
+#
 ![alt text](Images/table1.PNG)
 
 ### 5.2. Training Metrics
@@ -230,7 +231,7 @@ drastically improved survival capabilities. Notably, the introduction of the GAI
 provided a significant "jump-start" to the learning curve. Unlike pure reinforcement learning
 runs which often plateaued early due to sparse rewards, the runs augmented with imitation learning showed a steeper initial ascent in average reward, suggesting that the agent quickly
 internalized the basic mechanics of the game from the expert demonstrations.
-![alt text](Images/entropy.PNG)
+![alt text](Images/entropy.png)
 
 ### 5.3. Competitor Analysis and Win-Rates
 
@@ -245,6 +246,8 @@ that high-level micro-management remains a challenge. Additionally, the agent st
 against Turtle (34.92%) and WorkerRush (34.59%), indicating current limitations in breaking
 heavily fortified defensive lines or reacting to the extreme speed of coordinated worker-only
 attacks within the first few seconds of a match.
+
+#
 ![alt text](Images/table2.PNG)
 
 
