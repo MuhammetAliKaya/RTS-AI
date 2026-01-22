@@ -101,6 +101,8 @@ namespace RTS.Simulation.Systems
         public const int START_STONE = 100;
         public const int START_WORKER_COUNT = 1;
 
+        public const int MAX_BUILDING_PER_TYPE = 20;
+
         // --- KULLANILMAYANLAR (YORUMA ALINDI) ---
         // public const float UNIT_VIEW_RANGE = 8.0f; 
         // public const int AI_DECISION_TICK_RATE = 5; 

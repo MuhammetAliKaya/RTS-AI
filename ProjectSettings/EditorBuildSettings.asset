@@ -20,6 +20,12 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/_Project/Scenes/CollectDataForGraphics/DRL_vs_Macro_Training_INFERENCE.unity
     guid: c9a94f1a4ae29bd40abcf4d2357709a4
+  - enabled: 0
+    path: Assets/_Project/Scenes/menu_0.unity
+    guid: 78abfecf7e69b2145aa7fe5dff10f73f
+  - enabled: 0
+    path: Assets/_Project/Scenes/DRL_vs_Macro_Game_Scene.unity
+    guid: 72267968da4e0174ca7f159f5e022ecd
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0

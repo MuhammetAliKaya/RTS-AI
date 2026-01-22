@@ -109,6 +109,12 @@ public class ActionSelectionAgent : Agent
         // ---------------------------------------------------------
         // SENARYO 1: İŞÇİ (WORKER)
         // ---------------------------------------------------------
+        bool CheckBuildCondition(SimBuildingType type)
+        {
+            // SimBuildingSystem'e eklediğimiz yeni metodu kullanıyoruz
+            return SimBuildingSystem.CanBuild(_world, _orchestrator.MyPlayerID, type);
+        }
+
         if (unitType == SimUnitType.Worker)
         {
             // --- YAPAMAYACAKLARI ---
@@ -134,13 +140,13 @@ public class ActionSelectionAgent : Agent
 
 
             // --- İNŞAAT (Maliyet Kontrolü) ---
-            actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, CanAfford(SimConfig.HOUSE_COST_WOOD, SimConfig.HOUSE_COST_STONE, SimConfig.HOUSE_COST_MEAT));
-            actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, CanAfford(SimConfig.BARRACKS_COST_WOOD, SimConfig.BARRACKS_COST_STONE, SimConfig.BARRACKS_COST_MEAT));
-            actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, CanAfford(SimConfig.WOODCUTTER_COST_WOOD, SimConfig.WOODCUTTER_COST_STONE, SimConfig.WOODCUTTER_COST_MEAT));
-            actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, CanAfford(SimConfig.STONEPIT_COST_WOOD, SimConfig.STONEPIT_COST_STONE, SimConfig.STONEPIT_COST_MEAT));
-            actionMask.SetActionEnabled(0, ACT_BUILD_FARM, CanAfford(SimConfig.FARM_COST_WOOD, SimConfig.FARM_COST_STONE, SimConfig.FARM_COST_MEAT));
-            actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, CanAfford(SimConfig.TOWER_COST_WOOD, SimConfig.TOWER_COST_STONE, SimConfig.TOWER_COST_MEAT));
-            actionMask.SetActionEnabled(0, ACT_BUILD_WALL, CanAfford(SimConfig.WALL_COST_WOOD, SimConfig.WALL_COST_STONE, SimConfig.WALL_COST_MEAT));
+            actionMask.SetActionEnabled(0, ACT_BUILD_HOUSE, CheckBuildCondition(SimBuildingType.House));
+            actionMask.SetActionEnabled(0, ACT_BUILD_BARRACKS, CheckBuildCondition(SimBuildingType.Barracks));
+            actionMask.SetActionEnabled(0, ACT_BUILD_WOODCUTTER, CheckBuildCondition(SimBuildingType.WoodCutter));
+            actionMask.SetActionEnabled(0, ACT_BUILD_STONEPIT, CheckBuildCondition(SimBuildingType.StonePit));
+            actionMask.SetActionEnabled(0, ACT_BUILD_FARM, CheckBuildCondition(SimBuildingType.Farm));
+            actionMask.SetActionEnabled(0, ACT_BUILD_TOWER, CheckBuildCondition(SimBuildingType.Tower));
+            actionMask.SetActionEnabled(0, ACT_BUILD_WALL, CheckBuildCondition(SimBuildingType.Wall));
         }
         // ---------------------------------------------------------
         // SENARYO 2: ASKER (SOLDIER)
@@ -208,7 +214,7 @@ public class ActionSelectionAgent : Agent
                 actionMask.SetActionEnabled(0, ACT_TRAIN_SOLDIER, false);
             }
 
-            actionMask.SetActionEnabled(0, ACT_WAIT, false); // Bekle her zaman serbest
+            actionMask.SetActionEnabled(0, ACT_WAIT, true); // Bekle her zaman serbest
         }
         else
         {

@@ -14,7 +14,33 @@ public class SimGameplayUI : MonoBehaviour
     public GameObject ConstructionPanel;
     public GameObject ProductionPanel;
 
-    // --- MENÜ KONTROLÜ ---
+    // --- HELPER: BEN KİMİM? ---
+    private int MyPlayerID => SimInputManager.Instance != null ? SimInputManager.Instance.LocalPlayerID : 1;
+
+    // --- DÜZELTME: AJAN KONTROLÜNÜ GÜNCELLE ---
+    private bool ShouldUseAgentMode()
+    {
+        // 1. SimInputManager yoksa manuel devam et
+        if (SimInputManager.Instance == null) return false;
+
+        // 2. Orchestrator (Yeni Sistem) varsa ve Demo Modu açıksa Agent modunu kullan
+        // (Eğer Human oynuyorsa ama Demo kaydı kapalıysa FALSE döner -> Manuel oynanır)
+        if (SimInputManager.Instance.Orchestrator != null)
+        {
+            // Sadece Demo modu açıksa ve sıra bizdeyse
+            return SimInputManager.Instance.Orchestrator.IsHumanDemoMode;
+        }
+
+        // 3. Eski RTSAgent varsa (Legacy destek)
+        if (RTSAgent.Instance != null && RTSAgent.Instance.MyPlayerID == MyPlayerID)
+        {
+            return true;
+        }
+
+        // Ajan yoksa manuel mod
+        return false;
+    }
+
     public void ToggleConstructionMenu()
     {
         bool isActive = ConstructionPanel.activeSelf;
@@ -35,74 +61,38 @@ public class SimGameplayUI : MonoBehaviour
         if (ProductionPanel) ProductionPanel.SetActive(false);
     }
 
-    // --- İNŞAAT BUTONLARI ---
-    // Agent Translator Kodları: House=1, Barracks=2, Tower=8, Wall=9
-    // YENİ EKLEMELER: WoodCutter=5, StonePit=6, Farm=7
-
+    // --- İNŞAAT KOMUTLARI ---
     public void OnClickBuildHouse() { PrepareBuildOrder(1, SimBuildingType.House); }
     public void OnClickBuildBarracks() { PrepareBuildOrder(2, SimBuildingType.Barracks); }
     public void OnClickBuildTower() { PrepareBuildOrder(8, SimBuildingType.Tower); }
     public void OnClickBuildWall() { PrepareBuildOrder(9, SimBuildingType.Wall); }
-    // DRL Action Translator'a uygun olarak güncellendi:
     public void OnClickBuildWoodCutter() { PrepareBuildOrder(5, SimBuildingType.WoodCutter); }
     public void OnClickBuildStonePit() { PrepareBuildOrder(6, SimBuildingType.StonePit); }
     public void OnClickBuildFarm() { PrepareBuildOrder(7, SimBuildingType.Farm); }
 
     private void PrepareBuildOrder(int actionID, SimBuildingType type)
     {
-        // 1. Durum: Agent Modu Aktif mi? (Ve geçerli bir Agent Action ID var mı?)
-        if (RTSAgent.Instance != null && actionID != -1)
+        if (BuildingPlacer == null)
         {
-            // İşçi seçili mi kontrol et (Source Index)
-            int workerIdx = GetSelectedUnitSourceIndex();
-
-            if (workerIdx != -1)
-            {
-                // Input Manager'a "Sıradaki sağ tık bu aksiyon olsun" diyoruz.
-                // Bu sayede sen haritaya tıkladığında Agent'a (Action, Source, Target) gidecek
-                // ve Agent bunu 'Translator' üzerinden GERÇEKLEŞTİRECEK.
-                if (SimInputManager.Instance != null)
-                {
-                    SimInputManager.Instance.SetPendingAction(actionID);
-                    Debug.Log($"[UI] Agent İnşaat Modu (ID: {actionID}). Lütfen haritada inşa edilecek yere SAĞ TIKLA.");
-                }
-
-                if (BuildingPlacer != null)
-                {
-                    BuildingPlacer.SelectBuildingToPlace(type);
-                    Debug.Log($"[UI] Manuel Yerleştirme Modu: {type}");
-                }
-                else
-                {
-                    Debug.LogWarning("BuildingPlacer atanmamış!");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("Agent Modu: İnşaat için önce bir İŞÇİ seçmelisin!");
-            }
+            Debug.LogWarning("BuildingPlacer atanmamış!");
+            return;
         }
-        // 2. Durum: Agent Yok veya Tanımsız Aksiyon (Manuel Oynanış / Test Modu)
-        else
+
+        // Her durumda BuildingPlacer'ı aktifleştiriyoruz.
+        // Ajan modu (Demo) olsa bile görsel olarak yeri seçmemiz lazım.
+        // InputManager ve Placer, tıklama anında bunu Ajan'a kaydedecek.
+        BuildingPlacer.SelectBuildingToPlace(type);
+
+        // Eğer Demo modundaysak InputManager'a hangi aksiyonu yapacağımızı fısıldıyoruz
+        if (ShouldUseAgentMode() && SimInputManager.Instance != null)
         {
-            // Eski 'Hayalet Bina' sistemini çalıştır
-            if (BuildingPlacer != null)
-            {
-                BuildingPlacer.SelectBuildingToPlace(type);
-                Debug.Log($"[UI] Manuel Yerleştirme Modu: {type}");
-            }
-            else
-            {
-                Debug.LogWarning("BuildingPlacer atanmamış!");
-            }
+            SimInputManager.Instance.SetPendingAction(actionID);
         }
 
         CloseAllMenus();
     }
 
-    // --- ÜRETİM BUTONLARI ---
-    // Agent Translator Kodları: Worker=3, Soldier=4
-
+    // --- ÜRETİM KOMUTLARI ---
     public void OnClickTrainWorker() { HandleTrainCommand(SimBuildingType.Base, SimUnitType.Worker, 3); }
     public void OnClickTrainSoldier() { HandleTrainCommand(SimBuildingType.Barracks, SimUnitType.Soldier, 4); }
 
@@ -111,52 +101,43 @@ public class SimGameplayUI : MonoBehaviour
         var world = SimGameContext.ActiveWorld;
         if (world == null) return;
 
-        // 1. Uygun binayı bul (Önce seçiliye, sonra boştakilere bak)
-        SimBuildingData targetBuilding = FindTrainingBuilding(world, bType);
+        // Benim uygun binamı bul
+        var targetBuilding = world.Buildings.Values
+            .FirstOrDefault(b => b.PlayerID == MyPlayerID && b.Type == bType && b.IsConstructed && !b.IsTraining);
 
         if (targetBuilding != null)
         {
-            // Agent Varsa -> Emri Agent'a ilet
-            if (RTSAgent.Instance != null)
+            if (ShouldUseAgentMode())
             {
-                // Source: Binanın konumu
+                // --- ORCHESTRATOR / AGENT ÜZERİNDEN KAYIT ---
                 int sourceIndex = (targetBuilding.GridPosition.y * world.Map.Width) + targetBuilding.GridPosition.x;
 
-                // Target: 0 (Üretim için hedef koordinat gerekmez, bina içinde çıkar)
-                // Bu çağrı Agent'ın 'Heuristic' metodunu tetikler -> 'OnActionReceived' -> 'Translator' -> ÜRETİM YAPILIR.
-                RTSAgent.Instance.RegisterExternalAction(actionID, sourceIndex, 0);
-
-                Debug.Log($"[UI] Agent Üretim Emri: {uType} (Act: {actionID})");
+                // Orchestrator varsa ona kaydet
+                if (SimInputManager.Instance.Orchestrator != null)
+                {
+                    SimInputManager.Instance.Orchestrator.RecordHumanDemonstration(sourceIndex, actionID, 0);
+                    // Orchestrator genellikle kayıttan sonra işlemi kendi Translator'ı ile yapar.
+                    // Eğer yapmıyorsa aşağıya bir "Execute" eklemek gerekebilir.
+                }
+                // Eski Agent varsa ona kaydet
+                else if (RTSAgent.Instance != null)
+                {
+                    RTSAgent.Instance.RegisterExternalAction(actionID, sourceIndex, 0);
+                }
             }
-            // Agent Yoksa -> Direkt sistem üzerinden başlat (Manuel Mod)
             else
             {
+                // --- MANUEL MOD (Doğrudan Simülasyona Emir Ver) ---
                 SimBuildingSystem.StartTraining(targetBuilding, world, uType);
-                Debug.Log($"[UI] Manuel Üretim Başlatıldı: {uType}");
+                // Debug.Log($"[UI] Manuel Üretim Başlatıldı: {uType}");
             }
         }
         else
         {
-            Debug.LogWarning($"Uygun {bType} bulunamadı! (Seçili değil veya inşa edilmemiş)");
+            // Debug.LogWarning($"Player {MyPlayerID} için uygun {bType} bulunamadı veya meşgul!");
         }
+
         CloseAllMenus();
-    }
-
-    // --- YARDIMCI METOTLAR ---
-
-    private SimBuildingData FindTrainingBuilding(SimWorldState world, SimBuildingType type)
-    {
-        // A. Oyuncunun seçtiği binaya bak
-        int selectedID = SimInputManager.Instance.SelectedBuildingID;
-        if (selectedID != -1 && world.Buildings.TryGetValue(selectedID, out SimBuildingData b))
-        {
-            if (b.PlayerID == 1 && b.Type == type && b.IsConstructed && !b.IsTraining)
-                return b;
-        }
-
-        // B. Seçili değilse, haritadaki boşta duran ilk binayı bul (Yardımcı olmak için)
-        return world.Buildings.Values.FirstOrDefault(b =>
-            b.PlayerID == 1 && b.Type == type && b.IsConstructed && !b.IsTraining);
     }
 
     private int GetSelectedUnitSourceIndex()
@@ -166,7 +147,7 @@ public class SimGameplayUI : MonoBehaviour
 
         if (uid != -1 && world != null && world.Units.TryGetValue(uid, out SimUnitData u))
         {
-            if (u.PlayerID == 1) // Sadece kendi ünitelerimiz
+            if (u.PlayerID == MyPlayerID)
                 return (u.GridPosition.y * world.Map.Width) + u.GridPosition.x;
         }
         return -1;

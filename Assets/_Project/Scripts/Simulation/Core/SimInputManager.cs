@@ -13,15 +13,19 @@ public class SimInputManager : MonoBehaviour
     public Camera MainCamera;
     public GameVisualizer Visualizer;
 
+    public int LocalPlayerID = 1; // Varsayılan 1, Runner bunu değiştirebilir.
+
     // --- AI BAĞLANTILARI ---
     // 3 Başlı yapıyı yöneten orkestratör referansı
     public RTSOrchestrator Orchestrator;
+
 
     // --- SELECTION DATA ---
     public int SelectedUnitID { get; private set; } = -1;
     public int SelectedBuildingID { get; private set; } = -1;
 
     private int _pendingActionID = 10; // Varsayılan: Attack/Interact
+    private SimBuildingPlacer _buildingPlacer;
 
     void Awake()
     {
@@ -30,12 +34,14 @@ public class SimInputManager : MonoBehaviour
 
         // Eğer editörden atanmadıysa sahnede bulmaya çalış
         if (Orchestrator == null) Orchestrator = FindObjectOfType<RTSOrchestrator>();
+        _buildingPlacer = FindObjectOfType<SimBuildingPlacer>();
     }
 
     void Update()
     {
         // UI tıklamalarını engelle
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
+        if (_buildingPlacer != null && _buildingPlacer.IsPlacingMode) return;
 
         if (Input.GetMouseButtonDown(0)) HandleSelection();      // Sol Tık: Seçim (Unit Selection)
         if (Input.GetMouseButtonDown(1)) HandleMovementOrder();  // Sağ Tık: Aksiyon ve Hedef (Action + Target)
@@ -120,7 +126,12 @@ public class SimInputManager : MonoBehaviour
             playerID = selectedBuilding.PlayerID;
         }
 
-        if (sourceIndex == -1 || playerID != 1) return; // Sadece Player 1 (Bizim) emirlerimizi kaydet
+        // --- KRİTİK DEĞİŞİKLİK: Sadece LocalPlayerID ile eşleşen birimleri kontrol et ---
+        if (sourceIndex == -1 || playerID != LocalPlayerID)
+        {
+            // Debug.Log("Bu birim sizin değil!"); 
+            return;
+        }
 
         // 2. HEDEF TESPİTİ (RAYCAST ÖNCELİKLİ)
         int2 targetGridPos = new int2(-1, -1);

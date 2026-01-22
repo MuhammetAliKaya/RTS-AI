@@ -20,13 +20,14 @@ behaviors:
         memory_size: 256
     reward_signals:
       extrinsic:
-        gamma: 0.99
+        gamma: 0.999
         strength: 0.5 # Puanın önemi azaltıldı
 
       # GAIL İLE TEST (Daha stabil)
       gail:
-        strength: 1.5 # %100 Taklit odaklı
-        gamma: 0.99
+        strength: 0.5
+        # strength: 1.5
+        gamma: 0.999
         demo_path: Assets/Demonstrations/unitselrec4.demo
         use_actions: true # Action taklidi RTS için önemlidir
         use_vail: false
@@ -34,10 +35,10 @@ behaviors:
           normalize: true
           hidden_units: 256
           num_layers: 3
-        learning_rate: 0.0001
+        # learning_rate: 0.0001
 
     max_steps: 10000000
-    time_horizon: 512
+    time_horizon: 2048
     summary_freq: 1000
 
   ActionSelector:
@@ -61,12 +62,13 @@ behaviors:
         memory_size: 256
     reward_signals:
       extrinsic:
-        gamma: 0.99
+        gamma: 0.999
         strength: 0.5
       # GAIL İLE TEST
       gail:
-        strength: 1.5
-        gamma: 0.99
+        strength: 0.5
+        # strength: 1.5
+        gamma: 0.999
         demo_path: Assets/Demonstrations/actionselrec4.demo
         use_actions: true
         use_vail: false
@@ -74,10 +76,10 @@ behaviors:
           normalize: true
           hidden_units: 256
           num_layers: 3
-        learning_rate: 0.0001
+        # learning_rate: 0.0001
 
     max_steps: 10000000
-    time_horizon: 512
+    time_horizon: 2048
     summary_freq: 1000
 
   TargetSelector:
@@ -101,13 +103,14 @@ behaviors:
         memory_size: 512
     reward_signals:
       extrinsic:
-        gamma: 0.99
+        gamma: 0.999
         strength: 0.5
 
       # GAIL İLE TEST
       gail:
-        strength: 1.5
-        gamma: 0.99
+        strength: 0.5
+        # strength: 1.5
+        gamma: 0.999
         demo_path: Assets/Demonstrations/targetselrec4.demo
         use_actions: true
         use_vail: false
@@ -115,8 +118,8 @@ behaviors:
           normalize: true
           hidden_units: 256
           num_layers: 3
-        learning_rate: 0.0001
+        # learning_rate: 0.0001
 
     max_steps: 10000000
-    time_horizon: 512
+    time_horizon: 2048
     summary_freq: 1000

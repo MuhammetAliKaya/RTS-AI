@@ -56,7 +56,7 @@ public class EliteCommanderAI : IMacroAI
         if (_world == null) return;
 
         // 1. MİKRO YÖNETİM (Çok Hızlı Çalışmalı - 0.1s)
-        if (_microTimer >= 5f)
+        if (_microTimer >= 1f)
         {
             dcCountScripted++;
             // Debug.Log("dcCountScripted " + dcCountScripted);
@@ -66,7 +66,7 @@ public class EliteCommanderAI : IMacroAI
         }
 
         // 2. MAKRO YÖNETİM (Daha Yavaş - 0.5s)
-        if (_timer <= 20f) return;
+        if (_timer <= 5f) return;
         _timer = 0;
 
         var me = _world.Players[_myPlayerID];

@@ -340,5 +340,34 @@ namespace RTS.Simulation.Systems
             }
             return bestTarget;
         }
+        public static int GetBuildingCount(SimWorldState world, int playerID, SimBuildingType type)
+        {
+            // Dictionary üzerinde LINQ sayımı (Performans kritikse SimPlayerData içinde int olarak tutulabilir)
+            return world.Buildings.Values.Count(b => b.PlayerID == playerID && b.Type == type);
+        }
+
+        public static bool CanBuild(SimWorldState world, int playerID, SimBuildingType type)
+        {
+            // 1. Limit Kontrolü
+            int currentCount = GetBuildingCount(world, playerID, type);
+            if (currentCount >= SimConfig.MAX_BUILDING_PER_TYPE) return false;
+
+            // 2. Kaynak Kontrolü (Mevcut maliyet fonksiyonlarını çağırarak)
+            int w = 0, s = 0, m = 0;
+            switch (type)
+            {
+                case SimBuildingType.House: w = SimConfig.HOUSE_COST_WOOD; s = SimConfig.HOUSE_COST_STONE; m = SimConfig.HOUSE_COST_MEAT; break;
+                case SimBuildingType.Farm: w = SimConfig.FARM_COST_WOOD; s = SimConfig.FARM_COST_STONE; m = SimConfig.FARM_COST_MEAT; break;
+                case SimBuildingType.WoodCutter: w = SimConfig.WOODCUTTER_COST_WOOD; s = SimConfig.WOODCUTTER_COST_STONE; m = SimConfig.WOODCUTTER_COST_MEAT; break;
+                case SimBuildingType.StonePit: w = SimConfig.STONEPIT_COST_WOOD; s = SimConfig.STONEPIT_COST_STONE; m = SimConfig.STONEPIT_COST_MEAT; break;
+                case SimBuildingType.Barracks: w = SimConfig.BARRACKS_COST_WOOD; s = SimConfig.BARRACKS_COST_STONE; m = SimConfig.BARRACKS_COST_MEAT; break;
+                case SimBuildingType.Tower: w = SimConfig.TOWER_COST_WOOD; s = SimConfig.TOWER_COST_STONE; m = SimConfig.TOWER_COST_MEAT; break;
+                case SimBuildingType.Wall: w = SimConfig.WALL_COST_WOOD; s = SimConfig.WALL_COST_STONE; m = SimConfig.WALL_COST_MEAT; break;
+                default: return false;
+            }
+
+            return SimResourceSystem.CanAfford(world, playerID, w, s, m);
+        }
     }
+
 }

@@ -1,0 +1,6 @@
+Opponent,Win,Duration,Workers,Soldiers,Towers,Wood,Stone,Meat
+Rusher,False,109.85,3,3,0,1500,500,1450
+Rusher,True,150.63,3,6,0,2000,500,2460
+Rusher,True,269.35,12,8,0,2500,500,4830
+Rusher,True,155.23,5,0,2,0,0,950
+Rusher,True,420.10,3,0,2,60,15560,280

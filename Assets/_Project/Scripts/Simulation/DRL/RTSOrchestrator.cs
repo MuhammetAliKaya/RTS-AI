@@ -183,7 +183,7 @@ public class RTSOrchestrator : MonoBehaviour
             // UnitAgent.AddReward(-0.005f);
         }
 
-        if (CurrentMatchStats != null) CurrentMatchStats.SourceHeatmap[sourceIndex]++;
+        // if (CurrentMatchStats != null) CurrentMatchStats.SourceHeatmap[sourceIndex]++;
 
         _lastSelectedSourceIndex = sourceIndex; // Son seçimi kaydet
         SelectedSourceIndex = sourceIndex;
@@ -242,7 +242,7 @@ public class RTSOrchestrator : MonoBehaviour
             if (CurrentMatchStats != null)
             {
                 // EKLENECEK SATIRLAR:
-                CurrentMatchStats.TargetHeatmap[targetIndex]++;
+                // CurrentMatchStats.TargetHeatmap[targetIndex]++;
 
                 if (SelectedActionType == 10) // 10 = ACT_ATTACK_ENEMY
                 {
@@ -251,8 +251,8 @@ public class RTSOrchestrator : MonoBehaviour
                     string typeKey = targetUnit != null ? targetUnit.UnitType.ToString() :
                                     (targetBuilding != null ? targetBuilding.Type.ToString() : "Empty");
 
-                    if (!CurrentMatchStats.AttackTargets.ContainsKey(typeKey)) CurrentMatchStats.AttackTargets[typeKey] = 0;
-                    CurrentMatchStats.AttackTargets[typeKey]++;
+                    // if (!CurrentMatchStats.AttackTargets.ContainsKey(typeKey)) CurrentMatchStats.AttackTargets[typeKey] = 0;
+                    // CurrentMatchStats.AttackTargets[typeKey]++;
                 }
             }
             // Standart başarı ödülleri (Herkes mutlu)
