@@ -17,6 +17,8 @@ Bursa, Turkey
 * **Source Code (GitHub):** [github.com/MuhammetAliKaya/RTS-AI](https://github.com/MuhammetAliKaya/RTS-AI)
 * **Playable Simulation (Itch.io):** [muhammetalikaya.itch.io/rts-ai](https://muhammetalikaya.itch.io/rts-ai)
 * **Project Demo Video (YouTube):** [Watch Video](https://www.youtube.com/watch?v=fEUaKtoqGTQ)
+* **Full Article (PDF):** [View Article](./Makale.pdf)
+* **Project Report (PDF):** [View Report](./Rapor.pdf)
 
 ---
 
