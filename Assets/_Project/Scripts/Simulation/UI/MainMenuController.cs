@@ -165,7 +165,7 @@ public class MainMenuController : MonoBehaviour
         else
             GameSessionSettings.P2BotType = AIOpponentType.Balanced;
 
-        GameSessionSettings.P2Difficulty = AIDifficulty.Aggressive;
+        // GameSessionSettings.P2Difficulty = AIDifficulty.Aggressive;
 
         Debug.Log("🚀 Oyun Yükleniyor...");
 

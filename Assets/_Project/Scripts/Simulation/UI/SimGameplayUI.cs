@@ -116,6 +116,7 @@ public class SimGameplayUI : MonoBehaviour
                 if (SimInputManager.Instance.Orchestrator != null)
                 {
                     SimInputManager.Instance.Orchestrator.RecordHumanDemonstration(sourceIndex, actionID, 0);
+                    SimBuildingSystem.StartTraining(targetBuilding, world, uType);
                     // Orchestrator genellikle kayıttan sonra işlemi kendi Translator'ı ile yapar.
                     // Eğer yapmıyorsa aşağıya bir "Execute" eklemek gerekebilir.
                 }
@@ -129,12 +130,12 @@ public class SimGameplayUI : MonoBehaviour
             {
                 // --- MANUEL MOD (Doğrudan Simülasyona Emir Ver) ---
                 SimBuildingSystem.StartTraining(targetBuilding, world, uType);
-                // Debug.Log($"[UI] Manuel Üretim Başlatıldı: {uType}");
+                Debug.Log($"[UI] Manuel Üretim Başlatıldı: {uType}");
             }
         }
         else
         {
-            // Debug.LogWarning($"Player {MyPlayerID} için uygun {bType} bulunamadı veya meşgul!");
+            Debug.LogWarning($"Player {MyPlayerID} için uygun {bType} bulunamadı veya meşgul!");
         }
 
         CloseAllMenus();

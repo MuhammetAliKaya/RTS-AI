@@ -9,6 +9,8 @@ namespace RTS.Simulation.Data
         public int PlayerID;
         public SimUnitType UnitType; // Worker mı Soldier mı?
 
+        public float PathRetryTimer;
+
         // --- KONUM & HAREKET ---
         public int2 GridPosition;
         public List<int2> Path = new List<int2>();

@@ -1506,10 +1506,10 @@ MonoBehaviour:
   useRandomSeed: 0
   IsTrainingMode: 1
   _simStepSize: 0.005
-  _simStepCountPerFrame: 10
+  _simStepCountPerFrame: 25
   Visualizer: {fileID: 1375291963}
   UseMacroAI: 1
-  SelectedBotType: 6
+  SelectedBotType: 2
   EnemyDifficulty: 2
   ShowGUI: 1
   ToggleKey: 103
@@ -4060,7 +4060,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 9
+    VectorObservationSize: 50
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -4069,7 +4069,7 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: b457d6a1707dc784fbcc4d73b98e3f02, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: 3a991026683fd07418ad6d08fb8b27f4, type: 3}
   m_InferenceDevice: 0
   m_BehaviorType: 2
   m_BehaviorName: ActionSelector
@@ -4229,7 +4229,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 6
+    VectorObservationSize: 50
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -4238,7 +4238,7 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 8482679ec2e12c5499484185efcaf074, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: 2d95648404aac074cb38934704cddb12, type: 3}
   m_InferenceDevice: 0
   m_BehaviorType: 2
   m_BehaviorName: TargetSelector
@@ -4780,6 +4780,8 @@ MonoBehaviour:
     TargetHeatmap: 
     MatchDuration: 0
   IsWaitingForDecision: 0
+  CurrentStep: 0
+  MaxSteps: 5000
 --- !u!4 &1792396135
 Transform:
   m_ObjectHideFlags: 0
@@ -5585,7 +5587,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_BrainParameters:
-    VectorObservationSize: 6
+    VectorObservationSize: 50
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -5594,7 +5596,7 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: c331458f25862114185cda995588b6d8, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: 22b15e0ef3af83a47abdee7fd7bfa9be, type: 3}
   m_InferenceDevice: 0
   m_BehaviorType: 2
   m_BehaviorName: UnitSelector

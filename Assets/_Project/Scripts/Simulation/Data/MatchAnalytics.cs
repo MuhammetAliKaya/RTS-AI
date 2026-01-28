@@ -11,6 +11,8 @@ public class MatchAnalytics
     public bool IsWin;
     public int EpisodeID;
 
+    public int MapSeed;
+
     // Varlık Dağılımı
     public int TotalWorkersCreated;
     public int TotalSoldiersCreated;

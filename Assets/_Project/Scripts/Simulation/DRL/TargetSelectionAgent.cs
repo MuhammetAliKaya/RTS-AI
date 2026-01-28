@@ -44,30 +44,28 @@ public class TargetSelectionAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. Context (Bağlam): Kim ve Ne Yapıyor?
-        // Bu ajan haritaya bakarken, "Şu an seçili olan birim (Source) KİM ve NE yapmak istiyor?" bilgisini bilmeli.
-        int sourceIndex = _orchestrator.SelectedSourceIndex;
-        int actionType = _orchestrator.SelectedActionType;
-
-        // Seçilen birimin türünü (Worker/Soldier/Base vb.) kodlanmış float olarak ver
-        int selectedIndex = _orchestrator.SelectedSourceIndex;
-        float[] typeObservations = _translator.GetOneHotEncodedTypeAt(selectedIndex);
-
-        foreach (float obs in typeObservations)
+        // 1. Önce Context Bilgisi (Seçilen Birim Türü) - Bu her ajanda farklı olabilir veya aynı kalabilir
+        // (Mevcut kodunuzdaki Context kısmını koruyun, örneğin One-Hot Encoding)
+        if (_orchestrator == null || _translator == null)
         {
-            sensor.AddObservation(obs); // 1 yerine 5 gözlem eklenmiş olur
+            // Sensör boş kalmasın diye dummy veri basabiliriz veya boş döneriz.
+            // ML-Agents hata vermemesi için genellikle boş bırakmak yerine 0 basmak daha güvenlidir ama 
+            // Orchestrator yoksa yapacak bir şey yok, return diyoruz.
+            return;
+        }
+        if (_orchestrator.SelectedSourceIndex != -1)
+        {
+            float[] typeObs = _translator.GetOneHotEncodedTypeAt(_orchestrator.SelectedSourceIndex);
+            foreach (float val in typeObs) sensor.AddObservation(val);
+        }
+        else
+        {
+            // Seçim yoksa boş context
+            for (int i = 0; i < 5; i++) sensor.AddObservation(0f);
         }
 
-        // Seçilen eylem (ActionType)
-        sensor.AddObservation((float)actionType);
-
-        // 2. Sensör Görselleştirme (Highlight) - ÇOK ÖNEMLİ
-        // GridSensor'ün "Highlight" kanalını kullanarak, seçili birimin nerede olduğunu
-        // görsel olarak yapay zekanın "gözüne" sokuyoruz.
-        if (_gridSensorComp != null)
-        {
-            _gridSensorComp.SetHighlight(sourceIndex);
-        }
+        // 2. STRATEJİK VEKTÖR (Sizin istediğiniz liste)
+        _orchestrator.AddStrategicObservations(sensor);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)

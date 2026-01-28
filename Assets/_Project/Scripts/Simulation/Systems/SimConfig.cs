@@ -73,7 +73,7 @@ namespace RTS.Simulation.Systems
         public const float WORKER_MOVE_SPEED = 5.0f;
         public const float SOLDIER_MOVE_SPEED = 2.0f;
 
-        public const int SOLDIER_DAMAGE = 10;
+        public const int SOLDIER_DAMAGE = 20;
         public const float SOLDIER_ATTACK_RANGE = 1.5f;
         public const float SOLDIER_ATTACK_SPEED = 1.0f;
 
@@ -101,7 +101,7 @@ namespace RTS.Simulation.Systems
         public const int START_STONE = 100;
         public const int START_WORKER_COUNT = 1;
 
-        public const int MAX_BUILDING_PER_TYPE = 20;
+        public const int MAX_BUILDING_PER_TYPE = 10;
 
         // --- KULLANILMAYANLAR (YORUMA ALINDI) ---
         // public const float UNIT_VIEW_RANGE = 8.0f; 

@@ -4,6 +4,8 @@ using RTS.Simulation.Systems;
 using RTS.Simulation.Data;
 using System.Diagnostics; // En üste ekleyin
 using System.Linq;
+using System.Collections.Generic; // Queue için GEREKLİ
+using Unity.MLAgents.Sensors;
 
 public class RTSOrchestrator : MonoBehaviour
 {
@@ -48,6 +50,20 @@ public class RTSOrchestrator : MonoBehaviour
     public MatchAnalytics CurrentMatchStats;
 
     public bool IsWaitingForDecision = false;
+
+    // 1. Kaynak Hızı Takibi İçin Değişkenler
+    private Queue<int> _woodHistory = new Queue<int>();
+    private Queue<int> _stoneHistory = new Queue<int>();
+    private Queue<int> _meatHistory = new Queue<int>();
+    private const int RATE_WINDOW_SIZE = 50; // Son 50 adımın ortalaması (yaklaşık 1 sn)
+
+    // Hızları saklayan değişkenler
+    public float WoodRatePerSecond { get; private set; }
+    public float StoneRatePerSecond { get; private set; }
+    public float MeatRatePerSecond { get; private set; }
+
+    public int CurrentStep = 0; // Runner'dan güncellenecek
+    public int MaxSteps = 5000;
 
     private void Awake()
     {
@@ -222,7 +238,7 @@ public class RTSOrchestrator : MonoBehaviour
 
         if (_runner != null)
         {
-            _runner.NotifyAgentAction(SelectedActionType, targetIndex);
+            // _runner.NotifyAgentAction(SelectedActionType, targetIndex);
         }
 
         // Eylemi Gerçekleştir
@@ -270,6 +286,106 @@ public class RTSOrchestrator : MonoBehaviour
     // --- YARDIMCI METOTLAR ---
     // RTSOrchestrator.cs sınıfının içine ekle:
 
+    // BU FONKSİYONU AdversarialTrainerRunner.UpdateStatisticsVariables İÇİNDEN ÇAĞIRACAĞIZ
+    public void UpdateResourceRates(int currentWood, int currentStone, int currentMeat)
+    {
+        // Kuyruklara ekle
+        _woodHistory.Enqueue(currentWood);
+        _stoneHistory.Enqueue(currentStone);
+        _meatHistory.Enqueue(currentMeat);
+
+        // Kuyruk dolduysa eskiyi at
+        if (_woodHistory.Count > RATE_WINDOW_SIZE) _woodHistory.Dequeue();
+        if (_stoneHistory.Count > RATE_WINDOW_SIZE) _stoneHistory.Dequeue();
+        if (_meatHistory.Count > RATE_WINDOW_SIZE) _meatHistory.Dequeue();
+
+        // Hız Hesabı: (Son - İlk) / Zaman
+        // Basitçe: Kuyruktaki değişim miktarı
+        if (_woodHistory.Count >= 2)
+        {
+            WoodRatePerSecond = (_woodHistory.Last() - _woodHistory.First());
+            StoneRatePerSecond = (_stoneHistory.Last() - _stoneHistory.First());
+            MeatRatePerSecond = (_meatHistory.Last() - _meatHistory.First());
+        }
+    }
+    public void AddStrategicObservations(VectorSensor sensor)
+    {
+        if (_world == null || !_world.Players.ContainsKey(MyPlayerID))
+        {
+            for (int i = 0; i < 45; i++) sensor.AddObservation(0f); // Boş veri
+            return;
+        }
+
+        var me = _world.Players[MyPlayerID];
+
+        // --- 1. BENİM BİNA SAYILARIM (8 Çeşit) ---
+        var myBuildings = _world.Buildings.Values.Where(b => b.PlayerID == MyPlayerID && b.IsConstructed).ToList();
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.Base));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.Barracks));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.House));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.Farm));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.StonePit));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.WoodCutter));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.Tower));
+        sensor.AddObservation(myBuildings.Count(b => b.Type == SimBuildingType.Wall));
+
+        // --- 2. BENİM ASKER VE WORKER SAYIM ---
+        var myUnits = _world.Units.Values.Where(u => u.PlayerID == MyPlayerID && u.State != SimTaskType.Dead).ToList();
+        var soldiers = myUnits.Where(u => u.UnitType == SimUnitType.Soldier).ToList();
+        var workers = myUnits.Where(u => u.UnitType == SimUnitType.Worker).ToList();
+
+        sensor.AddObservation(soldiers.Count);
+        sensor.AddObservation(workers.Count);
+
+        // --- 3. ASKER DURUMLARI (Idle, Attacking, Moving) ---
+        sensor.AddObservation(soldiers.Count(u => u.State == SimTaskType.Idle));
+        sensor.AddObservation(soldiers.Count(u => u.State == SimTaskType.Attacking));
+        sensor.AddObservation(soldiers.Count(u => u.State == SimTaskType.Moving));
+
+        // --- 4. WORKER DURUMLARI (Idle, Harvesting, Moving, Attacking, Building) ---
+        sensor.AddObservation(workers.Count(u => u.State == SimTaskType.Idle));
+        sensor.AddObservation(workers.Count(u => u.State == SimTaskType.Gathering)); // Harvesting
+        sensor.AddObservation(workers.Count(u => u.State == SimTaskType.Moving));
+        sensor.AddObservation(workers.Count(u => u.State == SimTaskType.Attacking));
+        sensor.AddObservation(workers.Count(u => u.State == SimTaskType.Building));
+
+        // --- 5. KAYNAK MİKTARLARI ---
+        sensor.AddObservation(me.Wood);
+        sensor.AddObservation(me.Stone);
+        sensor.AddObservation(me.Meat);
+
+        // --- 6. KAYNAK HIZLARI (Saniyede Toplanan) ---
+        sensor.AddObservation(WoodRatePerSecond);
+        sensor.AddObservation(StoneRatePerSecond);
+        sensor.AddObservation(MeatRatePerSecond);
+
+        // --- 7. DÜŞMAN BİNA SAYILARI (Görünenler) ---
+        // (Fog of War yoksa tüm haritadaki düşmanları sayar)
+        var enemyBuildings = _world.Buildings.Values.Where(b => b.PlayerID != MyPlayerID && b.IsConstructed).ToList();
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.Base));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.Barracks));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.House));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.Farm));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.StonePit));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.WoodCutter));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.Tower));
+        sensor.AddObservation(enemyBuildings.Count(b => b.Type == SimBuildingType.Wall));
+
+        // --- 8. DÜŞMAN ASKER VE WORKER SAYISI ---
+        var enemyUnits = _world.Units.Values.Where(u => u.PlayerID != MyPlayerID && u.State != SimTaskType.Dead).ToList();
+        sensor.AddObservation(enemyUnits.Count(u => u.UnitType == SimUnitType.Soldier));
+        sensor.AddObservation(enemyUnits.Count(u => u.UnitType == SimUnitType.Worker));
+
+        // --- 9. OYUN ZAMANI (Evre) ---
+        sensor.AddObservation((float)CurrentStep / (float)MaxSteps);
+
+        // --- 10. BASE CANLARI (Yüzde) ---
+        var myBase = myBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
+        var enemyBase = enemyBuildings.FirstOrDefault(b => b.Type == SimBuildingType.Base);
+
+        sensor.AddObservation(myBase != null ? myBase.Health / myBase.MaxHealth : 0f);
+        sensor.AddObservation(enemyBase != null ? enemyBase.Health / enemyBase.MaxHealth : 0f);
+    }
     private void EvaluateMoveQuality(int actionType, int sourceIndex, int targetIndex)
     {
         // 1. Verilere Erişim (Mevcut Translator metotlarını kullanıyoruz)

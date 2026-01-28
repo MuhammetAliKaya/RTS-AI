@@ -9,6 +9,7 @@ using System.Globalization;
 using System.Threading; // Buraya eklendi
 using System.IO; // En üste ekleyin
 using UnityEngine.SceneManagement; // EKLENDİ: Sahne değişimi için
+using System.Collections; // <--- BU SATIRI EKLEMEN GEREKİYOR
 
 
 public enum AIDifficulty
@@ -66,9 +67,13 @@ public class AdversarialTrainerRunner : MonoBehaviour
     public string AllowedAgentName = "AdvTrainerRunner";
 
     [Header("Inference Analizi")]
-    public bool RecordInferenceToCSV = true;
+    public bool RecordInferenceToCSV = false;
     private string _inferenceFilePath;
     private List<string> _inferenceBuffer = new List<string>();
+
+    [Header("📊 OTOMATİK BENCHMARK SİSTEMİ")]
+    public bool EnableBenchmarkMode = false; // Bunu açarsan test başlar
+    public int BenchmarkMatchesPerBot = 10; // Her botla kaç maç? (70 maç için 10 yap)
 
     [Header("💀 Ölümcül Oyun Kuralları (Sudden Death)")]
     [Tooltip("Kaç adım boyunca askeri olmazsa yenik sayılsın?")]
@@ -188,6 +193,22 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private float _cumulativeCriticalGatherReward = 0f; // Sömürü kontrolü için sayaç
     private const float MAX_CRITICAL_GATHER_REWARD = 3.0f; // Maç başına max 3.0 puan
 
+    public List<AIOpponentType> BenchmarkBotList = new List<AIOpponentType>
+    {
+        AIOpponentType.Balanced,
+        AIOpponentType.Rusher,
+        AIOpponentType.Turtle,
+        AIOpponentType.EcoBoom,
+        AIOpponentType.WorkerRush,
+        AIOpponentType.Harasser,
+        AIOpponentType.EliteCommander
+    };
+
+    public List<int> BenchmarkSeeds = new List<int>();
+
+    private int _benchBotIndex = 0;
+    private int _benchMatchCount = 0;
+    private int _benchSeedIndex = 0;
 
     void Awake()
     {
@@ -211,7 +232,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
             this.Player2Controller = GameSessionSettings.P2Controller;
             this.ScriptedBotP2 = GameSessionSettings.P2BotType;
-            this.EnemyDifficultyP2 = GameSessionSettings.P2Difficulty;
+            // this.EnemyDifficultyP2 = GameSessionSettings.P2Difficulty;
 
             // Eğer P1 Human ise AgentP1'i null yapabiliriz veya olduğu gibi bırakabiliriz,
             // sistem zaten Player1Controller enum'una bakıyor.
@@ -231,13 +252,25 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             Orchestrator.Setup(_world, _gridSys, _unitSys, _buildSys, this);
         }
-
+#if !UNITY_WEBGL
         if (RecordInferenceToCSV)
         {
             string timestamp = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
             _inferenceFilePath = Path.Combine(Application.dataPath, $"InferenceTimes_{timestamp}.csv");
             File.WriteAllText(_inferenceFilePath, "Step,ElapsedMs,BotType,Difficulty\n");
         }
+#endif
+        if (Player1Controller == PlayerControllerType.Human || Player2Controller == PlayerControllerType.Human)
+        {
+            _simStepCountPerFrame = 2f;   // İnsan varsa oynanabilir hız
+            // IsTrainingMode = false;       // İnsan oynarken Training modu kapalı olsun (Update döngüsü düzgün çalışsın diye)
+        }
+        else
+        {
+            _simStepCountPerFrame = 25f;  // Sadece AI varsa çok hızlı (Fast Forward)
+            // IsTrainingMode = true;        // Hızlı döngüye girmesi için Training modu açık olmalı
+        }
+        // ----------------------
 
         ResetSimulation();
     }
@@ -271,9 +304,17 @@ public class AdversarialTrainerRunner : MonoBehaviour
         Matrix4x4 originalMatrix = GUI.matrix;
         GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * GUIScale);
 
-        float width = 320f;  // Genişlik biraz artırıldı
-        float height = 550f; // YÜKSEKLİK CİDDİ ORANDA ARTIRILDI (320 -> 550)
         float padding = 10f;
+        float width = 320f;  // Genişlik sabit kalabilir (okunabilirlik için)
+
+        // --- DEĞİŞİKLİK BURADA ---
+        // Ekran Yüksekliğinin %80'ini alıyoruz. 
+        // GUIScale'e bölüyoruz ki arayüz büyütüldüğünde (1.3x) ekran dışına taşmasın.
+        float height = (Screen.height * 0.8f) / GUIScale;
+
+        // Eğer gerçekten "Genişliğin" %80'ini kastettiyseniz (Çok geniş olur), şu satırı açın:
+        // float width = (Screen.width * 0.8f) / GUIScale; 
+        // -------------------------
 
         Rect boxRect = new Rect(padding, padding, width, height);
 
@@ -290,10 +331,10 @@ public class AdversarialTrainerRunner : MonoBehaviour
         headerStyle.alignment = TextAnchor.MiddleCenter;
         headerStyle.fontSize = 14;
         headerStyle.normal.textColor = Color.yellow;
-        GUILayout.Label($"TRAINING DASHBOARD ({_currentStep}/{MaxSteps})", headerStyle);
+        GUILayout.Label($"DASHBOARD ({_currentStep}/{MaxSteps})", headerStyle);
 
         GUIStyle textStyle = new GUIStyle(GUI.skin.label);
-        textStyle.fontSize = 13; // Yazı boyutu biraz büyütüldü
+        textStyle.fontSize = 13;
         textStyle.normal.textColor = Color.white;
         textStyle.richText = true;
 
@@ -310,26 +351,25 @@ public class AdversarialTrainerRunner : MonoBehaviour
         GUILayout.Space(5);
 
         // KAYNAKLAR (DETAYLI)
-        GUILayout.Label("<b>KAYNAKLAR (Resources)</b>", textStyle);
+        GUILayout.Label("<b>Resources</b>", textStyle);
         GUILayout.BeginHorizontal();
-        GUILayout.Label($"🌲 {_lastWood}", textStyle);
-        GUILayout.Label($"🏔️ {_lastStone}", textStyle);
-        GUILayout.Label($"🍖 {_lastMeat}", textStyle);
+        GUILayout.Label($"🌲Wood {_lastWood}", textStyle);
+        GUILayout.Label($"🏔️Stone {_lastStone}", textStyle);
+        GUILayout.Label($"🍖Meat {_lastMeat}", textStyle);
         GUILayout.EndHorizontal();
 
-        // --- EKLENEN KISIM: NÜFUS GÖSTERGESİ ---
-        GUILayout.Label($"📈 Nüfus: <b>{_lastCurrentPop}/{_lastMaxPop}</b>", textStyle);
-        // ---------------------------------------
+        // NÜFUS GÖSTERGESİ
+        GUILayout.Label($"📈 Population: <b>{_lastCurrentPop}/{_lastMaxPop}</b>", textStyle);
 
         GUILayout.Space(5);
         GUILayout.Box("", GUILayout.Height(2));
         GUILayout.Space(5);
 
         // DETAYLI İSTATİSTİKLER
-        GUILayout.Label("<b>SAVAŞ & GELİŞİM</b>", textStyle);
-        GUILayout.Label($"🏠 Binalarım: <b>{_myBuildingCount}</b>", textStyle);
-        GUILayout.Label($"⚔️ Öldürülen Düşman: <color=red><b>{_cumulativeKills}</b></color>", textStyle);
-        GUILayout.Label($"🔥 Yıkılan Bina: <color=orange><b>{_cumulativeRazes}</b></color>", textStyle);
+        GUILayout.Label("<b>War & Progress</b>", textStyle);
+        GUILayout.Label($"🏠 Buildings: <b>{_myBuildingCount}</b>", textStyle);
+        GUILayout.Label($"⚔️ Killed Enemy: <color=red><b>{_cumulativeKills}</b></color>", textStyle);
+        GUILayout.Label($"🔥 Destructed Structures: <color=orange><b>{_cumulativeRazes}</b></color>", textStyle);
 
         GUILayout.Space(5);
         GUILayout.Box("", GUILayout.Height(2));
@@ -340,13 +380,19 @@ public class AdversarialTrainerRunner : MonoBehaviour
         GUILayout.Label($"Last Ep Reward: {_statsLastEpisodeReward:F2}", textStyle);
 
         // GRAFİK ALANI
+        // Kalan boşluğu grafiğe verelim (Dinamik yükseklik olduğu için)
         GUILayout.Space(15);
-        GUILayout.Label("<b>Reward Değişimi (Son 60 Adım)</b>", textStyle);
-        DrawRewardGraph(width - 20, 80f); // Grafik yüksekliği artırıldı
+        GUILayout.Label("<b>Reward Change (last 60 step)</b>", textStyle);
+
+        // Kutunun kalan yüksekliğini kabaca hesaplayıp grafiğe veriyoruz
+        float usedHeight = 400f; // Tahmini kullanılan üst alan
+        float graphHeight = Mathf.Max(80f, height - usedHeight);
+
+        DrawRewardGraph(width - 20, graphHeight);
 
         GUILayout.EndArea();
 
-        // Matrix'i eski haline getir (Diğer Unity GUI'lerini bozmamak için)
+        // Matrix'i eski haline getir
         GUI.matrix = originalMatrix;
     }
 
@@ -410,6 +456,9 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // --- 1. SCRIPTED BOTLARI ÇALIŞTIR ---
         if (Player1Controller == PlayerControllerType.Scripted && _p1ScriptedBot != null) _p1ScriptedBot.Update(dt);
         if (Player2Controller == PlayerControllerType.Scripted && _p2ScriptedBot != null) _p2ScriptedBot.Update(dt);
+
+
+        _frameAttackLog.Clear();
 
         // --- 2. AI KARARLARI (P1) ---
         // Orchestrator kullanan ana ajan
@@ -507,25 +556,50 @@ public class AdversarialTrainerRunner : MonoBehaviour
         int targetDecisionsPerSecond = Mathf.Clamp(totalActionableEntities, 1, 40);
 
         // 5. Aralığı Döndür (Örn: 20 birim -> 0.05sn, 1 birim -> 1.0sn)
-        return 3.0f / (float)(targetDecisionsPerSecond * 3);
+        return 3.0f / (float)(targetDecisionsPerSecond * 5);
     }
+
+    // AdversarialTrainerRunner.cs dosyasındaki UpdateStatisticsVariables fonksiyonunu bununla değiştirin:
+
+    // AdversarialTrainerRunner.cs içine:
 
     private void UpdateStatisticsVariables()
     {
         if (_world == null) return;
 
-        // Kendi bina sayımı güncelle
-        _myBuildingCount = _world.Buildings.Values.Count(b => b.PlayerID == 1 && b.IsConstructed);
-
-        // Kaynakları güncelle
-        if (_world.Players.ContainsKey(1))
+        // --- 1. ANA AJAN (Orchestrator / Player 1) ---
+        if (Orchestrator != null && _world.Players.ContainsKey(Orchestrator.MyPlayerID))
         {
-            var p = _world.Players[1];
-            _lastWood = p.Wood;
-            _lastStone = p.Stone;
-            _lastMeat = p.Meat;
-            _lastCurrentPop = p.CurrentPopulation;
-            _lastMaxPop = p.MaxPopulation;
+            int p1ID = Orchestrator.MyPlayerID;
+            var p1Data = _world.Players[p1ID];
+
+            // Ajanın kendisine verileri gönder (Gözlem vektörü için şart)
+            Orchestrator.CurrentStep = _currentStep;
+            Orchestrator.MaxSteps = MaxSteps;
+            Orchestrator.UpdateResourceRates(p1Data.Wood, p1Data.Stone, p1Data.Meat);
+
+            // Runner'ın kendi GUI istatistiklerini güncelle (Sadece P1'i gösterir)
+            _lastWood = p1Data.Wood;
+            _lastStone = p1Data.Stone;
+            _lastMeat = p1Data.Meat;
+            _lastCurrentPop = p1Data.CurrentPopulation;
+            _lastMaxPop = p1Data.MaxPopulation;
+
+            // Bina sayımı (GUI için)
+            _myBuildingCount = _world.Buildings.Values.Count(b => b.PlayerID == p1ID && b.IsConstructed);
+        }
+
+        // --- 2. İKİNCİ AJAN (AgentP2 / Player 2) ---
+        // Eğer P2 de bir yapay zeka ise, onun da "Gelir Hızı" gibi verilere ihtiyacı var.
+        if (AgentP2 != null && AgentP2.gameObject.activeSelf && _world.Players.ContainsKey(AgentP2.MyPlayerID))
+        {
+            int p2ID = AgentP2.MyPlayerID;
+            var p2Data = _world.Players[p2ID];
+
+            // P2'nin beynine verileri gönder
+            AgentP2.CurrentStep = _currentStep;
+            AgentP2.MaxSteps = MaxSteps;
+            AgentP2.UpdateResourceRates(p2Data.Wood, p2Data.Stone, p2Data.Meat);
         }
     }
 
@@ -563,6 +637,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             // ActionRewardOnly kullanıyoruz çünkü sadece o işçiyi ilgilendiriyor
             Orchestrator.AddActionRewardOnly(criticalBonus);
+            TrackReward(criticalBonus);
 
             _cumulativeCriticalGatherReward += criticalBonus;
             // Debug.Log($"Critical Resource Gathered! Bonus: {criticalBonus:F3}");
@@ -570,13 +645,24 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
         // --- NORMAL KAYNAK ÖDÜLLERİ (Çok düşük tutmaya devam) ---
         if (deltaWood > 0 && _currentStats.TotalWoodGathered <= 10000)
+        {
             Orchestrator.AddGroupReward(deltaWood * 0.00005f);
+            TrackReward(deltaWood * 0.00005f);
+        }
 
         if (deltaStone > 0 && _currentStats.TotalStoneGathered <= 10000)
+        {
             Orchestrator.AddGroupReward(deltaStone * 0.00005f);
+            TrackReward(deltaStone * 0.00005f);
+
+        }
 
         if (deltaMeat > 0 && _currentStats.TotalMeatGathered <= 100000)
+        {
             Orchestrator.AddGroupReward(deltaMeat * 0.0001f);
+            TrackReward(deltaMeat * 0.0001f);
+
+        }
 
         // Değerleri güncelle
         _lastWood = player.Wood;
@@ -599,19 +685,24 @@ public class AdversarialTrainerRunner : MonoBehaviour
                     // --- İLK KIŞLA: BÜYÜK ÖDÜL (3.0) ---
                     _barracksRewardGiven = true;
                     Orchestrator.AddGroupReward(0.5f);
+                    TrackReward(0.5f);
+
                     Debug.Log(">>> FIRST BARRACKS REWARD GIVEN! (+3.0) <<<");
                 }
                 else if (currentBarracks <= 3) // LİMİT EKLENDİ (Maks 6 Kışla)
                 {
                     Orchestrator.AddGroupReward(0.1f);
+                    TrackReward(0.1f);
                 }
                 else if (currentBarracks <= 5) // LİMİT EKLENDİ (Maks 6 Kışla)
                 {
                     Orchestrator.AddGroupReward(0.05f);
+                    TrackReward(0.05f);
                 }
                 else if (currentBarracks <= 10) // LİMİT EKLENDİ (Maks 6 Kışla)
                 {
                     Orchestrator.AddGroupReward(0.01f);
+                    TrackReward(0.01f);
                 }
             }
         }
@@ -645,6 +736,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             if (Orchestrator != null)
             {
                 Orchestrator.AddGroupReward(0.1f); // Kule stratejik yatırımdır
+                TrackReward(0.1f);
                 Debug.Log($"[Defense] Strategic Tower Built! ({currentTowers}/5)");
             }
         }
@@ -667,6 +759,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
                     _farmRewardGiven = true;
                     Debug.Log("FarmReward");
                     Orchestrator.AddGroupReward(2f);
+                    TrackReward(2f);
                     Orchestrator.AddActionRewardOnly(1.0f);
 
                 }
@@ -674,6 +767,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
                 else if (currentFarms <= 5)
                 {
                     Orchestrator.AddGroupReward(0.05f);
+                    TrackReward(0.05f);
                 }
                 // 8'den fazlası gereksiz harcamadır, ödül yok.
             }
@@ -682,19 +776,20 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // 2. ODUNCU (CUTTER) - Limit: 5 Adet
         if (currentCutters > _lastWoodCutterCount)
         {
-            if (currentCutters <= 5) Orchestrator.AddGroupReward(0.05f);
+            if (currentCutters <= 5) { Orchestrator.AddGroupReward(0.05f); TrackReward(0.05f); }
             // Sadece mantıklı sayıda yaparsa ödül ver
-            if (currentCutters <= 1) Orchestrator.AddGroupReward(1.95f);
-            if (currentCutters <= 1) Orchestrator.AddActionRewardOnly(1.0f);
+            if (currentCutters <= 1) { Orchestrator.AddGroupReward(1.95f); TrackReward(1.95f); }
+
+            if (currentCutters <= 1) { Orchestrator.AddActionRewardOnly(1.0f); TrackReward(1f); }
 
         }
 
         // 3. TAŞ OCAĞI (PIT) - Limit: 5 Adet
         if (currentPits > _lastStonePitCount)
         {
-            if (currentPits <= 5) Orchestrator.AddGroupReward(0.05f);
-            if (currentPits <= 1) Orchestrator.AddGroupReward(1.95f);
-            if (currentPits <= 1) Orchestrator.AddActionRewardOnly(1.0f);
+            if (currentPits <= 5) { Orchestrator.AddGroupReward(0.05f); TrackReward(0.05f); }
+            if (currentPits <= 1) { Orchestrator.AddGroupReward(1.95f); TrackReward(1.95f); }
+            if (currentPits <= 1) { Orchestrator.AddActionRewardOnly(1.0f); TrackReward(1f); }
 
 
         }
@@ -707,6 +802,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             if (Orchestrator != null)
             {
                 Orchestrator.AddGroupReward(milestoneReward);
+                TrackReward(milestoneReward);
                 Orchestrator.AddActionRewardOnly(milestoneReward / 2);
 
             }
@@ -834,6 +930,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             float damageDealt = _lastEnemyBaseHealth - currentEnemyBaseHealth;
             // Hasar başına puan (Örn: 100 hasar = 0.1 puan)
             Orchestrator.AddGroupReward(damageDealt * 0.0001f);
+            TrackReward(damageDealt * 0.0001f);
         }
 
         // DEĞERLERİ GÜNCELLEME (Burası fonksiyonun en sonunda olmalı)
@@ -959,6 +1056,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             // Klasik CSV kaydı
             SaveMatchToCSV(_currentStats);
         }
+
         UnsubscribeAnalytics();
 
         // --- İSTATİSTİKLERİ GÜNCELLE ---
@@ -978,6 +1076,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             if (reward == 0 && EnemyDifficulty == AIDifficulty.Passive) reward = -1.0f;
 
             Orchestrator.AddGroupReward(reward);
+            TrackReward(reward);
             Orchestrator.EndGroupEpisode();
         }
         Orchestrator.IsWaitingForDecision = false;
@@ -991,6 +1090,53 @@ public class AdversarialTrainerRunner : MonoBehaviour
             AgentP2.EndGroupEpisode();
         }
 
+
+        if (EnableBenchmarkMode)
+        {
+            _benchMatchCount++; // O anki botla yapılan maç sayısını artır
+
+            // 1. Botla yeterince maç yapıldı mı? (Örn: 10 maç)
+            if (_benchMatchCount >= BenchmarkMatchesPerBot)
+            {
+                _benchMatchCount = 0;
+                _benchBotIndex++; // Sıradaki bota geç
+
+                // 2. Tüm botlar denendi mi? (7 Bot bitti mi?)
+                if (_benchBotIndex >= BenchmarkBotList.Count)
+                {
+                    _benchBotIndex = 0; // Botları başa sar
+
+                    // TEST 2 KONTROLÜ: Eğer belirli seed listesi varsa
+                    if (BenchmarkSeeds.Count > 0)
+                    {
+                        _benchSeedIndex++; // Sıradaki seed'e geç
+                        if (_benchSeedIndex >= BenchmarkSeeds.Count)
+                        {
+                            Debug.Log("<color=green>✅ TÜM BENCHMARK TESTLERİ TAMAMLANDI! UYGULAMA DURDURULUYOR.</color>");
+#if UNITY_EDITOR
+                            UnityEditor.EditorApplication.isPlaying = false;
+#else
+                                Application.Quit();
+#endif
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        // TEST 1 MODU: Seed listesi yoksa, botlar bitince testi bitir.
+                        Debug.Log("<color=green>✅ TEST 1 (RANDOM SEED) TAMAMLANDI!</color>");
+#if UNITY_EDITOR
+                        UnityEditor.EditorApplication.isPlaying = false;
+#else
+                             Application.Quit();
+#endif
+                        return;
+                    }
+                }
+            }
+        }
+
+
         if (GameSessionSettings.IsLoadedFromMenu)
         {
             Debug.Log("🔙 Oyun Bitti. Menüye dönülüyor...");
@@ -998,7 +1144,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             // Eğer statik eventleri temizlemezsek yeni sahnede hata verebilir
             UnsubscribeAnalytics();
 
-            SceneManager.LoadScene(MenuSceneName);
+            StartCoroutine(ReturnToMenuRoutine());
         }
         else
         {
@@ -1007,8 +1153,52 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     }
 
+    private IEnumerator ReturnToMenuRoutine()
+    {
+        Debug.Log("⏳ Oyun bitti. 2 saniye sonra menüye dönülüyor...");
+
+        // Unity'nin zaman akışından etkilenmeden gerçek 2 saniye bekle
+        yield return new WaitForSecondsRealtime(2f);
+
+        // Temizliği garantiye al
+        UnsubscribeAnalytics();
+
+        // Menü sahnesini yükle
+        SceneManager.LoadScene(MenuSceneName);
+    }
     public void ResetSimulation()
     {
+        // --- BENCHMARK AYARLARINI UYGULA ---
+        if (EnableBenchmarkMode)
+        {
+            // 1. Sıradaki Botu Seç
+            if (BenchmarkBotList.Count > 0)
+            {
+                // Hem Runner ayarını hem ScriptedBot ayarını güncelle
+                ScriptedBotP2 = BenchmarkBotList[_benchBotIndex];
+                SelectedBotType = BenchmarkBotList[_benchBotIndex];
+
+                // Rakip zorluğunu da sabitleyebilirsin (Örn: Hep Aggressive)
+                EnemyDifficulty = AIDifficulty.Aggressive;
+                EnemyDifficultyP2 = AIDifficulty.Aggressive;
+            }
+
+            // 2. Seed Ayarla
+            if (BenchmarkSeeds.Count > 0)
+            {
+                // TEST 2: Sabit Seed Listesi
+                useRandomSeed = false;
+                mapSeed = BenchmarkSeeds[_benchSeedIndex];
+                Debug.Log($"[Benchmark] Seed: {mapSeed} | Bot: {ScriptedBotP2} ({_benchBotIndex + 1}/{BenchmarkBotList.Count}) | Match: {_benchMatchCount + 1}/{BenchmarkMatchesPerBot}");
+            }
+            else
+            {
+                // TEST 1: Random Seed
+                useRandomSeed = true; // Her maç yeni seed üretir
+                Debug.Log($"[Benchmark] Random Seed | Bot: {ScriptedBotP2} ({_benchBotIndex + 1}/{BenchmarkBotList.Count}) | Match: {_benchMatchCount + 1}/{BenchmarkMatchesPerBot}");
+            }
+        }
+        // -----------------------------------
         _currentStep = 0;
         _gameEnded = false;
         _timer = 0;
@@ -1152,7 +1342,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         {
             if (Player1Controller == PlayerControllerType.Human) SimInputManager.Instance.LocalPlayerID = 1;
             else if (Player2Controller == PlayerControllerType.Human) SimInputManager.Instance.LocalPlayerID = 2;
-            else SimInputManager.Instance.LocalPlayerID = 0; // İzleyici
+            else SimInputManager.Instance.LocalPlayerID = 1; // İzleyici
         }
 
         _lastSoldiers = 0;
@@ -1169,6 +1359,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         // ANALİTİK BAŞLATMA:
         _currentStats = new MatchAnalytics(MapSize);
         _currentStats.Opponent = SelectedBotType;
+        _currentStats.MapSeed = mapSeed;
         if (Orchestrator != null) Orchestrator.CurrentMatchStats = _currentStats;
         if (AgentP2 != null) Orchestrator.CurrentMatchStats = _currentStats;
 
@@ -1296,17 +1487,20 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     private void SaveMatchToCSV(MatchAnalytics s)
     {
+#if !UNITY_WEBGL
         string path = Application.dataPath + "/Match_Analytics.csv";
         bool exists = System.IO.File.Exists(path);
         using (System.IO.StreamWriter writer = new System.IO.StreamWriter(path, true))
         {
-            if (!exists) writer.WriteLine("Opponent,Win,Duration,Workers,Soldiers,Towers,Wood,Stone,Meat");
-            writer.WriteLine($"{s.Opponent},{s.IsWin},{s.MatchDuration:F2},{s.TotalWorkersCreated},{s.TotalSoldiersCreated},{s.TotalTowersBuilt},{s.TotalWoodGathered},{s.TotalStoneGathered},{s.TotalMeatGathered}");
+            if (!exists) writer.WriteLine("Opponent,Win,Duration,Workers,Soldiers,Towers,Wood,Stone,Meat,MapSeed");
+            writer.WriteLine($"{s.Opponent},{s.IsWin},{s.MatchDuration:F2},{s.TotalWorkersCreated},{s.TotalSoldiersCreated},{s.TotalTowersBuilt},{s.TotalWoodGathered},{s.TotalStoneGathered},{s.TotalMeatGathered},{s.MapSeed}");
         }
+#endif
     }
 
     private void SaveSpatialDataAsJSON(MatchAnalytics s)
     {
+#if !UNITY_WEBGL
         // Veri klasörünü oluştur
         string folderPath = Application.dataPath + "/SpatialLogs";
         if (!System.IO.Directory.Exists(folderPath))
@@ -1322,6 +1516,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
         System.IO.File.WriteAllText(fullPath, json);
 
         // Debug.Log($"[Analytics] Mekansal veriler kaydedildi: {fileName}");
+#endif
     }
 
     private void HandleAnalyticsSpend(int playerID, int amount, SimResourceType type)
@@ -1335,6 +1530,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
 
     public void RecordInferenceTime(double ms)
     {
+#if !UNITY_WEBGL
         if (!RecordInferenceToCSV) return;
 
         string line = $"{_currentStep},{ms.ToString("F4", CultureInfo.InvariantCulture)},{SelectedBotType},{EnemyDifficulty}";
@@ -1346,6 +1542,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
             File.AppendAllLines(_inferenceFilePath, _inferenceBuffer);
             _inferenceBuffer.Clear();
         }
+#endif
     }
 
 
@@ -1391,6 +1588,7 @@ public class AdversarialTrainerRunner : MonoBehaviour
                     // Temizlik Ödülü: Hasar * 0.02 (Normalden biraz daha yüksek veriyoruz ki bitirsin)
                     // Örn: 100 hasar = 0.2 puan
                     Orchestrator.AddGroupReward(damage * 0.002f);
+                    TrackReward(damage * 0.002f);
                 }
             }
         }
@@ -1426,9 +1624,12 @@ public class AdversarialTrainerRunner : MonoBehaviour
                 // Hasar başına ufak ödül (Savunmayı teşvik eder)
                 //1000 0.5
                 Orchestrator.AddGroupReward(damage * 0.0005f);
+                TrackReward(damage * 0.0005f);
             }
         }
     }
+
+
     void OnDestroy()
     {
         if (_unitSys != null)
@@ -1476,66 +1677,66 @@ public class AdversarialTrainerRunner : MonoBehaviour
     private const int ACT_ATTACK = 10;
     private const int ACT_GATHER = 12;
     // Bu metodu AdversarialTrainerRunner sınıfının içinde mevcut olanla değiştirin.
-    public void NotifyAgentAction(int actionType, int targetIndex)
-    {
-        if (Orchestrator == null || _world == null || !_world.Players.ContainsKey(1)) return;
+    // public void NotifyAgentAction(int actionType, int targetIndex)
+    // {
+    //     if (Orchestrator == null || _world == null || !_world.Players.ContainsKey(1)) return;
 
-        // Sabitler (Kodun başka yerinde tanımlı değilse buraya hardcode veya const olarak ekleyin)
-        const int ACT_GATHER = 12;
+    //     // Sabitler (Kodun başka yerinde tanımlı değilse buraya hardcode veya const olarak ekleyin)
+    //     const int ACT_GATHER = 12;
 
-        // --- SENARYO C: KRİTİK KAYNAK TOPLAMA BONUSU (CRITICAL GATHER REWARD) ---
-        if (actionType == ACT_GATHER)
-        {
-            // 1. Hedeflenen Grid Index'i (Flat) Koordinata (x,y) çevir
-            // Not: Map.Grid.GetLength(0) harita genişliğini verir.
-            int w = _world.Map.Grid.GetLength(0);
-            int x = targetIndex % w;
-            int y = targetIndex / w;
+    //     // --- SENARYO C: KRİTİK KAYNAK TOPLAMA BONUSU (CRITICAL GATHER REWARD) ---
+    //     if (actionType == ACT_GATHER)
+    //     {
+    //         // 1. Hedeflenen Grid Index'i (Flat) Koordinata (x,y) çevir
+    //         // Not: Map.Grid.GetLength(0) harita genişliğini verir.
+    //         int w = _world.Map.Grid.GetLength(0);
+    //         int x = targetIndex % w;
+    //         int y = targetIndex / w;
 
-            // 2. O koordinatta gerçekten bir kaynak var mı bul
-            // GridPosition struct olduğu için x ve y karşılaştırması yapıyoruz.
-            var resource = _world.Resources.Values.FirstOrDefault(r => r.GridPosition.x == x && r.GridPosition.y == y);
+    //         // 2. O koordinatta gerçekten bir kaynak var mı bul
+    //         // GridPosition struct olduğu için x ve y karşılaştırması yapıyoruz.
+    //         var resource = _world.Resources.Values.FirstOrDefault(r => r.GridPosition.x == x && r.GridPosition.y == y);
 
-            if (resource != null)
-            {
-                var player = _world.Players[1];
-                int currentResourceAmount = 0;
+    //         if (resource != null)
+    //         {
+    //             var player = _world.Players[1];
+    //             int currentResourceAmount = 0;
 
-                // 3. Kaynağın türünü belirle ve oyuncunun mevcut stoğuna bak
-                switch (resource.Type)
-                {
-                    case SimResourceType.Wood:
-                        currentResourceAmount = player.Wood;
-                        break;
-                    case SimResourceType.Stone:
-                        currentResourceAmount = player.Stone;
-                        break;
-                    case SimResourceType.Meat:
-                        currentResourceAmount = player.Meat;
-                        break;
-                }
+    //             // 3. Kaynağın türünü belirle ve oyuncunun mevcut stoğuna bak
+    //             switch (resource.Type)
+    //             {
+    //                 case SimResourceType.Wood:
+    //                     currentResourceAmount = player.Wood;
+    //                     break;
+    //                 case SimResourceType.Stone:
+    //                     currentResourceAmount = player.Stone;
+    //                     break;
+    //                 case SimResourceType.Meat:
+    //                     currentResourceAmount = player.Meat;
+    //                     break;
+    //             }
 
-                // 4. Kural: Kaynak 250'den azsa ödül ver
-                if (currentResourceAmount < 250)
-                {
-                    // Ödül Miktarı Ayarı:
-                    // 0.02f = Ufak bir teşvik. Spamlamasını engellemek için çok büyük vermiyoruz.
-                    // 0.1f  = Çok güçlü bir teşvik.
-                    float criticalBonus = 0.004f;
+    //             // 4. Kural: Kaynak 250'den azsa ödül ver
+    //             if (currentResourceAmount < 250)
+    //             {
+    //                 // Ödül Miktarı Ayarı:
+    //                 // 0.02f = Ufak bir teşvik. Spamlamasını engellemek için çok büyük vermiyoruz.
+    //                 // 0.1f  = Çok güçlü bir teşvik.
+    //                 float criticalBonus = 0.004f;
 
-                    // Sadece bu kararı veren "Action" çıktısını ödüllendiriyoruz.
-                    // GroupReward verirsek tüm takımı ödüllendirir, ActionReward sadece o anki kararı pekiştirir.
-                    Orchestrator.AddActionRewardOnly(criticalBonus);
+    //                 // Sadece bu kararı veren "Action" çıktısını ödüllendiriyoruz.
+    //                 // GroupReward verirsek tüm takımı ödüllendirir, ActionReward sadece o anki kararı pekiştirir.
+    //                 Orchestrator.AddActionRewardOnly(criticalBonus);
 
-                    // İstersen Target (Konum) seçimini de ayrıca pekiştirebilirsin:
-                    // Orchestrator.AddTargetRewardOnly(criticalBonus);
+    //                 // İstersen Target (Konum) seçimini de ayrıca pekiştirebilirsin:
+    //                 // Orchestrator.AddTargetRewardOnly(criticalBonus);
 
-                    // Konsolda görüp teyit etmek için (Eğitimde kapatabilirsin):
-                    // Debug.Log($"[Critical Eco] {resource.Type} is low ({currentResourceAmount})! Gather Order Reward: +{criticalBonus}");
-                }
-            }
-        }
-    }
+    //                 // Konsolda görüp teyit etmek için (Eğitimde kapatabilirsin):
+    //                 // Debug.Log($"[Critical Eco] {resource.Type} is low ({currentResourceAmount})! Gather Order Reward: +{criticalBonus}");
+    //             }
+    //         }
+    //     }
+    // }
 
     private IMacroAI CreateBot(AIOpponentType type, int playerID)
     {

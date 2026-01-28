@@ -246,7 +246,7 @@ public class DRLActionTranslator
                 return false;
 
             case 12: // TOPLA
-                Debug.Log("// TOPLA");
+                // Debug.Log("// TOPLA");
                 if (sourceUnit == null || sourceUnit.UnitType != SimUnitType.Worker) return false; // Sadece işçi toplar
                 var resource = _world.Resources.Values.FirstOrDefault(r => r.GridPosition == targetPos);
 

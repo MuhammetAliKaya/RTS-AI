@@ -39,32 +39,28 @@ public class ActionSelectionAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // Gözlem 1: Seçilen Birim Türü (Context)
-        // Orkestratörden hangi birimin seçildiğini öğreniyoruz.
-        int selectedIndex = _orchestrator.SelectedSourceIndex;
-        float[] typeObservations = _translator.GetOneHotEncodedTypeAt(selectedIndex);
-
-        foreach (float obs in typeObservations)
+        // 1. Önce Context Bilgisi (Seçilen Birim Türü) - Bu her ajanda farklı olabilir veya aynı kalabilir
+        // (Mevcut kodunuzdaki Context kısmını koruyun, örneğin One-Hot Encoding)
+        if (_orchestrator == null || _translator == null)
         {
-            sensor.AddObservation(obs); // 1 yerine 5 gözlem eklenmiş olur
+            // Sensör boş kalmasın diye dummy veri basabiliriz veya boş döneriz.
+            // ML-Agents hata vermemesi için genellikle boş bırakmak yerine 0 basmak daha güvenlidir ama 
+            // Orchestrator yoksa yapacak bir şey yok, return diyoruz.
+            return;
         }
-
-        // Gözlem 2: Kaynaklar (Maliyet hesabı yapabilmesi için)
-        if (_world.Players.ContainsKey(_orchestrator.MyPlayerID))
+        if (_orchestrator.SelectedSourceIndex != -1)
         {
-            var me = _world.Players[_orchestrator.MyPlayerID];
-            // Logaritmik scale yerine şimdilik direkt değer veya basit scale verebiliriz.
-            // RTSAgent'taki LogScale fonksiyonu varsa onu da kullanabilirsin ama
-            // basitçe 1000'e bölmek de iş görür.
-            sensor.AddObservation(me.Wood / 1000f);
-            sensor.AddObservation(me.Stone / 1000f);
-            sensor.AddObservation(me.Meat / 1000f);
-            sensor.AddObservation(me.CurrentPopulation / 50f);
+            float[] typeObs = _translator.GetOneHotEncodedTypeAt(_orchestrator.SelectedSourceIndex);
+            foreach (float val in typeObs) sensor.AddObservation(val);
         }
         else
         {
-            sensor.AddObservation(new float[4]);
+            // Seçim yoksa boş context
+            for (int i = 0; i < 5; i++) sensor.AddObservation(0f);
         }
+
+        // 2. STRATEJİK VEKTÖR (Sizin istediğiniz liste)
+        _orchestrator.AddStrategicObservations(sensor);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)

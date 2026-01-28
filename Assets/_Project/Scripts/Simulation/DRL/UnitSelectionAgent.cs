@@ -30,39 +30,29 @@ public class UnitSelectionAgent : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. Veri Güvenliği
-        if (_world == null || !_world.Players.ContainsKey(_orchestrator.MyPlayerID))
+        // 1. Önce Context Bilgisi (Seçilen Birim Türü) - Bu her ajanda farklı olabilir veya aynı kalabilir
+        // (Mevcut kodunuzdaki Context kısmını koruyun, örneğin One-Hot Encoding)
+        if (_orchestrator == null || _translator == null)
         {
-            // Veri yoksa boş gözlem bas (6 adet float)
-            for (int i = 0; i < 6; i++) sensor.AddObservation(0f);
+            // Sensör boş kalmasın diye dummy veri basabiliriz veya boş döneriz.
+            // ML-Agents hata vermemesi için genellikle boş bırakmak yerine 0 basmak daha güvenlidir ama 
+            // Orchestrator yoksa yapacak bir şey yok, return diyoruz.
             return;
         }
 
-        var me = _world.Players[_orchestrator.MyPlayerID];
-
-        // 2. Kaynak Durumu (Ekonomi ne durumda?)
-        sensor.AddObservation(me.Wood / MAX_RES);
-        sensor.AddObservation(me.Stone / MAX_RES);
-        sensor.AddObservation(me.Meat / MAX_RES);
-        sensor.AddObservation(me.CurrentPopulation / MAX_POP);
-
-        // 3. Ordu/İşçi Sayımı (Neye ihtiyacım var?)
-        // LINQ sorguları her frame biraz maliyetli olabilir ama ML-Agents için kabul edilebilir.
-        // Daha optimize olması için bu sayılar Orchestrator'da tutulup buraya paslanabilir.
-        int workerCount = 0;
-        int soldierCount = 0;
-
-        foreach (var u in _world.Units.Values)
+        if (_orchestrator.SelectedSourceIndex != -1)
         {
-            if (u.PlayerID == _orchestrator.MyPlayerID && u.State != SimTaskType.Dead)
-            {
-                if (u.UnitType == SimUnitType.Worker) workerCount++;
-                else if (u.UnitType == SimUnitType.Soldier) soldierCount++;
-            }
+            float[] typeObs = _translator.GetOneHotEncodedTypeAt(_orchestrator.SelectedSourceIndex);
+            foreach (float val in typeObs) sensor.AddObservation(val);
+        }
+        else
+        {
+            // Seçim yoksa boş context
+            for (int i = 0; i < 5; i++) sensor.AddObservation(0f);
         }
 
-        sensor.AddObservation(workerCount / MAX_UNIT_COUNT);
-        sensor.AddObservation(soldierCount / MAX_UNIT_COUNT);
+        // 2. STRATEJİK VEKTÖR (Sizin istediğiniz liste)
+        _orchestrator.AddStrategicObservations(sensor);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
@@ -108,6 +98,19 @@ public class UnitSelectionAgent : Agent
                     {
                         canSelect = false; // Ev, Çiftlik vb. seçilemez
                     }
+                }
+            }
+            if (canSelect)
+            {
+                int gridW = _world.Map.Width;
+                // Mevcut 'i' indeksini x,y koordinatına çevir
+                int cx = i % gridW;
+                int cy = i / gridW;
+
+                // Etrafında boş yer yoksa (tamamen sarılmışsa) seçimi iptal et
+                if (!HasWalkableNeighbor(cx, cy))
+                {
+                    canSelect = false;
                 }
             }
 
@@ -162,5 +165,24 @@ public class UnitSelectionAgent : Agent
             // Eğer demo yoksa ve heuristic çalıştıysa (test amaçlı) 0 döndür
             discreteActions[0] = 0;
         }
+    }
+
+    private bool HasWalkableNeighbor(int cx, int cy)
+    {
+        // Etraftaki 8 kareyi kontrol et
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx == 0 && dy == 0) continue; // Kendisi hariç
+
+                // SimGridSystem.IsWalkable, harita sınırlarını ve doluluğu zaten kontrol eder
+                if (SimGridSystem.IsWalkable(_world, new RTS.Simulation.Data.int2(cx + dx, cy + dy)))
+                {
+                    return true; // En az bir çıkış yolu var
+                }
+            }
+        }
+        return false; // Hiçbir yere kıpırdayamaz (veya üretim çıkışı yok)
     }
 }
